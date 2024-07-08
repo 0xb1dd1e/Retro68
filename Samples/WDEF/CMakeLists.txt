@@ -65,6 +65,21 @@ elseif(CMAKE_SYSTEM_NAME MATCHES RetroPPC)
         COMMAND ${MAKE_PEF} WDEF -o "WDEF.pef"
         DEPENDS WDEF)
     set(WDEF_RESOURCE WDEF.pef)
+elseif(CMAKE_SYSTEM_NAME MATCHES RetroBeBox)
+    # clone of RetroPPC for now
+    set_target_properties(WDEF PROPERTIES
+        COMPILE_OPTIONS -ffunction-sections # make things smaller
+        # tell wdef.c that it is being compiled as a code resource
+        COMPILE_DEFINITIONS "COMPILING_AS_CODE_RESOURCE"
+        LINK_FLAGS " -Wl,-eMyWindowDefProc -Wl,-gc-sections"
+        )
+    set(WDEF_R wdefbebox.r)
+
+    add_custom_command(
+        OUTPUT WDEF.pef
+        COMMAND ${MAKE_PEF} WDEF -o "WDEF.pef"
+        DEPENDS WDEF)
+    set(WDEF_RESOURCE WDEF.pef)
 endif()
 
 if (REZ_INCLUDE_PATH)

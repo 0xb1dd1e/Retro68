@@ -21,6 +21,8 @@
 
 #define TC_PPC
 
+#warning BIDDLE: party in the USA
+
 #include "opcode/ppc.h"
 
 struct fix;

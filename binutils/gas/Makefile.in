@@ -794,6 +794,7 @@ TARG_ENV_HFILES = \
 	config/te-armfbsdeabi.h \
 	config/te-armfbsdvfp.h \
 	config/te-armlinuxeabi.h \
+	config/te-beos.h \
 	config/te-csky_abiv1.h \
 	config/te-csky_abiv1_linux.h \
 	config/te-csky_abiv2.h \
@@ -808,6 +809,7 @@ TARG_ENV_HFILES = \
 	config/te-ia64aix.h \
 	config/te-interix.h \
 	config/te-lynx.h \
+	config/te-beos.h \
 	config/te-macos.h \
 	config/te-nbsd.h \
 	config/te-nbsd532.h \

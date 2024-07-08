@@ -27,7 +27,9 @@
 #include <errno.h>
 #include <reent.h>
 #include <string.h>
-#include <MacMemory.h>
+#warning BIDDLE: figure out the retro malloc stuff for BeBox
+#include <Multiverse.h>
+//#include <MacMemory.h>
 
 void referenceMyMalloc(void) {}
 

@@ -51,3 +51,6 @@
 /* TODO: we'll need a startfile... */
 #undef STARTFILE_SPEC
 #define STARTFILE_SPEC ""
+
+/* TODO: not sure what the best way to debug will be... start by pretending we are an old power mac? */
+#define PREFERRED_DEBUGGING_TYPE XCOFF_DEBUG

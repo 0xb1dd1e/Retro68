@@ -52,15 +52,18 @@ function(add_application name)
     if(${ARGS_DEBUGBREAK})
         target_link_options(${name} PRIVATE "LINKER:--defsym=__break_on_entry=1")
     endif()
-    if(${ARGS_CONSOLE})
-        if(TARGET RetroConsole OR NOT (CMAKE_SYSTEM_NAME MATCHES RetroCarbon))    
-            target_link_libraries(${name} RetroConsole)
-        else()
-            target_link_libraries(${name} RetroConsoleCarbon)
+
+    if(NOT (CMAKE_SYSTEM_NAME MATCHES "RetroBeBox"))
+        if(${ARGS_CONSOLE})
+            if(TARGET RetroConsole OR NOT (CMAKE_SYSTEM_NAME MATCHES RetroCarbon) )    
+                target_link_libraries(${name} RetroConsole)
+            else()
+                target_link_libraries(${name} RetroConsoleCarbon)
+            endif()
+            
+                # RetroConsole library uses C++:
+            set_target_properties(${name} PROPERTIES LINKER_LANGUAGE CXX)
         endif()
-        
-            # RetroConsole library uses C++:
-        set_target_properties(${name} PROPERTIES LINKER_LANGUAGE CXX)
     endif()
 
     foreach(f ${rsrc_files})
@@ -127,6 +130,30 @@ function(add_application name)
                     -t "${ARGS_TYPE}" -c "${ARGS_CREATOR}"
                     --data ${name}.pef
                     ${ARGS_MAKEAPPL_ARGS}
+            DEPENDS ${name}.pef ${rsrc_files})
+        add_custom_target(${name}_APPL ALL DEPENDS ${name}.bin)
+    elseif(CMAKE_SYSTEM_NAME MATCHES RetroBeBox)
+        set(REZ_TEMPLATE "${REZ_TEMPLATES_PATH}/RetroBeBoxAPPL.r")
+        
+        set_target_properties(${name} PROPERTIES OUTPUT_NAME ${name}.xcoff)
+        add_custom_command(
+            OUTPUT ${name}.pef
+            COMMAND ${MAKE_PEF} "${name}.xcoff" -o "${name}.pef"
+            DEPENDS ${name})
+
+        add_custom_command(
+            OUTPUT ${name}.bin ${name}.APPL ${name}.dsk ${name}.ad "%${name}.ad"
+            COMMAND ${REZ} 
+                    ${REZ_FLAGS}
+                    ${REZ_TEMPLATE}
+                    ${rez_include_options}
+                    -DCFRAG_NAME="\\"${name}\\""
+                    -o "${name}.bin" --cc "${name}.dsk" --cc "${name}.APPL"
+                    --cc "%${name}.ad"
+                    -t "${ARGS_TYPE}" -c "${ARGS_CREATOR}"
+                    --data ${name}.pef
+                    ${ARGS_MAKEAPPL_ARGS}
+        
             DEPENDS ${name}.pef ${rsrc_files})
         add_custom_target(${name}_APPL ALL DEPENDS ${name}.bin)
     endif()

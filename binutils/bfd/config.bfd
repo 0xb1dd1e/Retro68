@@ -1168,12 +1168,19 @@ case "${targ}" in
     targ_defvec=powerpc_xcoff_vec
     ;;
   powerpc-*-beos*)
-    targ_cflags=-DAIX_WEAK_SUPPORT
+    # original flags
+    #targ_cflags=-DAIX_WEAK_SUPPORT
     # or maybe also: targ_cflags=-DSMALL_ARCHIVE
-    # 	this might affect compatibility with pre-built static .a libraries
-    
-    targ_selvecs=powerpc_xcoff_vec
-    targ_defvec=powerpc_xcoff_vec
+    # 	this might affect compatibility with pre-built static .a libraries    
+    #
+    # details from Haiku settings...
+    #targ_defvec=powerpc_elf32_vec
+    #targ_selvecs="rs6000_xcoff_vec powerpc_elf32_le_vec pef_vec pef_xlib_vec powerpc_xcoff_vec powerpc_boot_vec"
+    #targ_cflags=-D__HAIKU_TARGET__
+    #
+    # best guess for now:
+    targ_defvec=bebox_xcoff_vec
+    targ_selvecs=rs6000_xcoff_vec pef_vec powerpc_boot_vec
     ;;
   powerpc-*-lynxos*)
     targ_defvec=powerpc_elf32_vec

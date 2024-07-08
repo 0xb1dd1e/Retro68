@@ -17,11 +17,8 @@
    Software Foundation, 51 Franklin Street - Fifth Floor, Boston, MA
    02110-1301, USA.  */
 
-/* This file is te-generic.h and is intended to be a template for
-   target environment specific header files.
-
-   It is my intent that this file will evolve into a file suitable for config,
-   compile, and copying as an aid for testing and porting.  xoxorich.  */
+#warning BIDDLE: Die another day please?
+#define TE_BEOS 1
 
 /* Added these, because if we don't know what we're targeting we may
    need an assembler version of libgcc, and that will use local
@@ -29,11 +26,4 @@
 #define LOCAL_LABELS_DOLLAR 1
 #define LOCAL_LABELS_FB 1
 
-#warning BIDDLE: dander druffer baz 
-/* These define interfaces.  */
-#ifdef   OBJ_HEADER
-#include OBJ_HEADER
-#else
 #include "obj-format.h"
-#endif
-

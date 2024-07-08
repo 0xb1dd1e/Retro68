@@ -1331,6 +1331,9 @@ rs6000-ibm-aix[56789].* | powerpc-ibm-aix[56789].*)
 	tmake_file="t-fdpbit rs6000/t-ppc64-fp rs6000/t-slibgcc-aix rs6000/t-ibm-ldouble rs6000/t-aix-cxa"
 	extra_parts="crtcxa.o crtcxa_s.o crtdbase.o crtcxa_64.o crtcxa_64_s.o crtdbase_64.o"
 	;;
+powerpc-*-beos)
+	tmake_file="t-fdpbit rs6000/t-ibm-ldouble"
+	;;
 powerpc-*-macos)
 	tmake_file="t-fdpbit rs6000/t-ibm-ldouble"
 	;;

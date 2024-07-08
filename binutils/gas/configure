@@ -12537,8 +12537,12 @@ $as_echo "$with_priv_spec" >&6; }
 # See if we really can support this configuration with the emulation code.
 
     if test $this_target = $target ; then
+    	 	echo 100 Yoo-whoo! $this_target matched $target
+        echo 105 yer fmt is $fmt and yer te_file is $em
       obj_format=$fmt
       te_file=$em
+  	else
+  	 	echo 200 srry dawg $this_target did not match $target!!!    
     fi
 
     case ${te_file} in
@@ -12748,6 +12752,9 @@ for _gas_uniq_i in _gas_uniq_dummy $_gas_uniq_list ; do
 done
 emulations=$_gas_uniq_newlist
 
+echo OK DONKEY these are your options $emulations
+echo OK and the em is [ $em ]
+
 for em in . $emulations ; do
   case $em in
     .)	continue ;;
@@ -12764,6 +12771,9 @@ for em in . $emulations ; do
   emfiles="$emfiles config/e-$file.o"
   EMULATIONS="$EMULATIONS &$em,"
 done
+
+echo SO MONKEY now you have $em
+
 _gas_uniq_list="$formats"
 _gas_uniq_newlist=""
 for _gas_uniq_i in _gas_uniq_dummy $_gas_uniq_list ; do

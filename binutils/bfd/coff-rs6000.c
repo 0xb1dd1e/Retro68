@@ -4845,3 +4845,195 @@ const bfd_target powerpc_xcoff_vec =
 
     & bfd_pmac_xcoff_backend_data,
   };
+
+/////////////////////////////////////
+
+/* xcoff-bebox target
+   Old and rare target.
+   Only difference between this target and the rs6000 target is the
+   the default architecture and machine type used in coffcode.h
+
+   WIP!!!
+   For now we assume use the same magic numbers as RS/6000
+   They are always PowerPC architecture.  */
+static const struct xcoff_backend_data_rec bfd_bebox_xcoff_backend_data =
+  {
+    { /* COFF backend, defined in libcoff.h.  */
+      _bfd_xcoff_swap_aux_in,
+      _bfd_xcoff_swap_sym_in,
+      coff_swap_lineno_in,
+      _bfd_xcoff_swap_aux_out,
+      _bfd_xcoff_swap_sym_out,
+      coff_swap_lineno_out,
+      xcoff_swap_reloc_out,
+      coff_swap_filehdr_out,
+      coff_swap_aouthdr_out,
+      coff_swap_scnhdr_out,
+      FILHSZ,
+      AOUTSZ,
+      SCNHSZ,
+      SYMESZ,
+      AUXESZ,
+      RELSZ,
+      LINESZ,
+      FILNMLEN,
+      true,			/* _bfd_coff_long_filenames */
+      XCOFF_NO_LONG_SECTION_NAMES,  /* _bfd_coff_long_section_names */
+      3,			/* _bfd_coff_default_section_alignment_power */
+      false,			/* _bfd_coff_force_symnames_in_strings */
+      2,			/* _bfd_coff_debug_string_prefix_length */
+      32768,			/* _bfd_coff_max_nscns */
+      coff_swap_filehdr_in,
+      coff_swap_aouthdr_in,
+      coff_swap_scnhdr_in,
+      xcoff_swap_reloc_in,
+      coff_bad_format_hook,
+      coff_set_arch_mach_hook,
+      coff_mkobject_hook,
+      styp_to_sec_flags,
+      coff_set_alignment_hook,
+      coff_slurp_symbol_table,
+      symname_in_debug_hook,
+      coff_pointerize_aux_hook,
+      coff_print_aux,
+      dummy_reloc16_extra_cases,
+      dummy_reloc16_estimate,
+      NULL,			/* bfd_coff_sym_is_global */
+      coff_compute_section_file_positions,
+      NULL,			/* _bfd_coff_start_final_link */
+      xcoff_ppc_relocate_section,
+      coff_rtype_to_howto,
+      NULL,			/* _bfd_coff_adjust_symndx */
+      _bfd_generic_link_add_one_symbol,
+      coff_link_output_has_begun,
+      coff_final_link_postscript,
+      NULL			/* print_pdata.  */
+    },
+
+    0x01DF,			/* magic number */
+    bfd_arch_powerpc,
+    bfd_mach_ppc,
+
+    /* Function pointers to xcoff specific swap routines.  */
+    xcoff_swap_ldhdr_in,
+    xcoff_swap_ldhdr_out,
+    xcoff_swap_ldsym_in,
+    xcoff_swap_ldsym_out,
+    xcoff_swap_ldrel_in,
+    xcoff_swap_ldrel_out,
+
+    /* Sizes.  */
+    LDHDRSZ,
+    LDSYMSZ,
+    LDRELSZ,
+    12,				/* _xcoff_function_descriptor_size */
+    SMALL_AOUTSZ,
+
+    /* Versions.  */
+    1,				/* _xcoff_ldhdr_version */
+
+    _bfd_xcoff_put_symbol_name,
+    _bfd_xcoff_put_ldsymbol_name,
+    &xcoff_dynamic_reloc,
+    xcoff_create_csect_from_smclas,
+
+    /* Lineno and reloc count overflow.  */
+    xcoff_is_lineno_count_overflow,
+    xcoff_is_reloc_count_overflow,
+
+    xcoff_loader_symbol_offset,
+    xcoff_loader_reloc_offset,
+
+    /* glink.  */
+    &xcoff_glink_code[0],
+    36,				/* _xcoff_glink_size */
+
+    /* rtinit */
+    0,				/* _xcoff_rtinit_size */
+    xcoff_generate_rtinit,
+
+    /* Stub indirect call.  */
+    &xcoff_stub_indirect_call_code[0],
+    16,				/* _xcoff_stub_indirect_call_size */
+
+    /* Stub shared call.  */
+    &xcoff_stub_shared_call_code[0],
+    24,				/* _xcoff_stub_shared_call_size */
+  };
+
+/* The transfer vector that leads the outside world to all of the above.  */
+const bfd_target bebox_xcoff_vec =
+  {
+    "xcoff-bebox",
+    bfd_target_xcoff_flavour,
+    BFD_ENDIAN_BIG,		/* data byte order is big */
+    BFD_ENDIAN_BIG,		/* header byte order is big */
+
+    (HAS_RELOC | EXEC_P | HAS_LINENO | HAS_DEBUG | DYNAMIC
+     | HAS_SYMS | HAS_LOCALS | WP_TEXT),
+
+    SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC | SEC_CODE | SEC_DATA,
+    0,				/* leading char */
+    '/',			/* ar_pad_char */
+    15,				/* ar_max_namelen */
+    0,				/* match priority.  */
+    TARGET_KEEP_UNUSED_SECTION_SYMBOLS, /* keep unused section symbols.  */
+
+    /* data */
+    bfd_getb64,
+    bfd_getb_signed_64,
+    bfd_putb64,
+    bfd_getb32,
+    bfd_getb_signed_32,
+    bfd_putb32,
+    bfd_getb16,
+    bfd_getb_signed_16,
+    bfd_putb16,
+
+    /* hdrs */
+    bfd_getb64,
+    bfd_getb_signed_64,
+    bfd_putb64,
+    bfd_getb32,
+    bfd_getb_signed_32,
+    bfd_putb32,
+    bfd_getb16,
+    bfd_getb_signed_16,
+    bfd_putb16,
+
+    { /* bfd_check_format */
+      _bfd_dummy_target,
+      coff_object_p,
+      _bfd_xcoff_archive_p,
+      CORE_FILE_P
+    },
+
+    { /* bfd_set_format */
+      _bfd_bool_bfd_false_error,
+      coff_mkobject,
+      _bfd_generic_mkarchive,
+      _bfd_bool_bfd_false_error
+    },
+
+    {/* bfd_write_contents */
+      _bfd_bool_bfd_false_error,
+      coff_write_object_contents,
+      _bfd_xcoff_write_archive_contents,
+      _bfd_bool_bfd_false_error
+    },
+
+    BFD_JUMP_TABLE_GENERIC (_bfd_xcoff),
+    BFD_JUMP_TABLE_COPY (_bfd_xcoff),
+    BFD_JUMP_TABLE_CORE (coff),
+    BFD_JUMP_TABLE_ARCHIVE (_bfd_xcoff),
+    BFD_JUMP_TABLE_SYMBOLS (_bfd_xcoff),
+    BFD_JUMP_TABLE_RELOCS (_bfd_xcoff),
+    BFD_JUMP_TABLE_WRITE (coff),
+    BFD_JUMP_TABLE_LINK (_bfd_xcoff),
+    BFD_JUMP_TABLE_DYNAMIC (_bfd_xcoff),
+
+    /* Opposite endian version, none exists */
+    NULL,
+
+    & bfd_bebox_xcoff_backend_data,
+  };

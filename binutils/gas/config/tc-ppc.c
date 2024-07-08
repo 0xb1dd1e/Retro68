@@ -1529,7 +1529,11 @@ ppc_target_format (void)
 {
 #ifdef OBJ_COFF
 #if TE_POWERMAC
+#warning BIDDLE: ---rainy spain!
   return "xcoff-powermac";
+#elif TE_BEOS
+#warning BIDDLE: ---sunny spain!
+  return "xcoff-bebox";
 #else
 #  ifdef TE_AIX5
   return (ppc_obj64 ? "aix5coff64-rs6000" : "aixcoff-rs6000");

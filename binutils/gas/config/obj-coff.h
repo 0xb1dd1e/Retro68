@@ -23,6 +23,7 @@
 
 #define OBJ_COFF 1
 
+#warning BIDDLE: i loves barking
 #include "targ-cpu.h"
 
 /* This internal_lineno crap is to stop namespace pollution from the

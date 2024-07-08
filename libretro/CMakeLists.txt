@@ -21,54 +21,67 @@
 #    see the files COPYING and COPYING.RUNTIME respectively.  If not, see
 #    <http://www.gnu.org/licenses/>.
 
-if(CMAKE_SYSTEM_NAME MATCHES Retro68)
+if(CMAKE_SYSTEM_NAME MATCHES RetroBeBox)
+
     enable_language(ASM)
     set(ARCH_FILES
-        Retro68Runtime.h
-        start.c
-        relocate.c
-        PoorMansDebugging.h
-        MultiSegApp.c
-        LoadSeg.s
-        qdglobals.c
-        Retro68.r
-        Retro68APPL.r
+        ppcstart.c
+        ppcfpsave.s
+        RetroBeBoxAPPL.r)
+    install(FILES RetroBeBoxAPPL.r DESTINATION RIncludes)
+
+else() 
+    if(CMAKE_SYSTEM_NAME MATCHES Retro68)
+        enable_language(ASM)
+        set(ARCH_FILES
+            Retro68Runtime.h
+            start.c
+            relocate.c
+            PoorMansDebugging.h
+            MultiSegApp.c
+            LoadSeg.s
+            qdglobals.c
+            Retro68.r
+            Retro68APPL.r
+        )
+        install(FILES Retro68Runtime.h DESTINATION include)
+        install(FILES Retro68.r Retro68APPL.r DESTINATION RIncludes)
+
+    elseif(CMAKE_SYSTEM_NAME MATCHES RetroPPC)
+        enable_language(ASM)
+        set(ARCH_FILES
+            ppcstart.c
+            ppcfpsave.s
+            qdglobals.c
+            RetroPPCAPPL.r)
+        install(FILES RetroPPCAPPL.r DESTINATION RIncludes)
+
+    elseif(CMAKE_SYSTEM_NAME MATCHES RetroCarbon)
+        enable_language(ASM)
+        set(ARCH_FILES
+            ppcstart.c
+            ppcfpsave.s
+            RetroCarbonAPPL.r)
+        install(FILES RetroCarbonAPPL.r DESTINATION RIncludes)
+
+    endif()
+
+    add_library(retrocrt
+        malloc.c
+        syscalls.c
+        consolehooks.c
+        ${ARCH_FILES}
     )
-
-    install(FILES Retro68Runtime.h DESTINATION include)
-    install(FILES Retro68.r Retro68APPL.r DESTINATION RIncludes)
+    set_target_properties(retrocrt
+        PROPERTIES
+            COMPILE_OPTIONS -ffunction-sections)
     
-elseif(CMAKE_SYSTEM_NAME MATCHES RetroPPC)
-    enable_language(ASM)
-    set(ARCH_FILES
-        ppcstart.c
-        ppcfpsave.s
-        qdglobals.c
-        RetroPPCAPPL.r)
-    install(FILES RetroPPCAPPL.r DESTINATION RIncludes)
-elseif(CMAKE_SYSTEM_NAME MATCHES RetroCarbon)
-    enable_language(ASM)
-    set(ARCH_FILES
-        ppcstart.c
-        ppcfpsave.s
-        RetroCarbonAPPL.r)
-    install(FILES RetroCarbonAPPL.r DESTINATION RIncludes)
-endif()
-
-add_library(retrocrt
-    malloc.c
-    syscalls.c
-    consolehooks.c
-    ${ARCH_FILES}
-)
-set_target_properties(retrocrt
-    PROPERTIES
-        COMPILE_OPTIONS -ffunction-sections)
-
-install(TARGETS retrocrt  DESTINATION lib)
-
+    install(TARGETS retrocrt  DESTINATION lib)
+    
     # different library name for Carbon
     # (Carbon shares the powerpc-apple-macos/ directory with Classic PPC)
-if(CMAKE_SYSTEM_NAME MATCHES RetroCarbon)
-    set_target_properties(retrocrt PROPERTIES OUTPUT_NAME retrocrt-carbon)
+    if(CMAKE_SYSTEM_NAME MATCHES RetroCarbon)
+        set_target_properties(retrocrt PROPERTIES OUTPUT_NAME retrocrt-carbon)
+    endif()
+
 endif()

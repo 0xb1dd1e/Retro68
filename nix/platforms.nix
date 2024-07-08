@@ -73,4 +73,28 @@
     retro68 = true;
     cmakeSystemName = "RetroCarbon";
   };
+  bebox = {
+    system = "powerpc-bebox";
+    config = "powerpc-be-beos";
+    libc = null;
+    parsed = {
+      cpu = {
+        name = "powerpc";
+        bits = 32;
+        significantByte = { name = "bigEndian"; };
+        family = "power";
+      };
+      kernel = {
+        name = "bebox";
+        execFormat = { name = "unknown"; };
+      };
+      vendor = { name = "be"; };
+      abi = { name = "beos"; };
+    };
+    isStatic = true;
+    retro68BinutilsConfig = [ "--disable-plugins" ];
+    retro68GccConfig = [ "--disable-lto" ];
+    retro68 = true;
+    cmakeSystemName = "RetroBeBox";
+  };
 }

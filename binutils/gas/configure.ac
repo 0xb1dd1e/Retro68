@@ -670,8 +670,11 @@ changequote([,])dnl
 # See if we really can support this configuration with the emulation code.
 
     if test $this_target = $target ; then
+	 	echo Yoo-whoo! $this_target matched $target
       obj_format=$fmt
       te_file=$em
+	else
+	 	echo srry dawg $this_target did not match $target!!!
     fi
 
     case ${te_file} in

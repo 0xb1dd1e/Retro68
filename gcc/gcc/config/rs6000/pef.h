@@ -30,6 +30,11 @@
 
 /* AIX always has a TOC.  */
 #define TARGET_NO_TOC 0
+#define TARGET_HAS_TOC 1
+
+#ifdef TARGET_TOC
+#undef TARGET_TOC
+#endif
 #define TARGET_TOC 1
 #define FIXED_R2 1
 

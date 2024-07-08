@@ -187,6 +187,7 @@ config/te-armeabi.h
 config/te-armfbsdeabi.h
 config/te-armfbsdvfp.h
 config/te-armlinuxeabi.h
+config/te-beos.h
 config/te-csky_abiv1.h
 config/te-csky_abiv1_linux.h
 config/te-csky_abiv2.h

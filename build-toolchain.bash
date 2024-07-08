@@ -44,6 +44,7 @@ SKIP_THIRDPARTY=false
 BUILD_68K=true
 BUILD_PPC=true
 BUILD_CARBON=true
+BUILD_BEBOX=false
 CLEAN_AFTER_BUILD=false
 HOST_CMAKE_FLAGS=()
 CMAKE_GENERATOR=
@@ -58,6 +59,7 @@ function usage()
 	echo "    --no-68k                  disable support for 68K Macs"
 	echo "    --no-ppc                  disable classic PowerPC CFM support"
 	echo "    --no-carbon               disable Carbon CFM support"
+	echo "    --bebox            		enable BeBox BeOS support"
 	echo "    --clean-after-build       remove intermediate build files right after building"
 	echo "    --host-cxx-compiler       specify C++ compiler (needed on Mac OS X 10.4)"
 	echo "    --host-c-compiler         specify C compiler (needed on Mac OS X 10.4)"
@@ -81,6 +83,9 @@ for ARG in $*; do
 		--no-ppc)
 			BUILD_PPC=false
 			BUILD_CARBON=false
+			;;
+		--bebox)
+			BUILD_BEBOX=true
 			;;
 		--no-carbon)
 			BUILD_CARBON=false
@@ -150,6 +155,10 @@ if [ $SKIP_THIRDPARTY != false ]; then
 	if [ $BUILD_PPC != false ]; then
 		if [ ! -d binutils-build-ppc ]; then MISSING=true; fi
 		if [ ! -d gcc-build-ppc ]; then MISSING=true; fi
+	fi
+	if [ $BUILD_BEBOX != false ]; then
+		if [ ! -d binutils-build-bebox ]; then MISSING=true; fi
+		if [ ! -d gcc-build-bebox ]; then MISSING=true; fi
 	fi
 	if [ ! -d hfsutils ]; then MISSING=true; fi
 
@@ -299,6 +308,39 @@ if [ $SKIP_THIRDPARTY != true ]; then
 		fi
 	fi
 
+	if [ $BUILD_BEBOX != false ]; then
+		export CC=$HOST_C_COMPILER
+		export CXX=$HOST_CXX_COMPILER
+
+		# Build binutils for BeBox (PPC)
+		mkdir -p binutils-build-bebox
+		cd binutils-build-bebox
+		$SRC/binutils/configure --disable-plugins --target=powerpc-be-beos --prefix=$PREFIX --disable-doc
+		make -j$BUILD_JOBS
+		make install
+		cd ..
+
+		# Build gcc for BeBox (PPC)
+		mkdir -p gcc-build-bebox
+		cd gcc-build-bebox
+		export target_configargs="--disable-nls --enable-libstdcxx-dual-abi=no --disable-libstdcxx-verbose"
+		$SRC/gcc/configure --target=powerpc-be-beos --prefix=$PREFIX \
+			--enable-languages=c,c++ --disable-libssp --disable-lto MAKEINFO=missing
+		make -j$BUILD_JOBS
+		make install
+		unset target_configargs
+		cd ..
+
+		unset CC
+		unset CXX
+
+		if [ $CLEAN_AFTER_BUILD != false ]; then
+			rm -rf binutils-build-bebox
+			rm -rf gcc-build-bebox
+		fi
+	fi
+	
+
 	unset CPPFLAGS
 	unset LDFLAGS
 
@@ -391,6 +433,21 @@ if [ $BUILD_CARBON != false ]; then
 	echo 'subdirs("build-target-carbon")' >> CTestTestfile.cmake
 fi
 
+if [ $BUILD_BEBOX != false ]; then
+	echo "Building target libraries and samples for BeBox..."
+	# Build target-based components for PPC
+	mkdir -p build-target-bebox
+	cd build-target-bebox
+	cmake ${SRC} -DCMAKE_TOOLCHAIN_FILE=../build-host/cmake/intreebebox.toolchain.cmake \
+				 -DCMAKE_BUILD_TYPE=Release \
+				 -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+				 ${CMAKE_GENERATOR}
+	cd ..
+	cmake --build build-target-bebox --target install
+
+	echo 'subdirs("build-target-bebox")' >> CTestTestfile.cmake
+fi
+
 echo
 echo "==============================================================================="
 echo "Done building Retro68."
@@ -415,4 +472,7 @@ if [ $BUILD_PPC != false ]; then
 fi
 if [ $BUILD_CARBON != false ]; then
 	echo "You will find Carbon sample applications in build-target-carbon/Samples/."
+fi
+if [ $BUILD_BEBOX != false ]; then
+	echo "You will find BeBox sample applications in build-target-bebox/Samples/."
 fi

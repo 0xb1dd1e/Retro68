@@ -708,6 +708,7 @@ extern const bfd_target arm_pei_le_vec;
 extern const bfd_target arm_pei_wince_be_vec;
 extern const bfd_target arm_pei_wince_le_vec;
 extern const bfd_target avr_elf32_vec;
+extern const bfd_target bebox_xcoff_vec;
 extern const bfd_target bfin_elf32_vec;
 extern const bfd_target bfin_elf32_fdpic_vec;
 extern const bfd_target cr16_elf32_vec;
@@ -1033,6 +1034,11 @@ static const bfd_target * const _bfd_target_vector[] =
 	&arm_pei_wince_le_vec,
 
 	&avr_elf32_vec,
+
+#if 1	
+	/* This has the same magic number as RS/6000 and PowerPC  */
+	&bebox_xcoff_vec,
+#endif
 
 	&bfin_elf32_vec,
 	&bfin_elf32_fdpic_vec,
