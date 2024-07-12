@@ -41,14 +41,18 @@ For Ubuntu Linux, the following should help a bit:
 
     sudo apt-get install cmake libgmp-dev libmpfr-dev libmpc-dev libboost-all-dev bison flex texinfo ruby
 
+For Arch Linux, this should do the trick:
+
+    sudo pacman -S --needed cmake gmp mpfr libmpc boost bison flex texinfo ruby
+
 On a Mac, get the homebrew package manager and:
 
-    brew install boost cmake gmp mpfr libmpc bison
+    brew install boost cmake gmp mpfr libmpc bison texinfo
 
 You can also run Retro68 on a PowerMac G4 or G5 running Mac OS 10.4 (Tiger).
 In that case, get the tigerbrew package manager and
 
-    brew install gcc cmake gmp mpfr libmpc bison
+    brew install gcc cmake gmp mpfr libmpc bison texinfo
     brew install boost --c++11
 
 ### Apple Universal Interfaces vs. Multiversal Interfaces
@@ -148,44 +152,132 @@ so you can also `cd` to one of these and run `make` separately if you've made ch
 Using Retro68 with Nix
 ----------------------
 
-If you are not using the [Nix Package Manager](www.nixos.org), please skip this section. But maybe you should be using it ;-).
+If you are not using the [Nix Package Manager](https://www.nixos.org), please skip this section. But maybe you should be using it ;-).
 
 Nix is a package manager that runs on Linux and macOS, and NixOS is a Linux distribution based on it.
+Try the [Determinate Nix Installer](https://install.determinate.systems/) for the best installation experience.
 
-If you've got `nix` installed, after downloading Retro68, you can run
+[TODO: docs on using the binary cache to avoid builds]
 
-    nix-shell
+Once you've got `nix` installed, and without checking out the Retro68 repository, you can run
+
+    nix develop github:autc04/Retro68#m68k
 
 from the Retro68 directory to get a shell with the compiler tools targeting
 68K Macs available in the path, and `CC` and other environment variables already
 set up for you. You can then `cd` to one of the example directories or to your
 own project and use `cmake` to build it.
 
-You can use the `nix-shell` command to invoke various useful shell environments:
+Likewise, use
 
-| Command                             | What                                         |
-|-------------------------------------|----------------------------------------------|
-| `nix-shell`                         | 68K development environment                  |
-| `nix-shell -A m68k`                 | 68K development environment                  |
-| `nix-shell -A ppc`                  | PowerPC development environment              |
-| `nix-shell -A retro68.monolithic`   | Shell for running `build-toolchain.bash`     |
+    nix develop github:autc04/Retro68#powerpc
 
-You can also use the `nix-build` command to build packages. As always with `nix`,
+... to get an environment targeting PowerPC Macs.
+
+If you have a local checkout of Retro68, you can replace `github:autc04/Retro68` by the path
+to that local checkout, e.g., run `nix develop .#m68k` from inside the Retro68 directory.
+
+To see how to set up your own nix-based build and development environment for your own application,
+head over to the github.com/autc04/Retro68NixSample repository.
+
+You can also use the `nix build` command to build packages. As always with `nix`,
 the result will be somewhere in a subdirectory of `/nix/store`, with a symlink
-named `result` placed in your Retro68 directory.
+named `result` placed in the directory where you invoked the command.
 
-| Command                             | What                                         |
-|-------------------------------------|----------------------------------------------|
-| `nix-build -A m68k.retro68.samples` | Sample programs for 68K                      |
-| `nix-build -A ppc.retro68.samples`  | Sample programs for PowerPC                  |
-| `nix-build -A retro68.monolithic`   | Result of `build-toolchain.bash --no-carbon` |
-| `nix-build -A m68k.zlib`            | zlib library, cross-compiled for 68K Macs    |
-| `nix-build -A m68k.`*packagename*   | cross-compile *packagename* to 68K           |
-| `nix-build -A ppc.`*packagename*    | cross-compile *packagename* to PowerPC       |
+| Command                                                            | What                                      |
+|--------------------------------------------------------------------|-------------------------------------------|
+| `nix build github:autc04/Retro68#samples-m68k`                     | Sample programs for 68K                   |
+| `nix build github:autc04/Retro68#samples-powerpc`                  | Sample programs for PowerPC               |
+| `nix build github:autc04/Retro68#pkgsCross.m68k.zlib`              | zlib library, cross-compiled for 68K Macs |
+| `nix build github:autc04/Retro68#pkgsCross.m68k.`*packagename*     | cross-compile *packagename* to 68K        |
+| `nnix build github:autc04/Retro68#pkgsCross.powerpc.`*packagename* | cross-compile *packagename* to PowerPC    |
 
 You can attempt to cross-compile *any* package from the `nixpkgs` collection. Unless the
 package contains a very portable library, the command will of course fail. Please don't
 report bugs, please report successes instead!
+
+
+Using Retro68 with Docker
+-------------------------
+
+Whenever commits are merged into the Retro68 git repository, a build pipeline is triggered to
+create a container image which is then pushed to the Retro68 package repository as
+`ghcr.io/autc04/retro68`. This image contains the complete 68K and PPC toolchains ready for
+use for either local development or as part of CI pipeline. The command line below shows an
+example invocation of Retro68 to build the `Samples/Raytracer` app:
+
+```
+$ git clone --depth 1 https://github.com/autc04/Retro68.git
+$ cd Retro68
+$ docker run --rm -v $(pwd):/root -i ghcr.io/autc04/retro68 /bin/bash <<"EOF"
+    cd Samples/Raytracer
+    rm -rf build && mkdir build && cd build
+    cmake .. -DCMAKE_TOOLCHAIN_FILE=/Retro68-build/toolchain/m68k-apple-macos/cmake/retro68.toolchain.cmake
+    make
+EOF
+```
+
+The container image is configured by default to use the multiversal interfaces, but it is
+possible to use the universal interfaces by passing a path to either a local file or a URL
+that points to a Macbinary DiskCopy image containing the "Interfaces&Libraries" directory
+from MPW.
+
+Using the universal interfaces from a local file:
+
+```
+$ docker run --rm -v $(pwd):/root -v $(pwd)/MPW-GM.img.bin:/tmp/MPW-GM.img.bin \
+  -e INTERFACES=universal -e INTERFACESFILE=/tmp/MPW-GM.img.bin \
+  -i ghcr.io/autc04/retro68 /bin/bash <<"EOF"
+    cd Samples/Raytracer
+    rm -rf build && mkdir build && cd build
+    cmake .. -DCMAKE_TOOLCHAIN_FILE=/Retro68-build/toolchain/m68k-apple-macos/cmake/retro68.toolchain.cmake
+    make
+EOF
+```
+
+Using the universal interfaces from a URL:
+
+```
+$ docker run --rm -v $(pwd):/root \
+  -e INTERFACES=universal -e INTERFACESFILE=https://mysite.com/MPW-GM.img.bin \
+  -i ghcr.io/autc04/retro68 /bin/bash <<"EOF"
+    cd Samples/Raytracer
+    rm -rf build && mkdir build && cd build
+    cmake .. -DCMAKE_TOOLCHAIN_FILE=/Retro68-build/toolchain/m68k-apple-macos/cmake/retro68.toolchain.cmake
+    make
+EOF
+```
+
+Note that `entrypoint.sh` checks to see if the universal interfaces are installed into
+`/Retro68/toolchain/universal` first before attempting to access the file or URL specified
+by INTERFACESFILE. This means that it is possible to use caching or another volume so that
+the universal interfaces are only processed once to speed up builds e.g.
+
+```
+$ docker run --rm -v $(pwd):/root \
+  -v $(pwd)/universal:/Retro68-build/toolchain/universal \
+  -e INTERFACES=universal -e INTERFACESFILE=https://mysite.com/MPW-GM.img.bin \
+  -i ghcr.io/autc04/retro68 /bin/bash <<"EOF"
+    cd Samples/Raytracer
+    rm -rf build && mkdir build && cd build
+    cmake .. -DCMAKE_TOOLCHAIN_FILE=/Retro68-build/toolchain/m68k-apple-macos/cmake/retro68.toolchain.cmake
+    make
+EOF
+```
+
+and then on subsequent runs:
+
+```
+$ docker run --rm -v $(pwd):/root \
+  -v $(pwd)/universal:/Retro68-build/toolchain/universal \
+  -e INTERFACES=universal \
+  -i ghcr.io/autc04/retro68 /bin/bash <<"EOF"
+    cd Samples/Raytracer
+    rm -rf build && mkdir build && cd build
+    cmake .. -DCMAKE_TOOLCHAIN_FILE=/Retro68-build/toolchain/m68k-apple-macos/cmake/retro68.toolchain.cmake
+    make
+EOF
+```
 
 
 Sample programs
@@ -211,9 +303,9 @@ projects with a few components added.
 
 
 Third Party Components:
-- binutils 2.31.1
-- gcc 9.1.0
-- newlib 3.0.0 (inside the gcc directory)
+- binutils 2.39
+- gcc 12.2.0
+- newlib 4.2 (inside the gcc directory)
 - libelf from elfutils-0.170
 - hfsutils 3.2.6
 
@@ -379,7 +471,7 @@ LaunchAPPL and the Test Suite
 -----------------------------
 
 `LaunchAPPL` is a tool included with Retro68 intended to make launching the
-compiled Mac applications easier. It's use is optional, so you may skip reading
+compiled Mac applications easier. Its use is optional, so you may skip reading
 this section.
 
 Currently, LaunchAPPL supports the following methods for launching Mac applications:

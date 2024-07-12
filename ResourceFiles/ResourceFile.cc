@@ -3,6 +3,8 @@
 
 #include <boost/filesystem.hpp>
 #include "boost/filesystem/fstream.hpp"
+#include <chrono>
+#include <ctime>
 #include <sstream>
 #include <iostream>
 
@@ -73,6 +75,26 @@ static void writeMacBinary(std::ostream& out, std::string filename,
 
     const std::string& rsrcBytes = resstream.str();
 
+    // MacBinary files contain mandatory timestamps (creation date and modification date)
+    // We set both of them, but to make reproducible builds possible, this optionally
+    // takes the time from the $SOURCE_DATE_EPOCH environment variable instead of the system clock.
+    // When building under `nix`, this is automatically set to the modification date of the newest source
+    // file.
+    auto timestamp = std::invoke([&] -> std::chrono::system_clock::time_point {
+        const char *sourceDateEpochEnvVar = getenv("SOURCE_DATE_EPOCH");
+        if (sourceDateEpochEnvVar && *sourceDateEpochEnvVar)
+            return std::chrono::system_clock::from_time_t((time_t)std::atoll(sourceDateEpochEnvVar));
+        else
+            return std::chrono::system_clock::now();
+    });
+
+    // Calculate Mac-style timestamp (seconds since 1 January 1904 00:00:00)
+    std::tm mac_epoch_tm = {
+        0, 0, 0, // 00:00:00
+        1, 0, 4  // 1 January 1904
+    };
+    auto mac_epoch = std::chrono::system_clock::from_time_t(std::mktime(&mac_epoch_tm));
+    uint32_t mac_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - mac_epoch).count();
 
     std::ostringstream header;
     byte(header, 0);
@@ -91,8 +113,8 @@ static void writeMacBinary(std::ostream& out, std::string filename,
     byte(header, 0);
     longword(header, (int)data.size());
     longword(header, (int)rsrcBytes.size());
-    longword(header, 0); // creation date
-    longword(header, 0); // modification date
+    longword(header, mac_time); // creation date
+    longword(header, mac_time); // modification date
     while((int)header.tellp() < 124)
         byte(header,0);
     std::string headerData = header.str();

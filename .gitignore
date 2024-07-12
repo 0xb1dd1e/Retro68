@@ -7,3 +7,5 @@ InterfacesAndLibraries
 .vscode
 /result
 /result-*
+/build
+.direnv

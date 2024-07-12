@@ -91,7 +91,7 @@ int main(int argc, char *argv[])
     std::copy(argv + 1, argv+argc, std::back_inserter(args));
     realLdPath = string(argv[0]) + ".real";
 
-    if (char *path = getenv("RETRO68_REAL_LD"))
+    if (char *path = getenv("RETRO68_REAL_LD"); path && path[0])
         realLdPath = path;
 
     string outputFile = "a.out";
@@ -194,7 +194,8 @@ int main(int argc, char *argv[])
                 CreateFlatLdScript(out, entryPoint, stripMacsbug);
             }
         }
-
+ 
+        args2.push_back("--no-warn-rwx-segments");
         args2.push_back("-o");
         args2.push_back(outputFile + ".gdb");
         args2.push_back("-T");

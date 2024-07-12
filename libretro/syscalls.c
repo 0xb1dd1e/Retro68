@@ -90,7 +90,7 @@ int _open_r(struct _reent *reent, const char* name, int flags, int mode)
     // Carbon has the new, sane version.
     c2pstrcpy(pname,name);
 #else
-    // It is also availble in various glue code libraries and
+    // It is also available in various glue code libraries and
     // in some versions of InterfaceLib, but it's confusing.
     // Using the inplace variant, c2pstr, isn't much better than
     // doing things by hand:
@@ -135,8 +135,14 @@ int _open_r(struct _reent *reent, const char* name, int flags, int mode)
 
 int _close_r(struct _reent *reent, int fd)
 {
-    if(fd >= kMacRefNumOffset)
-        FSClose(fd - kMacRefNumOffset);
+    if(fd >= kMacRefNumOffset) {
+        short refNum = fd - kMacRefNumOffset;
+        short vRefNum;
+        OSErr err = GetVRefNum(refNum, &vRefNum);
+        FSClose(refNum);
+        if (err == noErr)
+            FlushVol(NULL, vRefNum);
+    }
     return 0;
 }
 
@@ -248,7 +254,7 @@ int _wait_r(struct _reent *reent, int *wstatus)
 int _gettimeofday_r(struct _reent *reent, struct timeval *tp, void *__tz)
 {
     /* Classic MacOS's GetDateTime function returns an integer.
-     * TickCount() has a slightly higher resolution, but is independend of the real-time clock.
+     * TickCount() has a slightly higher resolution, but is independent of the real-time clock.
      */
     unsigned long secs;
     GetDateTime(&secs);
