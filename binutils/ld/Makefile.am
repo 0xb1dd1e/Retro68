@@ -48,6 +48,11 @@ WARN_CFLAGS = @WARN_CFLAGS@
 NO_WERROR = @NO_WERROR@
 AM_CFLAGS = $(WARN_CFLAGS) $(ELF_CFLAGS) $(JANSSON_CFLAGS) $(ZSTD_CFLAGS)
 
+# glibc's const-correct strrchr() makes GCC >= 15 reject this file under
+# -Werror (-Wdiscarded-qualifiers).  Demote just that diagnostic, just for
+# this object (GNU make target-specific variable).
+ldlang.$(OBJEXT): AM_CFLAGS += -Wno-error=discarded-qualifiers
+
 # We put the scripts in the directory $(scriptdir)/ldscripts.
 # We can't put the scripts in $(datadir) because the SEARCH_DIR
 # directives need to be different for native and cross linkers.

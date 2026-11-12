@@ -2273,6 +2273,11 @@ uninstall-man: uninstall-man1
 .PRECIOUS: Makefile
 
 
+# glibc's const-correct strrchr() makes GCC >= 15 reject this file under
+# -Werror (-Wdiscarded-qualifiers).  Demote just that diagnostic, just for
+# this object (GNU make target-specific variable).
+ldlang.$(OBJEXT): AM_CFLAGS += -Wno-error=discarded-qualifiers
+
 # Disable -Werror, if it has been enabled, since old versions of bison/
 # yacc will produce working code which contain compile time warnings.
 ldgram.@OBJEXT@: ldgram.c

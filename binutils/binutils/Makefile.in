@@ -1830,6 +1830,11 @@ uninstall-man: uninstall-man1
 
 .PRECIOUS: Makefile
 
+
+# glibc's const-correct strrchr() makes GCC >= 15 reject these files under
+# -Werror (-Wdiscarded-qualifiers).  Demote just that diagnostic, just for
+# these objects (GNU make target-specific variable).
+nm.$(OBJEXT) addr2line.$(OBJEXT) prdbg.$(OBJEXT): AM_CFLAGS += -Wno-error=discarded-qualifiers
 po/POTFILES.in: @MAINT@ Makefile
 	for f in $(POTFILES); do echo $$f; done | LC_ALL=C sort > tmp \
 	  && mv tmp $(srcdir)/po/POTFILES.in
