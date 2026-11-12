@@ -81,6 +81,9 @@ case $targ in
  mips*-*-irix5* | mips*-*-irix6*)
     # Not obsolete
     ;;
+ powerpc-*-beos*)
+    # Not obsolete: BeBox target (Retro68)
+    ;;
  *-*-beos* | \
  *-*-cloudabi* | \
  *-*-ieee* | \
@@ -1189,12 +1192,13 @@ case "${targ}" in
     targ_defvec=powerpc_xcoff_vec
     ;;
   powerpc-*-beos*)
+    # Same XCOFF weak symbol handling as powerpc-*-macos*: without it BFD
+    # writes weak symbols with generic COFF storage class 127, which the
+    # XCOFF writer rejects ("unsupported swap_aux_out for storage class
+    # 0x7f"), and C++ (vague linkage) needs weak symbols.
     targ_cflags=-DAIX_WEAK_SUPPORT
-    # or maybe also: targ_cflags=-DSMALL_ARCHIVE
-    # 	this might affect compatibility with pre-built static .a libraries
-    
-    targ_selvecs=powerpc_xcoff_vec
-    targ_defvec=powerpc_xcoff_vec
+    targ_defvec=bebox_xcoff_vec
+    targ_selvecs=rs6000_xcoff_vec pef_vec powerpc_boot_vec
     ;;
   powerpc-*-nto*)
     targ_defvec=powerpc_elf32_vec

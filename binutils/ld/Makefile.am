@@ -341,6 +341,7 @@ ALL_EMULATION_SOURCES = \
 	epdp11.c \
 	epjelf.c \
 	epjlelf.c \
+	eppcbeos.c \
 	eppcmacos.c \
 	epruelf.c \
 	escore3_elf.c \
