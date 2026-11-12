@@ -1,6 +1,6 @@
 // -*- C++ -*-
 
-// Copyright (C) 2005-2019 Free Software Foundation, Inc.
+// Copyright (C) 2005-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the terms
@@ -53,18 +53,17 @@ namespace __gnu_pbds
       typedef Value_Type value_type;
       typedef Metadata metadata_type;
 
-      typedef
-      typename _Alloc::template rebind<
-      splay_tree_node_<Value_Type, Metadata, _Alloc> >::other::pointer
-      node_pointer;
+      typedef typename rebind_traits<_Alloc, splay_tree_node_>::pointer
+	node_pointer;
 
-      typedef
-      typename _Alloc::template rebind<metadata_type>::other::reference
-      metadata_reference;
+      typedef typename rebind_traits<_Alloc, splay_tree_node_>::size_type
+	size_type;
 
-      typedef
-      typename _Alloc::template rebind<metadata_type>::other::const_reference
-      metadata_const_reference;
+      typedef typename rebind_traits<_Alloc, metadata_type>::reference
+	metadata_reference;
+
+      typedef typename rebind_traits<_Alloc, metadata_type>::const_reference
+	metadata_const_reference;
 
 #ifdef PB_DS_BIN_SEARCH_TREE_TRACE_
       void
@@ -89,6 +88,7 @@ namespace __gnu_pbds
       node_pointer m_p_left;
       node_pointer m_p_right;
       node_pointer m_p_parent;
+      size_type m_subtree_size;
       metadata_type m_metadata;
     };
 
@@ -99,10 +99,11 @@ namespace __gnu_pbds
       typedef Value_Type value_type;
       typedef null_type metadata_type;
 
-      typedef
-      typename _Alloc::template rebind<
-      splay_tree_node_<Value_Type, null_type, _Alloc> >::other::pointer
-      node_pointer;
+      typedef typename rebind_traits<_Alloc, splay_tree_node_>::pointer
+	node_pointer;
+
+      typedef typename rebind_traits<_Alloc, splay_tree_node_>::size_type
+	size_type;
 
       inline bool
       special() const
@@ -117,6 +118,7 @@ namespace __gnu_pbds
       node_pointer m_p_left;
       node_pointer m_p_right;
       node_pointer m_p_parent;
+      size_type m_subtree_size;
       value_type m_value;
       bool m_special;
     };

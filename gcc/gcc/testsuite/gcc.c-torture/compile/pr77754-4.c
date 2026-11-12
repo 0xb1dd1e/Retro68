@@ -1,3 +1,4 @@
+// { dg-require-effective-target indirect_calls }
 /* PR c/77754 */
 
 int fn3();

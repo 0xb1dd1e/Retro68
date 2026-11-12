@@ -24,7 +24,6 @@ else version (WatchOS)
     version = Darwin;
 
 extern (C):
-@system:
 nothrow:
 @nogc:
 
@@ -149,10 +148,12 @@ version (GNUFP)
         alias fexcept_t = uint;
     }
     // https://sourceware.org/git/?p=glibc.git;a=blob;f=sysdeps/sparc/fpu/bits/fenv.h
-    else version (SPARC64)
+    else version (SPARC_Any)
     {
-        alias fenv_t = ulong;
-        alias fexcept_t = ulong;
+        import core.stdc.config : c_ulong;
+
+        alias fenv_t = c_ulong;
+        alias fexcept_t = c_ulong;
     }
     // https://sourceware.org/git/?p=glibc.git;a=blob;f=sysdeps/s390/fpu/bits/fenv.h
     else version (IBMZ_Any)
@@ -165,21 +166,19 @@ version (GNUFP)
 
         alias fexcept_t = uint;
     }
+    else version (LoongArch64)
+    {
+        struct fenv_t
+        {
+            uint   __fp_control_register;
+        }
+
+        alias fexcept_t = uint;
+    }
     else
     {
         static assert(0, "Unimplemented architecture");
     }
-}
-else version (CRuntime_DigitalMars)
-{
-    struct fenv_t
-    {
-        ushort    status;
-        ushort    control;
-        ushort    round;
-        ushort[2] reserved;
-    }
-    alias fexcept_t = int;
 }
 else version (CRuntime_Microsoft)
 {
@@ -195,8 +194,8 @@ else version (Darwin)
 {
     version (BigEndian)
     {
-        alias uint fenv_t;
-        alias uint fexcept_t;
+        alias fenv_t = uint;
+        alias fexcept_t = uint;
     }
     version (LittleEndian)
     {
@@ -208,7 +207,7 @@ else version (Darwin)
             byte[8] __reserved;
         }
 
-        alias ushort fexcept_t;
+        alias fexcept_t = ushort;
     }
 }
 else version (FreeBSD)
@@ -223,7 +222,7 @@ else version (FreeBSD)
         byte[16] __other;
     }
 
-    alias ushort fexcept_t;
+    alias fexcept_t = ushort;
 }
 else version (NetBSD)
 {
@@ -237,7 +236,7 @@ else version (NetBSD)
                     uint status;        /* Status word register */
                     uint tag;           /* Tag word register */
                     uint[4] others;     /* EIP, Pointer Selector, etc */
-            };
+            }
             _x87 x87;
 
             uint mxcsr;                 /* Control and status register */
@@ -249,21 +248,21 @@ else version (NetBSD)
         {
             struct _x87
             {
-                    ushort control;       /* Control word register */
+                    ushort control;     /* Control word register */
                     ushort unused1;
-                    ushort status;        /* Status word register */
+                    ushort status;      /* Status word register */
                     ushort unused2;
-                    ushort tag;           /* Tag word register */
+                    ushort tag;         /* Tag word register */
                     ushort unused3;
                     uint[4] others;     /* EIP, Pointer Selector, etc */
-            };
+            }
             _x87 x87;
-            uint32_t mxcsr;                 /* Control and status register */
-        };
+            uint mxcsr;                 /* Control and status register */
+        }
 
     }
 
-    alias uint fexcept_t;
+    alias fexcept_t = uint;
 }
 else version (OpenBSD)
 {
@@ -291,13 +290,13 @@ else version (DragonFlyBSD)
                 uint status;
                 uint tag;
                 uint[4] others;
-        };
+        }
         _x87 x87;
 
         uint mxcsr;
     }
 
-    alias uint fexcept_t;
+    alias fexcept_t = uint;
 }
 else version (CRuntime_Bionic)
 {
@@ -313,12 +312,12 @@ else version (CRuntime_Bionic)
             byte[16] __other;
         }
 
-        alias ushort fexcept_t;
+        alias fexcept_t = ushort;
     }
     else version (ARM)
     {
-        alias uint fenv_t;
-        alias uint fexcept_t;
+        alias fenv_t = uint;
+        alias fexcept_t = uint;
     }
     else version (AArch64)
     {
@@ -328,7 +327,7 @@ else version (CRuntime_Bionic)
             uint   __status;
         }
 
-        alias uint fexcept_t;
+        alias fexcept_t = uint;
     }
     else version (X86_64)
     {
@@ -346,7 +345,7 @@ else version (CRuntime_Bionic)
             uint __mxcsr;
         }
 
-        alias uint fexcept_t;
+        alias fexcept_t = uint;
     }
     else
     {
@@ -371,11 +370,48 @@ else version (Solaris)
         c_ulong                     __fsr;
     }
 
-    alias int fexcept_t;
+    alias fexcept_t = int;
 }
 else version (CRuntime_Musl)
 {
-    version (X86_64)
+    version (AArch64)
+    {
+        struct fenv_t
+        {
+            uint __fpcr;
+            uint __fpsr;
+        }
+        alias fexcept_t = uint;
+    }
+    else version (ARM)
+    {
+        import core.stdc.config : c_ulong;
+
+        struct fenv_t
+        {
+            c_ulong __cw;
+        }
+        alias fexcept_t = c_ulong;
+    }
+    else version (IBMZ_Any)
+    {
+        alias fenv_t = uint;
+        alias fexcept_t = uint;
+    }
+    else version (MIPS_Any)
+    {
+        struct fenv_t
+        {
+            uint __cw;
+        }
+        alias fexcept_t = ushort;
+    }
+    else version (PPC_Any)
+    {
+        alias fenv_t = double;
+        alias fexcept_t = uint;
+    }
+    else version (X86_Any)
     {
         struct fenv_t
         {
@@ -391,13 +427,70 @@ else version (CRuntime_Musl)
             uint   __data_offset;
             ushort __data_selector;
             ushort __unused5;
-            uint   __mxcsr;
+            version (X86_64)
+                uint __mxcsr;
         }
-        alias ushort fexcept_t;
+        alias fexcept_t = ushort;
+    }
+    else version (LoongArch64)
+    {
+        struct fenv_t
+        {
+            uint __cw;
+        }
+        alias fexcept_t = uint;
+    }
+    else version (RICV64)
+    {
+        alias fenv_t = uint;
+        alias fexcept_t = uint;
     }
     else
     {
         static assert(false, "Architecture not supported.");
+    }
+}
+else version (CRuntime_Newlib)
+{
+    version (AArch64)
+    {
+        alias fenv_t = ulong;
+        alias fexcept_t = ulong;
+    }
+    else version (RISCV_Any)
+    {
+        alias fenv_t = size_t;
+        alias fexcept_t = size_t;
+    }
+    else version (X86_Any)
+    {
+        struct fenv_t
+        {
+            uint _fpu_cw;
+            uint _fpu_sw;
+            uint _fpu_tagw;
+            uint _fpu_ipoff;
+            uint _fpu_ipsel;
+            uint _fpu_opoff;
+            uint _fpu_opsel;
+            uint _sse_mxcsr;
+        }
+        alias fexcept_t = uint;
+    }
+    else version (SPARC64)
+    {
+        alias fenv_t = ulong;
+        alias fexcept_t = ulong;
+    }
+    else version (SPARC)
+    {
+        alias fenv_t = uint;
+        alias fexcept_t = uint;
+    }
+    else
+    {
+        alias fenv_t = int;
+        alias fexcept_t = int;
     }
 }
 else version (CRuntime_UClibc)
@@ -443,7 +536,7 @@ else version (CRuntime_UClibc)
 
         alias fexcept_t = ushort;
     }
-    else version (MIPS32)
+    else version (MIPS_Any)
     {
         struct fenv_t
         {
@@ -747,6 +840,28 @@ else
             FE_TOWARDZERO   = 0x1, ///
         }
     }
+    else version (LoongArch64)
+    {
+        // Define bits representing exceptions in the Flags field in FCSR{0,2}.
+        enum
+        {
+            FE_INEXACT      = 0x010000, ///
+            FE_UNDERFLOW    = 0x020000, ///
+            FE_OVERFLOW     = 0x040000, ///
+            FE_DIVBYZERO    = 0x080000, ///
+            FE_INVALID      = 0x100000, ///
+            FE_ALL_EXCEPT   = 0x1f0000, ///
+        }
+
+        // Define bits representing rounding modes in the RM field in FCSR{0,3}.
+        enum
+        {
+            FE_TONEAREST    = 0x000, ///
+            FE_TOWARDZERO   = 0x100, ///
+            FE_UPWARD       = 0x200, ///
+            FE_DOWNWARD     = 0x300, ///
+        }
+    }
     else
     {
         static assert(0, "Unimplemented architecture");
@@ -758,12 +873,6 @@ version (GNUFP)
 {
     ///
     enum FE_DFL_ENV = cast(fenv_t*)(-1);
-}
-else version (CRuntime_DigitalMars)
-{
-    private extern __gshared fenv_t _FE_DFL_ENV;
-    ///
-    enum fenv_t* FE_DFL_ENV = &_FE_DFL_ENV;
 }
 else version (CRuntime_Microsoft)
 {
@@ -839,7 +948,7 @@ int feholdexcept(fenv_t* envp);
 ///
 int fegetexceptflag(fexcept_t* flagp, int excepts);
 ///
-int fesetexceptflag(in fexcept_t* flagp, int excepts);
+int fesetexceptflag(const scope fexcept_t* flagp, int excepts);
 
 ///
 int fegetround();
@@ -849,7 +958,7 @@ int fesetround(int round);
 ///
 int fegetenv(fenv_t* envp);
 ///
-int fesetenv(in fenv_t* envp);
+int fesetenv(const scope fenv_t* envp);
 
 // MS define feraiseexcept() and feupdateenv() inline.
 version (CRuntime_Microsoft) // supported since MSVCRT 12 (VS 2013) only
@@ -863,7 +972,7 @@ version (CRuntime_Microsoft) // supported since MSVCRT 12 (VS 2013) only
             double num;
             double denom;
         }
-        static __gshared immutable(Entry[5]) table =
+        static immutable Entry[5] table =
         [ // Raise exception by evaluating num / denom:
             { FE_INVALID,   0.0,    0.0    },
             { FE_DIVBYZERO, 1.0,    0.0    },
@@ -887,7 +996,7 @@ version (CRuntime_Microsoft) // supported since MSVCRT 12 (VS 2013) only
     }
 
     ///
-    int feupdateenv()(in fenv_t* envp)
+    int feupdateenv()(const scope fenv_t* envp)
     {
         int excepts = fetestexcept(FE_ALL_EXCEPT);
         return (fesetenv(envp) != 0 || feraiseexcept(excepts) != 0 ? 1 : 0);
@@ -898,5 +1007,5 @@ else
     ///
     int feraiseexcept(int excepts);
     ///
-    int feupdateenv(in fenv_t* envp);
+    int feupdateenv(const scope fenv_t* envp);
 }

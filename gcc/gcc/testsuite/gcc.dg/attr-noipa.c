@@ -1,10 +1,9 @@
 /* Test the noipa attribute.  */
 /* { dg-do compile } */
 /* { dg-options "-O2 -fdump-tree-optimized" } */
-/* { dg-require-effective-target alloca } */
 
 static inline int __attribute__((noipa))
-fn1 (void) /* { dg-warning "inline function \[^\n\]* given attribute noinline" "" } */
+fn1 (void) /* { dg-warning "inline function \[^\n\]* given attribute 'noinline'" "" } */
 {
   return 1;
 }

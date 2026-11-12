@@ -1,5 +1,5 @@
 // -*- C++ -*- The GNU C++ exception personality routine.
-// Copyright (C) 2001-2019 Free Software Foundation, Inc.
+// Copyright (C) 2001-2026 Free Software Foundation, Inc.
 //
 // This file is part of GCC.
 //
@@ -93,7 +93,15 @@ get_ttype_entry (lsda_header_info *info, _uleb128_t i)
   _Unwind_Ptr ptr;
 
   i *= size_of_encoded_value (info->ttype_encoding);
-  read_encoded_value_with_base (info->ttype_encoding, info->ttype_base,
+  read_encoded_value_with_base (
+#if __FDPIC__
+				/* Force these flags to make sure to
+				   take the GOT into account.  */
+				(DW_EH_PE_pcrel | DW_EH_PE_indirect),
+#else
+				info->ttype_encoding,
+#endif
+				info->ttype_base,
 				info->TType - i, &ptr);
 
   return reinterpret_cast<const std::type_info *>(ptr);
@@ -122,7 +130,7 @@ check_exception_spec(lsda_header_info* info, _throw_typet* throw_type,
       _uleb128_t tmp;
 
       tmp = *e;
-      
+
       // Zero signals the end of the list.  If we've not found
       // a match by now, then we've failed the specification.
       if (tmp == 0)
@@ -584,6 +592,10 @@ PERSONALITY_FUNCTION (int version,
 	      // Zero filter values are cleanups.
 	      saw_cleanup = true;
 	    }
+	  else if (actions == _UA_CLEANUP_PHASE)
+	    // We checked the handlers in the search phase; if one of them
+	    // matched, actions would also have _UA_HANDLER_FRAME set.
+	    ;
 	  else if (ar_filter > 0)
 	    {
 	      // Positive filter values are handlers.
@@ -654,7 +666,7 @@ PERSONALITY_FUNCTION (int version,
     }
 
  install_context:
-  
+
   // We can't use any of the cxa routines with foreign exceptions,
   // because they all expect ue_header to be a struct __cxa_exception.
   // So in that case, call terminate or unexpected directly.
@@ -665,10 +677,13 @@ PERSONALITY_FUNCTION (int version,
 	std::terminate ();
       else if (handler_switch_value < 0)
 	{
-	  __try 
-	    { std::unexpected (); } 
-	  __catch(...) 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+	  __try
+	    { std::unexpected (); }
+	  __catch(...)
 	    { std::terminate (); }
+#pragma GCC diagnostic pop
 	}
     }
   else
@@ -687,7 +702,7 @@ PERSONALITY_FUNCTION (int version,
 #ifdef __ARM_EABI_UNWINDER__
 	  const _Unwind_Word* e;
 	  _Unwind_Word n;
-	  
+
 	  e = ((const _Unwind_Word*) info.TType) - handler_switch_value - 1;
 	  // Count the number of rtti objects.
 	  n = 0;
@@ -756,9 +771,9 @@ __cxa_call_unexpected (void *exc_obj_in)
   xh_terminate_handler = xh->terminateHandler;
   info.ttype_base = (_Unwind_Ptr) xh->catchTemp;
 
-  __try 
-    { __unexpected (xh->unexpectedHandler); } 
-  __catch(...) 
+  __try
+    { __unexpected (xh->unexpectedHandler); }
+  __catch(...)
     {
       // Get the exception thrown from unexpected.
 
@@ -782,7 +797,7 @@ __cxa_call_unexpected (void *exc_obj_in)
       const std::type_info &bad_exc = typeid (std::bad_exception);
       if (check_exception_spec (&info, &bad_exc, 0, xh_switch_value))
 	throw std::bad_exception();
-#endif   
+#endif
 
       // Otherwise, die.
       __terminate (xh_terminate_handler);

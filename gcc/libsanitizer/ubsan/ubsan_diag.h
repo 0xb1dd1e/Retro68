@@ -1,7 +1,8 @@
 //===-- ubsan_diag.h --------------------------------------------*- C++ -*-===//
 //
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -16,26 +17,6 @@
 #include "sanitizer_common/sanitizer_symbolizer.h"
 
 namespace __ubsan {
-
-class SymbolizedStackHolder {
-  SymbolizedStack *Stack;
-
-  void clear() {
-    if (Stack)
-      Stack->ClearAll();
-  }
-
-public:
-  explicit SymbolizedStackHolder(SymbolizedStack *Stack = nullptr)
-      : Stack(Stack) {}
-  ~SymbolizedStackHolder() { clear(); }
-  void reset(SymbolizedStack *S) {
-    if (Stack != S)
-      clear();
-    Stack = S;
-  }
-  const SymbolizedStack *get() const { return Stack; }
-};
 
 SymbolizedStack *getSymbolizedLocation(uptr PC);
 
@@ -232,9 +213,6 @@ bool ignoreReport(SourceLocation SLoc, ReportOptions Opts, ErrorType ET);
 #define GET_REPORT_OPTIONS(unrecoverable_handler) \
     GET_CALLER_PC_BP; \
     ReportOptions Opts = {unrecoverable_handler, pc, bp}
-
-void GetStackTrace(BufferedStackTrace *stack, uptr max_depth, uptr pc, uptr bp,
-                   void *context, bool fast);
 
 /// \brief Instantiate this class before printing diagnostics in the error
 /// report. This class ensures that reports from different threads and from

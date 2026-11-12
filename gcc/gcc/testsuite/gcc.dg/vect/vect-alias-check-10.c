@@ -45,6 +45,7 @@ typedef unsigned long long ull;
   }
 
 #define DO_TEST(TYPE)					\
+  _Pragma("GCC novector")				\
   for (int j = -M; j <= M; ++j)				\
     {							\
       TYPE a[N * M], b[N * M];				\
@@ -65,3 +66,6 @@ main (void)
   FOR_EACH_TYPE (DO_TEST)
   return 0;
 }
+
+/* { dg-final { scan-tree-dump-not "using an address-based" "vect" } } */
+/* { dg-final { scan-tree-dump-not "using an index-based" "vect" } } */

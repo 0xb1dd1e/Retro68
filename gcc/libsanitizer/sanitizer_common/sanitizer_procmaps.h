@@ -1,7 +1,8 @@
 //===-- sanitizer_procmaps.h ------------------------------------*- C++ -*-===//
 //
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -14,17 +15,18 @@
 
 #include "sanitizer_platform.h"
 
-#if SANITIZER_LINUX || SANITIZER_FREEBSD || SANITIZER_NETBSD ||                \
-    SANITIZER_OPENBSD || SANITIZER_MAC || SANITIZER_SOLARIS
+#if SANITIZER_LINUX || SANITIZER_FREEBSD || SANITIZER_NETBSD || \
+    SANITIZER_APPLE || SANITIZER_SOLARIS || SANITIZER_HAIKU ||  \
+    SANITIZER_FUCHSIA
 
 #include "sanitizer_common.h"
 #include "sanitizer_internal_defs.h"
+#include "sanitizer_fuchsia.h"
 #include "sanitizer_linux.h"
 #include "sanitizer_mac.h"
 #include "sanitizer_mutex.h"
 
 namespace __sanitizer {
-
 
 // Memory protection masks.
 static const uptr kProtectionRead = 1;
@@ -36,7 +38,7 @@ struct MemoryMappedSegmentData;
 
 class MemoryMappedSegment {
  public:
-  MemoryMappedSegment(char *buff = nullptr, uptr size = 0)
+  explicit MemoryMappedSegment(char *buff = nullptr, uptr size = 0)
       : filename(buff), filename_size(size), data_(nullptr) {}
   ~MemoryMappedSegment() {}
 
@@ -63,12 +65,37 @@ class MemoryMappedSegment {
   MemoryMappedSegmentData *data_;
 };
 
-class MemoryMappingLayout {
+struct ImageHeader;
+
+class MemoryMappingLayoutBase {
+ public:
+  virtual bool Next(MemoryMappedSegment *segment) { UNIMPLEMENTED(); }
+  virtual bool Error() const { UNIMPLEMENTED(); };
+  virtual void Reset() { UNIMPLEMENTED(); }
+
+ protected:
+  ~MemoryMappingLayoutBase() {}
+};
+
+class MemoryMappingLayout : public MemoryMappingLayoutBase {
  public:
   explicit MemoryMappingLayout(bool cache_enabled);
+
+// This destructor cannot be virtual, as it would cause an operator new() linking
+// failures in hwasan test cases. However non-virtual destructors emit warnings
+// in macOS build, hence disabling those
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnon-virtual-dtor"
+#endif
   ~MemoryMappingLayout();
-  bool Next(MemoryMappedSegment *segment);
-  void Reset();
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+
+  virtual bool Next(MemoryMappedSegment *segment) override;
+  virtual bool Error() const override;
+  virtual void Reset() override;
   // In some cases, e.g. when running under a sandbox on Linux, ASan is unable
   // to obtain the memory mappings. It should fall back to pre-cached data
   // instead of aborting.
@@ -77,10 +104,14 @@ class MemoryMappingLayout {
   // Adds all mapped objects into a vector.
   void DumpListOfModules(InternalMmapVectorNoCtor<LoadedModule> *modules);
 
+ protected:
+#if SANITIZER_APPLE
+  virtual const ImageHeader *CurrentImageHeader();
+#endif
+  MemoryMappingLayoutData data_;
+
  private:
   void LoadFromCache();
-
-  MemoryMappingLayoutData data_;
 };
 
 // Returns code range for the specified module.

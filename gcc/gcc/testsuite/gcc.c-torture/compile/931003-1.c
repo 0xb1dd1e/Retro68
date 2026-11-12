@@ -1,3 +1,6 @@
+/* { dg-require-stack-size "52*8" } */
+/* { dg-additional-options "-std=gnu89" } */
+
 f (n, a)
      int n;
      double a[];

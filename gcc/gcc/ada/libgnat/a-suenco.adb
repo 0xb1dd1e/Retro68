@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2010-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 2010-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -391,14 +391,14 @@ package body Ada.Strings.UTF_Encoding.Conversions is
 
             Result (Len + 1) :=
               Character'Val
-                (2#11110_000# or (Shift_Right (zzzzz, 2)));
+                (2#11110_000# or Shift_Right (zzzzz, 2));
             Result (Len + 2) :=
               Character'Val
                 (2#10_000000# or Shift_Left (zzzzz and 2#11#, 4)
                               or Shift_Right (yyyyyyyy, 4));
             Result (Len + 3) :=
               Character'Val
-                (2#10_000000# or Shift_Left (yyyyyyyy and 2#1111#, 4)
+                (2#10_000000# or Shift_Left (yyyyyyyy and 2#1111#, 2)
                               or Shift_Right (xxxxxxxx, 6));
             Result (Len + 4) :=
               Character'Val

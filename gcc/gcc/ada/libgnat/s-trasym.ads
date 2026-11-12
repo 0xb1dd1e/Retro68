@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---                     Copyright (C) 1999-2019, AdaCore                     --
+--                     Copyright (C) 1999-2026, AdaCore                     --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -33,7 +33,8 @@
 
 --  The full capability is currently supported on the following targets:
 
---     GNU/Linux x86, x86_64, ia64
+--     GNU/Linux x86, x86_64
+--     Windows x86, x86_64
 
 --  Note: on targets other than those listed above, a dummy implementation
 --  of the body returns a series of LF separated strings of the form "0x..."
@@ -71,10 +72,6 @@
 --  executable. You should consider using gdb to obtain symbolic traceback in
 --  such cases.
 
-pragma Polling (Off);
---  We must turn polling off for this unit, because otherwise we can get
---  elaboration circularities when polling is turned on.
-
 with Ada.Exceptions;
 
 package System.Traceback.Symbolic is
@@ -108,4 +105,7 @@ package System.Traceback.Symbolic is
    --  with default value), but backward compatibility for direct calls
    --  is supported.
 
+   function Calling_Entity return String;
+   --  Return the name of the caller of the current subprogram if it's
+   --  available. Otherwise return "???".
 end System.Traceback.Symbolic;

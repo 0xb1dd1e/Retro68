@@ -10,11 +10,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -99,21 +95,12 @@ char _ctype_b[128 + 256] = {
 /* For backward compatibility */
 char __EXPORT *__ctype_ptr__ = DEFAULT_CTYPE_PTR;
 
-#    ifdef __x86_64__
 __asm__ ("					\n\
         .data					\n\
 	.globl  _ctype_				\n\
 	.set    _ctype_,_ctype_b+127		\n\
 	.text                                   \n\
 ");
-#    else
-__asm__ ("					\n\
-        .data					\n\
-	.globl  __ctype_			\n\
-	.set    __ctype_,__ctype_b+127		\n\
-	.text                                   \n\
-");
-#    endif
 #  else /* !__CYGWIN__ */
 
 const char _ctype_[1 + 256] = {

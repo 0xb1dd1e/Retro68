@@ -1,5 +1,5 @@
 /* Machine description for AArch64 architecture.
-   Copyright (C) 2009-2019 Free Software Foundation, Inc.
+   Copyright (C) 2009-2026 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of GCC.
@@ -29,8 +29,12 @@
 #undef  ASAN_CC1_SPEC
 #define ASAN_CC1_SPEC "%{%:sanitize(address):-funwind-tables}"
 
-#undef  CC1_SPEC
-#define CC1_SPEC GNU_USER_TARGET_CC1_SPEC ASAN_CC1_SPEC
+#undef CC1_SPEC
+#define CC1_SPEC GNU_USER_TARGET_CC1_SPEC ASAN_CC1_SPEC \
+    AARCH64_ERRATA_COMPILE_SPEC
+
+#undef CC1PLUS_SPEC
+#define CC1PLUS_SPEC AARCH64_ERRATA_COMPILE_SPEC
 
 #define CPP_SPEC "%{pthread:-D_REENTRANT}"
 
@@ -44,30 +48,15 @@
    %{static-pie:-Bstatic -pie --no-dynamic-linker -z text} \
    -X						\
    %{mbig-endian:-EB} %{mlittle-endian:-EL}     \
-   -maarch64linux%{mabi=ilp32:32}%{mbig-endian:b}"
+   -maarch64linux%{mabi=ilp32:32}%{mbig-endian:b} \
+   %{%:sanitize(memtag-stack):%{!fsanitize-memtag-mode:-z memtag-stack -z memtag-mode=sync}} \
+   %{%:sanitize(memtag-stack):%{fsanitize-memtag-mode=*:-z memtag-stack -z memtag-mode=%}}"
 
-#if TARGET_FIX_ERR_A53_835769_DEFAULT
-#define CA53_ERR_835769_SPEC \
-  " %{!mno-fix-cortex-a53-835769:--fix-cortex-a53-835769}"
-#else
-#define CA53_ERR_835769_SPEC \
-  " %{mfix-cortex-a53-835769:--fix-cortex-a53-835769}"
-#endif
 
-#if TARGET_FIX_ERR_A53_843419_DEFAULT
-#define CA53_ERR_843419_SPEC \
-  " %{!mno-fix-cortex-a53-843419:--fix-cortex-a53-843419}"
-#else
-#define CA53_ERR_843419_SPEC \
-  " %{mfix-cortex-a53-843419:--fix-cortex-a53-843419}"
-#endif
-
-#define LINK_SPEC LINUX_TARGET_LINK_SPEC \
-                  CA53_ERR_835769_SPEC \
-                  CA53_ERR_843419_SPEC
+#define LINK_SPEC LINUX_TARGET_LINK_SPEC AARCH64_ERRATA_LINK_SPEC
 
 #define GNU_USER_TARGET_MATHFILE_SPEC \
-  "%{Ofast|ffast-math|funsafe-math-optimizations:crtfastmath.o%s}"
+  "%{Ofast|ffast-math|funsafe-math-optimizations:%{!shared:crtfastmath.o%s}}"
 
 #undef ENDFILE_SPEC
 #define ENDFILE_SPEC   \
@@ -80,8 +69,6 @@
 	GNU_USER_TARGET_OS_CPP_BUILTINS();	\
     }						\
   while (0)
-
-#define GNU_USER_TARGET_D_CRITSEC_SIZE 48
 
 #define TARGET_ASM_FILE_END aarch64_file_end_indicate_exec_stack
 

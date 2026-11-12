@@ -5,7 +5,7 @@
  *
  * Authors: Stewart Gordon
  * License: $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source: $(DRUNTIMESRC src/core/sys/windows/_rapi.d)
+ * Source: $(DRUNTIMESRC core/sys/windows/_rapi.d)
  */
 module core.sys.windows.rapi;
 version (Windows):
@@ -15,7 +15,7 @@ version (Windows):
    really part of Platform SDK.
  */
 
-private import core.sys.windows.winbase, core.sys.windows.windef;
+import core.sys.windows.winbase, core.sys.windows.windef;
 
 extern (Windows):
 
@@ -30,7 +30,7 @@ interface IRAPIStream
     HRESULT GetRapiStat(RAPISTREAMFLAG, DWORD*);
 }
 
-alias HRESULT function(DWORD, BYTE, DWORD, BYTE, IRAPIStream) RAPIEXT;
+alias RAPIEXT = HRESULT function(DWORD, BYTE, DWORD, BYTE, IRAPIStream);
 
 struct RAPIINIT
 {

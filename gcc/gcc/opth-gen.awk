@@ -1,4 +1,4 @@
-#  Copyright (C) 2003-2019 Free Software Foundation, Inc.
+#  Copyright (C) 2003-2026 Free Software Foundation, Inc.
 #  Contributed by Kelley Cook, June 2004.
 #  Original code from Neil Booth, May 2003.
 #
@@ -137,6 +137,7 @@ n_opt_short = 0;
 n_opt_int = 0;
 n_opt_enum = 0;
 n_opt_other = 0;
+n_opt_explicit = 4;
 var_opt_char[0] = "unsigned char x_optimize";
 var_opt_char[1] = "unsigned char x_optimize_size";
 var_opt_char[2] = "unsigned char x_optimize_debug";
@@ -152,6 +153,7 @@ for (i = 0; i < n_opts; i++) {
 			continue;
 
 		var_opt_seen[name]++;
+		n_opt_explicit++;
 		otype = var_type_struct(flags[i]);
 		if (otype ~ "^((un)?signed +)?int *$")
 			var_opt_int[n_opt_int++] = otype "x_" name;
@@ -190,6 +192,9 @@ for (i = 0; i < n_opt_char; i++) {
 	print "  " var_opt_char[i] ";";
 }
 
+print "  /* " n_opt_explicit " members */";
+print "  unsigned HOST_WIDE_INT explicit_mask[" int ((n_opt_explicit + 63) / 64) "];";
+
 print "};";
 print "";
 
@@ -203,6 +208,8 @@ n_target_short = 0;
 n_target_int = 0;
 n_target_enum = 0;
 n_target_other = 0;
+n_target_explicit = n_extra_target_vars;
+n_target_explicit_mask = 0;
 
 for (i = 0; i < n_target_save; i++) {
 	if (target_save_decl[i] ~ "^((un)?signed +)?int +[_" alnum "]+$")
@@ -232,7 +239,14 @@ if (have_save) {
 				continue;
 
 			var_save_seen[name]++;
+			n_target_explicit++;
 			otype = var_type_struct(flags[i])
+
+			if (opt_args("Mask", flags[i]) != "" \
+			    || opt_args("InverseMask", flags[i]))
+				var_target_explicit_mask[n_target_explicit_mask++] \
+				    = otype "explicit_mask_" name;
+
 			if (otype ~ "^((un)?signed +)?int *$")
 				var_target_int[n_target_int++] = otype "x_" name;
 
@@ -251,6 +265,9 @@ if (have_save) {
 	}
 } else {
 	var_target_int[n_target_int++] = "int x_target_flags";
+	n_target_explicit++;
+	var_target_explicit_mask[n_target_explicit_mask++] \
+	    = "int explicit_mask_target_flags";
 }
 
 for (i = 0; i < n_target_other; i++) {
@@ -273,14 +290,24 @@ for (i = 0; i < n_target_char; i++) {
 	print "  " var_target_char[i] ";";
 }
 
+print "  /* " n_target_explicit - n_target_explicit_mask " members */";
+if (n_target_explicit > n_target_explicit_mask) {
+	print "  unsigned HOST_WIDE_INT explicit_mask[" \
+	  int ((n_target_explicit - n_target_explicit_mask + 63) / 64) "];";
+}
+
+for (i = 0; i < n_target_explicit_mask; i++) {
+	print "  " var_target_explicit_mask[i] ";";
+}
+
 print "};";
 print "";
 print "";
 print "/* Save optimization variables into a structure.  */"
-print "extern void cl_optimization_save (struct cl_optimization *, struct gcc_options *);";
+print "extern void cl_optimization_save (struct cl_optimization *, struct gcc_options *, struct gcc_options *);";
 print "";
 print "/* Restore optimization variables from a structure.  */";
-print "extern void cl_optimization_restore (struct gcc_options *, struct cl_optimization *);";
+print "extern void cl_optimization_restore (struct gcc_options *, struct gcc_options *, struct cl_optimization *);";
 print "";
 print "/* Print optimization variables from a structure.  */";
 print "extern void cl_optimization_print (FILE *, int, struct cl_optimization *);";
@@ -289,10 +316,10 @@ print "/* Print different optimization variables from structures provided as arg
 print "extern void cl_optimization_print_diff (FILE *, int, cl_optimization *ptr1, cl_optimization *ptr2);";
 print "";
 print "/* Save selected option variables into a structure.  */"
-print "extern void cl_target_option_save (struct cl_target_option *, struct gcc_options *);";
+print "extern void cl_target_option_save (struct cl_target_option *, struct gcc_options *, struct gcc_options *);";
 print "";
 print "/* Restore selected option variables from a structure.  */"
-print "extern void cl_target_option_restore (struct gcc_options *, struct cl_target_option *);";
+print "extern void cl_target_option_restore (struct gcc_options *, struct gcc_options *, struct cl_target_option *);";
 print "";
 print "/* Print target option variables from a structure.  */";
 print "extern void cl_target_option_print (FILE *, int, struct cl_target_option *);";
@@ -303,6 +330,9 @@ print "";
 print "/* Compare two target option variables from a structure.  */";
 print "extern bool cl_target_option_eq (const struct cl_target_option *, const struct cl_target_option *);";
 print "";
+print "/* Free heap memory used by target option variables.  */";
+print "extern void cl_target_option_free (struct cl_target_option *);";
+print "";
 print "/* Hash option variables from a structure.  */";
 print "extern hashval_t cl_target_option_hash (const struct cl_target_option *);";
 print "";
@@ -311,6 +341,12 @@ print "extern hashval_t cl_optimization_hash (const struct cl_optimization *);";
 print "";
 print "/* Compare two optimization options.  */";
 print "extern bool cl_optimization_option_eq (cl_optimization const *ptr1, cl_optimization const *ptr2);"
+print "";
+print "/* Free heap memory used by optimization options.  */";
+print "extern void cl_optimization_option_free (cl_optimization *ptr1);"
+print "";
+print "/* Compare and report difference for a part of cl_optimization options.  */";
+print "extern void cl_optimization_compare (gcc_options *ptr1, gcc_options *ptr2);";
 print "";
 print "/* Generator files may not have access to location_t, and don't need these.  */"
 print "#if defined(UNKNOWN_LOCATION)"
@@ -321,7 +357,7 @@ print "                           const struct cl_decoded_option *decoded,   "
 print "                           unsigned int lang_mask, int kind,          "
 print "                           location_t loc,                            "
 print "                           const struct cl_option_handlers *handlers, "
-print "                           diagnostic_context *dc);                   "
+print "                           diagnostics::context *dc);                   "
 for (i = 0; i < n_langs; i++) {
     lang_name = lang_sanitized_name(langs[i]);
     print "bool"
@@ -332,7 +368,7 @@ for (i = 0; i < n_langs; i++) {
     print "                           unsigned int lang_mask, int kind,"
     print "                           location_t loc,"
     print "                           const struct cl_option_handlers *handlers,"
-    print "                           diagnostic_context *dc);"
+    print "                           diagnostics::context *dc);"
 }
 print "void cpp_handle_option_auto (const struct gcc_options * opts, size_t scode,"
 print "                             struct cpp_options * cpp_opts);"
@@ -370,6 +406,18 @@ for (i = 0; i < n_extra_masks; i++) {
 		print "#define MASK_" extra_masks[i] " (1U << " masknum[""]++ ")"
 }
 
+for (i = 0; i < n_target_vars; i++)
+{
+	if (find_index(target_vars[i], extra_target_vars, n_extra_target_vars) == n_extra_target_vars)
+		continue
+	for (j = 0; j < n_other_mask[i]; j++)
+	{
+		print "#define MASK_" other_masks[i "," j] " (1U << " other_masknum[i]++ ")"
+	}
+	if (other_masknum[i] > 32)
+		print "#error too many target masks for" extra_target_vars[i]
+}
+
 for (var in masknum) {
 	if (var != "" && host_wide_int[var] == "yes") {
 		print "#if defined(HOST_BITS_PER_WIDE_INT) && " masknum[var] " > HOST_BITS_PER_WIDE_INT"
@@ -381,6 +429,20 @@ for (var in masknum) {
 			print "#error too many target masks"
 		else
 			print "#error too many masks for " var
+	}
+}
+for (i = 0; i < n_target_vars; i++)
+{
+	if (find_index(target_vars[i], extra_target_vars, n_extra_target_vars) == n_extra_target_vars)
+		continue
+	for (j = 0; j < n_other_mask[i]; j++)
+	{
+		print "#define TARGET_" other_masks[i "," j] \
+		      " ((" target_vars[i] " & MASK_" other_masks[i "," j] ") != 0)"
+		print "#define TARGET_" other_masks[i "," j] "_P(" target_vars[i] ")" \
+		      " (((" target_vars[i] ") & MASK_" other_masks[i "," j] ") != 0)"
+		print "#define TARGET_" other_masks[i "," j] "_OPTS_P(opts)" \
+		      " (((opts->x_" target_vars[i] ") & MASK_" other_masks[i "," j] ") != 0)"
 	}
 }
 print ""
@@ -403,16 +465,30 @@ for (i = 0; i < n_opts; i++) {
 			mask = "MASK_"
 			extra_mask_macros[name] = 1
 		}
+		original_name = name
+		gsub("ISA_", "", name)
+		gsub("ISA2_", "", name)
+		print "/* " original_name " mask */"
 		print "#define TARGET_" name \
-		      " ((" vname " & " mask name ") != 0)"
+		      " ((" vname " & " mask original_name ") != 0)"
 		print "#define TARGET_" name "_P(" vname ")" \
-		      " (((" vname ") & " mask name ") != 0)"
+		      " (((" vname ") & " mask original_name ") != 0)"
+		print "#define TARGET_" name "_OPTS_P(opts)" \
+		      " (((opts->x_" vname ") & " mask original_name ") != 0)"
+		print "#define TARGET_EXPLICIT_" name "_P(opts)" \
+		      " ((opts->x_" vname "_explicit & " mask original_name ") != 0)"
+		print "#define SET_TARGET_" name "(opts) opts->x_" vname " |= " mask original_name
 	}
 }
 for (i = 0; i < n_extra_masks; i++) {
-	if (extra_mask_macros[extra_masks[i]] == 0)
+	if (extra_mask_macros[extra_masks[i]] == 0) {
 		print "#define TARGET_" extra_masks[i] \
 		      " ((target_flags & MASK_" extra_masks[i] ") != 0)"
+		print "#define TARGET_" extra_masks[i] "_P(target_flags)" \
+		      " (((target_flags) & " extra_masks[i] ") != 0)"
+		print "#define TARGET_" extra_masks[i] "_OPTS_P(opts)" \
+		      " (((opts->x_target_flags) & MASK_" extra_masks[i] ") != 0)"
+	}
 }
 print ""
 
@@ -494,7 +570,7 @@ for (i = 0; i < n_opts; i++) {
 print "  N_OPTS,"
 print "  OPT_SPECIAL_unknown,"
 print "  OPT_SPECIAL_ignore,"
-print "  OPT_SPECIAL_deprecated,"
+print "  OPT_SPECIAL_warn_removed,"
 print "  OPT_SPECIAL_program_name,"
 print "  OPT_SPECIAL_input_file"
 print "};"

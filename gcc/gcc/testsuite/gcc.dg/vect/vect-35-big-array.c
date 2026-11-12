@@ -1,4 +1,5 @@
 /* { dg-require-effective-target vect_int } */
+/* { dg-additional-options "-fdump-tree-optimized-details-blocks" } */
 
 #include <stdarg.h>
 #include "tree-vect.h"
@@ -20,16 +21,13 @@ int main1 ()
       s.b[i] = i;
     }
 
-  /* Dependence analysis fails cause s.a and s.b may overlap.
-     Try to use runtime aliasing test with versioning, and
-     later versioning/vectorization are skipped because the
-     overlap is proven at compilation time.  */
   for (i = 0; i < N; i++)
     {
       s.a[i] = s.b[i] + 1;
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
       if (s.a[i] != i + 1)
@@ -47,5 +45,5 @@ int main (void)
 }
 
 
-/* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect"  { xfail { ia64-*-* sparc*-*-* } } } } */
-/* { dg-final { scan-tree-dump "can't determine dependence between" "vect" } } */
+/* { dg-final { scan-tree-dump-times "vectorized 2 loops" 1 "vect"  { xfail { ia64-*-* sparc*-*-* } } } } */
+/* { dg-final { scan-tree-dump-not "Invalid sum" "optimized" } } */

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -23,37 +23,42 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with Atree;    use Atree;
-with Casing;   use Casing;
-with Checks;   use Checks;
-with Debug;    use Debug;
-with Einfo;    use Einfo;
-with Errout;   use Errout;
-with Exp_Ch11; use Exp_Ch11;
-with Exp_Util; use Exp_Util;
-with Expander; use Expander;
-with Inline;   use Inline;
-with Lib;      use Lib;
-with Namet;    use Namet;
-with Nlists;   use Nlists;
-with Nmake;    use Nmake;
-with Opt;      use Opt;
-with Restrict; use Restrict;
-with Rident;   use Rident;
-with Rtsfind;  use Rtsfind;
-with Sem;      use Sem;
-with Sem_Aux;  use Sem_Aux;
-with Sem_Ch8;  use Sem_Ch8;
-with Sem_Prag; use Sem_Prag;
-with Sem_Util; use Sem_Util;
-with Sinfo;    use Sinfo;
-with Sinput;   use Sinput;
-with Snames;   use Snames;
-with Stringt;  use Stringt;
-with Stand;    use Stand;
-with Tbuild;   use Tbuild;
-with Uintp;    use Uintp;
-with Validsw;  use Validsw;
+with Atree;          use Atree;
+with Casing;         use Casing;
+with Checks;         use Checks;
+with Debug;          use Debug;
+with Einfo.Entities; use Einfo.Entities;
+with Einfo.Utils;    use Einfo.Utils;
+with Elists;         use Elists;
+with Errout;         use Errout;
+with Exp_Ch11;       use Exp_Ch11;
+with Exp_Util;       use Exp_Util;
+with Inline;         use Inline;
+with Lib;            use Lib;
+with Namet;          use Namet;
+with Nlists;         use Nlists;
+with Nmake;          use Nmake;
+with Opt;            use Opt;
+with Restrict;       use Restrict;
+with Rident;         use Rident;
+with Rtsfind;        use Rtsfind;
+with Sem;            use Sem;
+with Sem_Aux;        use Sem_Aux;
+with Sem_Ch8;        use Sem_Ch8;
+with Sem_Prag;       use Sem_Prag;
+with Sem_Util;       use Sem_Util;
+with Sinfo.Nodes;    use Sinfo.Nodes;
+with Sinfo.Utils;    use Sinfo.Utils;
+with Sinput;         use Sinput;
+with Snames;         use Snames;
+with Stringt;        use Stringt;
+with Stand;          use Stand;
+with Tbuild;         use Tbuild;
+with Uintp;          use Uintp;
+with Validsw;        use Validsw;
+with Warnsw;         use Warnsw;
+
+with System.Case_Util; use System.Case_Util;
 
 package body Exp_Prag is
 
@@ -61,14 +66,13 @@ package body Exp_Prag is
    -- Local Subprograms --
    -----------------------
 
-   function Arg1 (N : Node_Id) return Node_Id;
-   function Arg2 (N : Node_Id) return Node_Id;
-   function Arg3 (N : Node_Id) return Node_Id;
+   function Arg_N (N : Node_Id; Arg_Number : Positive) return Node_Id;
    --  Obtain specified pragma argument expression
 
    procedure Expand_Pragma_Abort_Defer             (N : Node_Id);
    procedure Expand_Pragma_Check                   (N : Node_Id);
    procedure Expand_Pragma_Common_Object           (N : Node_Id);
+   procedure Expand_Pragma_CUDA_Execute            (N : Node_Id);
    procedure Expand_Pragma_Import_Or_Interface     (N : Node_Id);
    procedure Expand_Pragma_Inspection_Point        (N : Node_Id);
    procedure Expand_Pragma_Interrupt_Priority      (N : Node_Id);
@@ -84,80 +88,30 @@ package body Exp_Prag is
    --  these cases we want no initialization to occur, but we have already done
    --  the initialization by the time we see the pragma, so we have to undo it.
 
-   ----------
-   -- Arg1 --
-   ----------
+   -----------
+   -- Arg_N --
+   -----------
 
-   function Arg1 (N : Node_Id) return Node_Id is
-      Arg : constant Node_Id := First (Pragma_Argument_Associations (N));
+   function Arg_N (N : Node_Id; Arg_Number : Positive) return Node_Id is
+      Arg : Node_Id := First (Pragma_Argument_Associations (N));
    begin
-      if Present (Arg)
-        and then Nkind (Arg) = N_Pragma_Argument_Association
-      then
-         return Expression (Arg);
-      else
-         return Arg;
-      end if;
-   end Arg1;
-
-   ----------
-   -- Arg2 --
-   ----------
-
-   function Arg2 (N : Node_Id) return Node_Id is
-      Arg1 : constant Node_Id := First (Pragma_Argument_Associations (N));
-
-   begin
-      if No (Arg1) then
+      if No (Arg) then
          return Empty;
-
-      else
-         declare
-            Arg : constant Node_Id := Next (Arg1);
-         begin
-            if Present (Arg)
-              and then Nkind (Arg) = N_Pragma_Argument_Association
-            then
-               return Expression (Arg);
-            else
-               return Arg;
-            end if;
-         end;
       end if;
-   end Arg2;
 
-   ----------
-   -- Arg3 --
-   ----------
+      for J in 2 .. Arg_Number loop
+         Next (Arg);
+         if No (Arg) then
+            return Empty;
+         end if;
+      end loop;
 
-   function Arg3 (N : Node_Id) return Node_Id is
-      Arg1 : constant Node_Id := First (Pragma_Argument_Associations (N));
-
-   begin
-      if No (Arg1) then
+      if Present (Arg) then
+         return Get_Pragma_Arg (Arg);
+      else
          return Empty;
-
-      else
-         declare
-            Arg : Node_Id := Next (Arg1);
-         begin
-            if No (Arg) then
-               return Empty;
-
-            else
-               Next (Arg);
-
-               if Present (Arg)
-                 and then Nkind (Arg) = N_Pragma_Argument_Association
-               then
-                  return Expression (Arg);
-               else
-                  return Arg;
-               end if;
-            end if;
-         end;
       end if;
-   end Arg3;
+   end Arg_N;
 
    ---------------------
    -- Expand_N_Pragma --
@@ -169,7 +123,7 @@ package body Exp_Prag is
 
    begin
       --  Suppress the expansion of an ignored assertion pragma. Such a pragma
-      --  should not be transformed into a null statment because:
+      --  should not be transformed into a null statement because:
       --
       --    * The pragma may be part of the rep item chain of a type, in which
       --      case rewriting it will destroy the chain.
@@ -178,7 +132,9 @@ package body Exp_Prag is
       --      Analyze_xxx_In_Decl_Part). The second part of the analysis will
       --      not happen if the pragma is rewritten.
 
-      if Assertion_Expression_Pragma (Prag_Id) and then Is_Ignored (N) then
+      if Assertion_Expression_Pragma (Prag_Id)
+        and then Is_Ignored_In_Codegen (N)
+      then
          return;
 
       --  Rewrite the pragma into a null statement when it is ignored using
@@ -187,7 +143,7 @@ package body Exp_Prag is
 
       elsif Should_Ignore_Pragma_Sem (N)
         or else (Prag_Id = Pragma_Default_Scalar_Storage_Order
-                  and then Ignore_Rep_Clauses)
+                 and then Ignore_Rep_Clauses)
       then
          Rewrite (N, Make_Null_Statement (Sloc (N)));
          return;
@@ -205,6 +161,9 @@ package body Exp_Prag is
 
          when Pragma_Common_Object =>
             Expand_Pragma_Common_Object (N);
+
+         when Pragma_CUDA_Execute =>
+            Expand_Pragma_CUDA_Execute (N);
 
          when Pragma_Import =>
             Expand_Pragma_Import_Or_Interface (N);
@@ -230,8 +189,7 @@ package body Exp_Prag is
          when Pragma_Suppress_Initialization =>
             Expand_Pragma_Suppress_Initialization (N);
 
-         --  All other pragmas need no expander action (includes
-         --  Unknown_Pragma).
+         --  All other pragmas need no expander action
 
          when others => null;
       end case;
@@ -312,29 +270,21 @@ package body Exp_Prag is
       end;
    end Expand_Pragma_Abort_Defer;
 
+   -------------------------------------
+   -- Expand_Pragma_Always_Terminates --
+   -------------------------------------
+
+   procedure Expand_Pragma_Always_Terminates (Prag : Node_Id) is
+      pragma Unreferenced (Prag);
+   begin
+      null;
+   end Expand_Pragma_Always_Terminates;
+
    --------------------------
    -- Expand_Pragma_Check --
    --------------------------
 
    procedure Expand_Pragma_Check (N : Node_Id) is
-      Cond : constant Node_Id := Arg2 (N);
-      Nam  : constant Name_Id := Chars (Arg1 (N));
-      Msg  : Node_Id;
-
-      Loc : constant Source_Ptr := Sloc (First_Node (Cond));
-      --  Source location used in the case of a failed assertion: point to the
-      --  failing condition, not Loc. Note that the source location of the
-      --  expression is not usually the best choice here, because it points to
-      --  the location of the topmost tree node, which may be an operator in
-      --  the middle of the source text of the expression. For example, it gets
-      --  located on the last AND keyword in a chain of boolean expressiond
-      --  AND'ed together. It is best to put the message on the first character
-      --  of the condition, which is the effect of the First_Node call here.
-      --  This source location is used to build the default exception message,
-      --  and also as the sloc of the call to the runtime subprogram raising
-      --  Assert_Failure, so that coverage analysis tools can relate the
-      --  call to the failed check.
-
       procedure Replace_Discriminals_Of_Protected_Op (Expr : Node_Id);
       --  Discriminants of the enclosing protected object may be referenced
       --  in the expression of a precondition of a protected operation.
@@ -347,6 +297,94 @@ package body Exp_Prag is
       --  because the condition has been replaced by a Check pragma and
       --  analyzed earlier, before the creation of the discriminal renaming
       --  declarations that are added to the subprogram body.
+
+      function Make_Failure_Message
+        (Nam  : Name_Id;
+         Cond : Node_Id)
+         return Node_Id;
+      --  Build node with a string literal of a message for check Nam with
+      --  condition Cond failing at runtime.
+
+      --------------------------
+      -- Make_Failure_Message --
+      --------------------------
+
+      function Make_Failure_Message
+        (Nam  : Name_Id;
+         Cond : Node_Id)
+         return Node_Id
+      is
+         Loc     : constant Source_Ptr := Sloc (First_Node (Cond));
+         Loc_Str : constant String := Build_Location_String (Loc);
+
+      begin
+         Name_Len := 0;
+
+         --  For Assert, we just use the location
+
+         if Nam = Name_Assert then
+            null;
+
+         --  For predicate, we generate the string "predicate failed at yyy".
+         --  We prefer all lower case for predicate.
+
+         elsif Nam = Name_Predicate then
+            Add_Str_To_Name_Buffer ("predicate failed at ");
+
+         --  For special case of Precondition/Postcondition the string is
+         --  "failed xx from yy" where xx is precondition/postcondition in all
+         --  lower case. The reason for this different wording is that the
+         --  failure is not at the point of occurrence of the pragma, unlike
+         --  the other Check cases.
+
+         elsif Nam in Name_Pre
+                    | Name_Precondition
+                    | Name_Post
+                    | Name_Postcondition
+         then
+            Add_Str_To_Name_Buffer ("failed ");
+
+            --  Enhance information for inherited pragmas
+
+            if Comes_From_Inherited_Pragma (Loc) then
+               Add_Str_To_Name_Buffer ("inherited ");
+            end if;
+
+            if Nam = Name_Pre then
+               Get_Name_String_And_Append (Name_Precondition);
+            elsif Nam = Name_Post then
+               Get_Name_String_And_Append (Name_Postcondition);
+            else
+               Get_Name_String_And_Append (Nam);
+            end if;
+
+            Add_Str_To_Name_Buffer (" from ");
+
+         --  For special case of Invariant, the string is "failed invariant
+         --  from yy", to be consistent with the string that is generated for
+         --  the aspect case (the code later on checks for this specific string
+         --  to modify it in some cases, so this is functionally important).
+
+         elsif Nam = Name_Invariant then
+            Add_Str_To_Name_Buffer ("failed invariant from ");
+
+         --  For all other checks, the string is "xxx failed at yyy"
+         --  where xxx is the check name with appropriate casing.
+
+         else
+            Get_Name_String (Nam);
+            Set_Casing (Identifier_Casing (Source_Index (Current_Sem_Unit)));
+            Add_Str_To_Name_Buffer (" failed at ");
+         end if;
+
+         --  In all cases, add location string
+
+         Add_Str_To_Name_Buffer (Loc_Str);
+
+         --  Build the message
+
+         return Make_String_Literal (Loc, Name_Buffer (1 .. Name_Len));
+      end Make_Failure_Message;
 
       ------------------------------------------
       -- Replace_Discriminals_Of_Protected_Op --
@@ -416,12 +454,32 @@ package body Exp_Prag is
          Replace_Discriminant_References (Expr);
       end Replace_Discriminals_Of_Protected_Op;
 
+      --  Local variables
+
+      Cond : constant Node_Id := Arg_N (N, 2);
+      Nam  : constant Name_Id := Chars (Arg_N (N, 1));
+      Msg  : Node_Id;
+
+      Loc : constant Source_Ptr := Sloc (First_Node (Cond));
+      --  Source location used in the case of a failed assertion: point to the
+      --  failing condition, not Loc. Note that the source location of the
+      --  expression is not usually the best choice here, because it points to
+      --  the location of the topmost tree node, which may be an operator in
+      --  the middle of the source text of the expression. For example, it gets
+      --  located on the last AND keyword in a chain of boolean expressions
+      --  AND'ed together. It is best to put the message on the first character
+      --  of the condition, which is the effect of the First_Node call here.
+      --  This source location is used to build the default exception message,
+      --  and also as the sloc of the call to the runtime subprogram raising
+      --  Assert_Failure, so that coverage analysis tools can relate the
+      --  call to the failed check.
+
    --  Start of processing for Expand_Pragma_Check
 
    begin
       --  Nothing to do if pragma is ignored
 
-      if Is_Ignored (N) then
+      if Is_Ignored_In_Codegen (N) then
          return;
       end if;
 
@@ -470,90 +528,38 @@ package body Exp_Prag is
 
       --  Generate the appropriate if statement. Note that we consider this to
       --  be an explicit conditional in the source, not an implicit if, so we
-      --  do not call Make_Implicit_If_Statement.
+      --  do not call Make_Implicit_If_Statement. Note also that we wrap the
+      --  raise statement in a block statement so that, if the condition is
+      --  evaluated at compile time to False, then the rewriting of the if
+      --  statement will not involve the raise but the block statement, and
+      --  thus not leave a dangling reference to the raise statement in the
+      --  Local_Raise_Statements list of the handler.
 
       --  Case where we generate a direct raise
 
       if ((Debug_Flag_Dot_G
             or else Restriction_Active (No_Exception_Propagation))
            and then Present (Find_Local_Handler (RTE (RE_Assert_Failure), N)))
-        or else (Opt.Exception_Locations_Suppressed and then No (Arg3 (N)))
+        or else (Opt.Exception_Locations_Suppressed and then No (Arg_N (N, 3)))
       then
          Rewrite (N,
            Make_If_Statement (Loc,
              Condition       => Make_Op_Not (Loc, Right_Opnd => Cond),
              Then_Statements => New_List (
-               Make_Raise_Statement (Loc,
-                 Name => New_Occurrence_Of (RTE (RE_Assert_Failure), Loc)))));
+               Make_Block_Statement (Loc,
+                 Handled_Statement_Sequence =>
+                   Make_Handled_Sequence_Of_Statements (Loc,
+                     Statements => New_List (
+                       Make_Raise_Statement (Loc,
+                         Name =>
+                           New_Occurrence_Of (RTE (RE_Assert_Failure),
+                                                                   Loc))))))));
+
+         Set_Comes_From_Check_Or_Contract (N);
 
       --  Case where we call the procedure
 
       else
-         --  If we have a message given, use it
-
-         if Present (Arg3 (N)) then
-            Msg := Get_Pragma_Arg (Arg3 (N));
-
-         --  Here we have no string, so prepare one
-
-         else
-            declare
-               Loc_Str : constant String := Build_Location_String (Loc);
-
-            begin
-               Name_Len := 0;
-
-               --  For Assert, we just use the location
-
-               if Nam = Name_Assert then
-                  null;
-
-               --  For predicate, we generate the string "predicate failed at
-               --  yyy". We prefer all lower case for predicate.
-
-               elsif Nam = Name_Predicate then
-                  Add_Str_To_Name_Buffer ("predicate failed at ");
-
-               --  For special case of Precondition/Postcondition the string is
-               --  "failed xx from yy" where xx is precondition/postcondition
-               --  in all lower case. The reason for this different wording is
-               --  that the failure is not at the point of occurrence of the
-               --  pragma, unlike the other Check cases.
-
-               elsif Nam_In (Nam, Name_Precondition, Name_Postcondition) then
-                  Get_Name_String (Nam);
-                  Insert_Str_In_Name_Buffer ("failed ", 1);
-                  Add_Str_To_Name_Buffer (" from ");
-
-               --  For special case of Invariant, the string is "failed
-               --  invariant from yy", to be consistent with the string that is
-               --  generated for the aspect case (the code later on checks for
-               --  this specific string to modify it in some cases, so this is
-               --  functionally important).
-
-               elsif Nam = Name_Invariant then
-                  Add_Str_To_Name_Buffer ("failed invariant from ");
-
-               --  For all other checks, the string is "xxx failed at yyy"
-               --  where xxx is the check name with appropriate casing.
-
-               else
-                  Get_Name_String (Nam);
-                  Set_Casing
-                    (Identifier_Casing (Source_Index (Current_Sem_Unit)));
-                  Add_Str_To_Name_Buffer (" failed at ");
-               end if;
-
-               --  In all cases, add location string
-
-               Add_Str_To_Name_Buffer (Loc_Str);
-
-               --  Build the message
-
-               Msg := Make_String_Literal (Loc, Name_Buffer (1 .. Name_Len));
-            end;
-         end if;
-
          --  For a precondition, replace references to discriminants of a
          --  protected type with the local discriminals.
 
@@ -566,14 +572,86 @@ package body Exp_Prag is
 
          --  Now rewrite as an if statement
 
-         Rewrite (N,
-           Make_If_Statement (Loc,
-             Condition       => Make_Op_Not (Loc, Right_Opnd => Cond),
-             Then_Statements => New_List (
-               Make_Procedure_Call_Statement (Loc,
-                 Name                   =>
-                   New_Occurrence_Of (RTE (RE_Raise_Assert_Failure), Loc),
-                 Parameter_Associations => New_List (Relocate_Node (Msg))))));
+         declare
+            function Make_Elsif_Check (Conj : Node_Id) return Node_Id;
+            --  Create an elsif part that checks a conjunct expression Conj and
+            --  emits a message with the exact location when the check fails.
+
+            ----------------------
+            -- Make_Elsif_Check --
+            ----------------------
+
+            function Make_Elsif_Check (Conj : Node_Id) return Node_Id is
+            begin
+               return
+                 Make_Elsif_Part (Loc,
+                   Condition       =>
+                     Make_Op_Not (Loc,
+                       Relocate_Node (Conj)),
+                   Then_Statements =>
+                     New_List (
+                       Make_Procedure_Call_Statement (Loc,
+                         Name                   =>
+                           New_Occurrence_Of
+                             (RTE (RE_Raise_Assert_Failure), Loc),
+                       Parameter_Associations =>
+                         New_List (
+                           Make_Failure_Message (Nam, Conj)))));
+            end Make_Elsif_Check;
+
+            Conjunct : Node_Id := Cond;
+            Elsifs   : List_Id := No_List;
+
+         begin
+            --  If we have a message given, use it
+
+            if Present (Arg_N (N, 3)) then
+               Msg := Get_Pragma_Arg (Arg_N (N, 3));
+
+            --  If check is for a Pre/Post expression of the form "A and then
+            --  B", then we split condition into separate conjuncts with
+            --  messages pointing to their exact locations, i.e.:
+            --
+            --    if not A then
+            --       Raise_Assert_Failure ("failed pre/post from [sloc of A]");
+            --    elsif not B then then
+            --       Raise_Assert_Failure ("failed pre/post from [sloc of B]");
+            --    end if;
+            --
+            --  This makes it easier to debug a failed complex contract.
+
+            else
+               if Nam in Name_Pre
+                       | Name_Precondition
+                       | Name_Post
+                       | Name_Postcondition
+               then
+                  while Nkind (Conjunct) = N_And_Then loop
+                     Prepend_New_To (Elsifs,
+                       Make_Elsif_Check (Right_Opnd (Conjunct)));
+                     Conjunct := Left_Opnd (Conjunct);
+                  end loop;
+               end if;
+
+               Msg := Make_Failure_Message (Nam, Conjunct);
+            end if;
+
+            Rewrite (N,
+              Make_If_Statement (Loc,
+                Condition       =>
+                  Make_Op_Not (Loc, Relocate_Node (Conjunct)),
+                Then_Statements =>
+                  New_List (
+                    Make_Procedure_Call_Statement (Loc,
+                      Name                   =>
+                        New_Occurrence_Of
+                          (RTE (RE_Raise_Assert_Failure), Loc),
+                    Parameter_Associations =>
+                      New_List (Msg))),
+                Elsif_Parts     => Elsifs));
+
+            Set_Comes_From_Check_Or_Contract (N);
+         end;
       end if;
 
       Analyze (N);
@@ -592,10 +670,17 @@ package body Exp_Prag is
          then
             null;
 
+         --  For Subprogram_Variant suppress the warning altogether, because
+         --  for mutually recursive subprograms with multiple variant clauses
+         --  some of the clauses might have expressions that are only meant for
+         --  verification and would always fail when executed.
+
+         elsif Nam = Name_Subprogram_Variant then
+            null;
          elsif Nam = Name_Assert then
-            Error_Msg_N ("?A?assertion will fail at run time", N);
+            Error_Msg_N ("?.a?assertion will fail at run time", N);
          else
-            Error_Msg_N ("?A?check will fail at run time", N);
+            Error_Msg_N ("?.a?check will fail at run time", N);
          end if;
       end if;
    end Expand_Pragma_Check;
@@ -615,8 +700,8 @@ package body Exp_Prag is
    procedure Expand_Pragma_Common_Object (N : Node_Id) is
       Loc : constant Source_Ptr := Sloc (N);
 
-      Internal : constant Node_Id := Arg1 (N);
-      External : constant Node_Id := Arg2 (N);
+      Internal : constant Node_Id := Arg_N (N, 1);
+      External : constant Node_Id := Arg_N (N, 2);
 
       Psect : Node_Id;
       --  Psect value upper cased as string literal
@@ -635,14 +720,14 @@ package body Exp_Prag is
             Get_Name_String (Chars (External));
          end if;
 
-         Set_All_Upper_Case;
+         Set_Casing (All_Upper_Case);
 
          Psect :=
            Make_String_Literal (Eloc, Strval => String_From_Name_Buffer);
 
       else
          Get_Name_String (Chars (Internal));
-         Set_All_Upper_Case;
+         Set_Casing (All_Upper_Case);
          Psect :=
            Make_String_Literal (Iloc, Strval => String_From_Name_Buffer);
       end if;
@@ -663,6 +748,577 @@ package body Exp_Prag is
             Make_Pragma_Argument_Association (Ploc,
               Expression => New_Copy_Tree (Psect)))));
    end Expand_Pragma_Common_Object;
+
+   --------------------------------
+   -- Expand_Pragma_CUDA_Execute --
+   --------------------------------
+
+   --  Pragma CUDA_Execute is expanded in the following manner:
+
+   --  Original Code
+
+   --    pragma CUDA_Execute (My_Proc (X, Y), Blocks, Grids, Mem, Stream)
+
+   --  Expanded Code
+
+   --    declare
+   --      Blocks_Id : CUDA.Vector_Types.Dim3 := Blocks;
+   --      Grids_Id  : CUDA.Vector_Types.Dim3 := Grids;
+   --      Mem_Id    : Integer := <Mem or 0>;
+   --      Stream_Id : CUDA.Driver_Types.Stream_T := <Stream or null>;
+   --      X_Id      : <Type of X> := X;
+   --      Y_Id      : <Type of Y> := Y;
+   --      Arg_Id    : Array (1..2) of System.Address :=
+   --        (X'Address,_Id Y'Address);_Id
+   --    begin
+   --      CUDA.Internal.Push_Call_Configuration (
+   --        Grids_Id,
+   --        Blocks_Id,
+   --        Mem_Id,
+   --        Stream_Id);
+   --      CUDA.Internal.Pop_Call_Configuration (
+   --        Grids_Id'address,
+   --        Blocks_Id'address,
+   --        Mem_Id'address,
+   --        Stream_Id'address),
+   --      CUDA.Internal.Launch_Kernel (
+   --        My_Proc'Address,
+   --        Blocks_Id,
+   --        Grids_Id,
+   --        Arg_Id'Address,
+   --        Mem_Id,
+   --        Stream_Id);
+   --    end;
+
+   procedure Expand_Pragma_CUDA_Execute (N : Node_Id) is
+
+      Loc : constant Source_Ptr := Sloc (N);
+
+      procedure Append_Copies
+        (Params : List_Id;
+         Decls  : List_Id;
+         Copies : Elist_Id);
+      --  For each parameter in list Params, create an object declaration of
+      --  the following form:
+      --
+      --    Copy_Id : Param_Typ := Param_Val;
+      --
+      --  Param_Typ is the type of the parameter. Param_Val is the initial
+      --  value of the parameter. The declarations are stored in Decls, the
+      --  entities of the new objects are collected in list Copies.
+
+      function Build_Dim3_Declaration
+        (Decl_Id  : Entity_Id;
+         Init_Val : Node_Id) return Node_Id;
+      --  Build an object declaration of the form
+      --
+      --    Decl_Id : CUDA.Internal.Dim3 := Val;
+      --
+      --  Val depends on the nature of Init_Val, as follows:
+      --
+      --    * If Init_Val is of type CUDA.Vector_Types.Dim3, then Val has the
+      --      following form:
+      --
+      --        (Interfaces.C.Unsigned (Val.X),
+      --         Interfaces.C.Unsigned (Val.Y),
+      --         Interfaces.C.Unsigned (Val.Z))
+      --
+      --    * If Init_Val is a single Integer, Val has the following form:
+      --
+      --        (Interfaces.C.Unsigned (Init_Val),
+      --         Interfaces.C.Unsigned (1),
+      --         Interfaces.C.Unsigned (1))
+      --
+      --    * If Init_Val is an aggregate of three values, Val has the
+      --      following form:
+      --
+      --        (Interfaces.C.Unsigned (Val_1),
+      --         Interfaces.C.Unsigned (Val_2),
+      --         Interfaces.C.Unsigned (Val_3))
+
+      function Build_Kernel_Args_Declaration
+        (Kernel_Arg : Entity_Id;
+         Var_Ids    : Elist_Id) return Node_Id;
+      --  Given a list of variables, return an object declaration of the
+      --  following form:
+      --
+      --    Kernel_Arg : ... := (Var_1'Address, ..., Var_N'Address);
+
+      function Build_Launch_Kernel_Call
+        (Proc       : Entity_Id;
+         Grid_Dims  : Entity_Id;
+         Block_Dims : Entity_Id;
+         Kernel_Arg : Entity_Id;
+         Memory     : Entity_Id;
+         Stream     : Entity_Id) return Node_Id;
+      --  Builds and returns a call to CUDA.Internal.Launch_Kernel using the
+      --  given arguments. Proc is the entity of the procedure passed to the
+      --  CUDA_Execute pragma. Grid_Dims and Block_Dims are entities of the
+      --  generated declarations that hold the kernel's dimensions. Args is the
+      --  entity of the temporary array that holds the arguments of the kernel.
+      --  Memory and Stream are the entities of the temporaries that hold the
+      --  fourth and fith arguments of CUDA_Execute or their default values.
+
+      function Build_Shared_Memory_Declaration
+        (Decl_Id  : Entity_Id;
+         Init_Val : Node_Id) return Node_Id;
+      --  Builds a declaration the Defining_Identifier of which is Decl_Id, the
+      --  type of which is inferred from CUDA.Internal.Launch_Kernel and the
+      --  value of which is Init_Val if present or null if not.
+
+      function Build_Simple_Declaration_With_Default
+        (Decl_Id     : Entity_Id;
+         Init_Val    : Node_Id;
+         Typ         : Node_Id;
+         Default_Val : Node_Id) return Node_Id;
+      --  Build a declaration the Defining_Identifier of which is Decl_Id, the
+      --  Object_Definition of which is Typ, the value of which is Init_Val if
+      --  present or Default otherwise.
+
+      function Build_Stream_Declaration
+        (Decl_Id  : Entity_Id;
+         Init_Val : Node_Id) return Node_Id;
+      --  Build a declaration the Defining_Identifier of which is Decl_Id, the
+      --  type of which is Integer, the value of which is Init_Val if present
+      --  and 0 otherwise.
+
+      function Etype_Or_Dim3 (N : Node_Id) return Node_Id;
+      --  If N is an aggregate whose type is unknown, return a new occurrence
+      --  of the public Dim3 type. Otherwise, return a new occurrence of N's
+      --  type.
+
+      function Get_Nth_Arg_Type
+        (Subprogram : Entity_Id;
+         N          : Positive) return Entity_Id;
+      --  Returns the type of the Nth argument of Subprogram
+
+      function To_Addresses (Elmts : Elist_Id) return List_Id;
+      --  Returns a new list containing each element of Elmts wrapped in an
+      --  'address attribute reference. When passed No_Elist, returns an empty
+      --  list.
+
+      -------------------
+      -- Append_Copies --
+      -------------------
+
+      procedure Append_Copies
+        (Params : List_Id;
+         Decls  : List_Id;
+         Copies : Elist_Id)
+      is
+         Copy  : Entity_Id;
+         Param : Node_Id;
+         Expr  : Node_Id;
+      begin
+         Param := First (Params);
+         while Present (Param) loop
+            Copy := Make_Temporary (Loc, 'C');
+
+            if Nkind (Param) = N_Parameter_Association then
+               Expr := Explicit_Actual_Parameter (Param);
+            else
+               Expr := Param;
+            end if;
+
+            Append_To (Decls,
+               Make_Object_Declaration (Loc,
+                 Defining_Identifier => Copy,
+                 Object_Definition   => New_Occurrence_Of (Etype (Expr), Loc),
+                 Expression          => New_Copy_Tree (Expr)));
+
+            Append_Elmt (Copy, Copies);
+            Next (Param);
+         end loop;
+      end Append_Copies;
+
+      ----------------------------
+      -- Build_Dim3_Declaration --
+      ----------------------------
+
+      function Build_Dim3_Declaration
+        (Decl_Id  : Entity_Id;
+         Init_Val : Node_Id) return Node_Id
+      is
+         --  Expressions for each component of the returned Dim3
+         Dim_X : Node_Id;
+         Dim_Y : Node_Id;
+         Dim_Z : Node_Id;
+
+         --  Type of CUDA.Internal.Dim3 - inferred from
+         --  RE_Push_Call_Configuration to avoid needing changes in GNAT when
+         --  the CUDA bindings change (this happens frequently).
+         Internal_Dim3 : constant Entity_Id :=
+           Get_Nth_Arg_Type (RTE (RE_Push_Call_Configuration), 1);
+
+         --  Entities for each component of external and internal Dim3
+         First_Component  : Entity_Id := First_Entity (RTE (RE_Dim3));
+         Second_Component : Entity_Id := Next_Entity (First_Component);
+         Third_Component  : Entity_Id := Next_Entity (Second_Component);
+
+      begin
+         --  Sem_prag.adb ensured that Init_Val is either a Dim3, an aggregate
+         --  of three Any_Integers or Any_Integer.
+
+         --  If Init_Val is a Dim3, use each of its components
+
+         if Etype (Init_Val) = RTE (RE_Dim3) then
+            Dim_X := Make_Selected_Component (Loc,
+              Prefix        => New_Occurrence_Of (Entity (Init_Val), Loc),
+              Selector_Name => New_Occurrence_Of (First_Component, Loc));
+
+            Dim_Y := Make_Selected_Component (Loc,
+              Prefix        => New_Occurrence_Of (Entity (Init_Val), Loc),
+              Selector_Name => New_Occurrence_Of (Second_Component, Loc));
+
+            Dim_Z := Make_Selected_Component (Loc,
+              Prefix        => New_Occurrence_Of (Entity (Init_Val), Loc),
+              Selector_Name => New_Occurrence_Of (Third_Component, Loc));
+         else
+            --  If Init_Val is an aggregate, use each of its arguments
+
+            if Nkind (Init_Val) = N_Aggregate then
+               Dim_X := First (Expressions (Init_Val));
+               Dim_Y := Next (Dim_X);
+               Dim_Z := Next (Dim_Y);
+
+            --  Otherwise, we know it is an integer and the rest defaults to 1
+
+            else
+               Dim_X := Init_Val;
+               Dim_Y := Make_Integer_Literal (Loc, 1);
+               Dim_Z := Make_Integer_Literal (Loc, 1);
+            end if;
+         end if;
+
+         First_Component  := First_Entity (Internal_Dim3);
+         Second_Component := Next_Entity (First_Component);
+         Third_Component  := Next_Entity (Second_Component);
+
+         --  Finally return the CUDA.Internal.Dim3 declaration with an
+         --  aggregate initialization expression.
+
+         return Make_Object_Declaration (Loc,
+            Defining_Identifier => Decl_Id,
+            Object_Definition   => New_Occurrence_Of (Internal_Dim3, Loc),
+            Expression          => Make_Aggregate (Loc,
+              Expressions => New_List (
+                 Make_Type_Conversion (Loc,
+                   Subtype_Mark =>
+                     New_Occurrence_Of (Etype (First_Component), Loc),
+                   Expression   => New_Copy_Tree (Dim_X)),
+                 Make_Type_Conversion (Loc,
+                   Subtype_Mark =>
+                     New_Occurrence_Of (Etype (Second_Component), Loc),
+                   Expression   => New_Copy_Tree (Dim_Y)),
+                 Make_Type_Conversion (Loc,
+                   Subtype_Mark =>
+                     New_Occurrence_Of (Etype (Third_Component), Loc),
+                   Expression   => New_Copy_Tree (Dim_Z)))));
+      end Build_Dim3_Declaration;
+
+      -----------------------------------
+      -- Build_Kernel_Args_Declaration --
+      -----------------------------------
+
+      function Build_Kernel_Args_Declaration
+        (Kernel_Arg : Entity_Id;
+         Var_Ids    : Elist_Id) return Node_Id
+      is
+         Vals : constant List_Id := To_Addresses (Var_Ids);
+      begin
+         return
+           Make_Object_Declaration (Loc,
+             Defining_Identifier => Kernel_Arg,
+             Object_Definition   =>
+               Make_Constrained_Array_Definition (Loc,
+                 Discrete_Subtype_Definitions => New_List (
+                   Make_Range (Loc,
+                     Low_Bound  => Make_Integer_Literal (Loc, 1),
+                     High_Bound =>
+                       Make_Integer_Literal (Loc, List_Length (Vals)))),
+                 Component_Definition         =>
+                   Make_Component_Definition (Loc,
+                     Subtype_Indication =>
+                       New_Occurrence_Of (Etype (RTE (RE_Address)), Loc))),
+             Expression          => Make_Aggregate (Loc, Vals));
+      end Build_Kernel_Args_Declaration;
+
+      -------------------------------
+      --  Build_Launch_Kernel_Call --
+      -------------------------------
+
+      function Build_Launch_Kernel_Call
+        (Proc       : Entity_Id;
+         Grid_Dims  : Entity_Id;
+         Block_Dims : Entity_Id;
+         Kernel_Arg : Entity_Id;
+         Memory     : Entity_Id;
+         Stream     : Entity_Id) return Node_Id is
+      begin
+         return
+           Make_Procedure_Call_Statement (Loc,
+             Name                   =>
+               New_Occurrence_Of (RTE (RE_Launch_Kernel), Loc),
+             Parameter_Associations => New_List (
+               Make_Attribute_Reference (Loc,
+                 Prefix         => New_Occurrence_Of (Proc, Loc),
+                 Attribute_Name => Name_Address),
+               New_Occurrence_Of (Grid_Dims, Loc),
+               New_Occurrence_Of (Block_Dims, Loc),
+               Make_Attribute_Reference (Loc,
+                 Prefix         => New_Occurrence_Of (Kernel_Arg, Loc),
+                 Attribute_Name => Name_Address),
+               New_Occurrence_Of (Memory, Loc),
+               New_Occurrence_Of (Stream, Loc)));
+      end Build_Launch_Kernel_Call;
+
+      -------------------------------------
+      -- Build_Shared_Memory_Declaration --
+      -------------------------------------
+
+      function Build_Shared_Memory_Declaration
+        (Decl_Id  : Entity_Id;
+         Init_Val : Node_Id) return Node_Id
+      is
+      begin
+         return Build_Simple_Declaration_With_Default
+           (Decl_Id     => Decl_Id,
+            Init_Val    => Init_Val,
+            Typ         =>
+              New_Occurrence_Of
+                (Get_Nth_Arg_Type (RTE (RE_Launch_Kernel), 5), Loc),
+            Default_Val => Make_Integer_Literal (Loc, 0));
+      end Build_Shared_Memory_Declaration;
+
+      -------------------------------------------
+      -- Build_Simple_Declaration_With_Default --
+      -------------------------------------------
+
+      function Build_Simple_Declaration_With_Default
+        (Decl_Id     : Entity_Id;
+         Init_Val    : Node_Id;
+         Typ         : Node_Id;
+         Default_Val : Node_Id) return Node_Id
+      is
+         Value : Node_Id := Init_Val;
+      begin
+         if No (Value) then
+            Value := Default_Val;
+         end if;
+
+         return Make_Object_Declaration (Loc,
+           Defining_Identifier => Decl_Id,
+           Object_Definition   => Typ,
+           Expression          => Value);
+      end Build_Simple_Declaration_With_Default;
+
+      ------------------------------
+      -- Build_Stream_Declaration --
+      ------------------------------
+
+      function Build_Stream_Declaration
+        (Decl_Id  : Entity_Id;
+         Init_Val : Node_Id) return Node_Id
+      is
+      begin
+         return Build_Simple_Declaration_With_Default
+           (Decl_Id     => Decl_Id,
+            Init_Val    => Init_Val,
+            Typ         =>
+              New_Occurrence_Of
+                (Get_Nth_Arg_Type (RTE (RE_Launch_Kernel), 6), Loc),
+            Default_Val => Make_Null (Loc));
+      end Build_Stream_Declaration;
+
+      -------------------
+      -- Etype_Or_Dim3 --
+      -------------------
+
+      function Etype_Or_Dim3 (N : Node_Id) return Node_Id is
+      begin
+         if Nkind (N) = N_Aggregate and then Is_Composite_Type (Etype (N)) then
+            return New_Occurrence_Of (RTE (RE_Dim3), Sloc (N));
+         end if;
+
+         return New_Occurrence_Of (Etype (N), Loc);
+      end Etype_Or_Dim3;
+
+      ----------------------
+      -- Get_Nth_Arg_Type --
+      ----------------------
+
+      function Get_Nth_Arg_Type
+        (Subprogram : Entity_Id;
+         N          : Positive) return Entity_Id
+      is
+         Argument : Entity_Id := First_Entity (Subprogram);
+      begin
+         for J in 2 .. N loop
+            Next_Entity (Argument);
+         end loop;
+
+         return Etype (Argument);
+      end Get_Nth_Arg_Type;
+
+      ------------------
+      -- To_Addresses --
+      ------------------
+
+      function To_Addresses (Elmts : Elist_Id) return List_Id is
+         Result : constant List_Id := New_List;
+         Elmt   : Elmt_Id;
+      begin
+         if No (Elmts) then
+            return Result;
+         end if;
+
+         Elmt := First_Elmt (Elmts);
+         while Present (Elmt) loop
+            Append_To (Result,
+              Make_Attribute_Reference (Loc,
+                Prefix         => New_Occurrence_Of (Node (Elmt), Loc),
+                Attribute_Name => Name_Address));
+            Next_Elmt (Elmt);
+         end loop;
+
+         return Result;
+      end To_Addresses;
+
+      --  Local variables
+
+      --  Pragma arguments
+
+      Procedure_Call   : constant Node_Id := Get_Pragma_Arg (Arg_N (N, 1));
+      Grid_Dimensions  : constant Node_Id := Get_Pragma_Arg (Arg_N (N, 2));
+      Block_Dimensions : constant Node_Id := Get_Pragma_Arg (Arg_N (N, 3));
+      Shared_Memory    : constant Node_Id := Get_Pragma_Arg (Arg_N (N, 4));
+      CUDA_Stream      : constant Node_Id := Get_Pragma_Arg (Arg_N (N, 5));
+
+      --  Entities of objects that will be overwritten by calls to cuda runtime
+      Grids_Id  : constant Entity_Id := Make_Temporary (Loc, 'C');
+      Blocks_Id : constant Entity_Id := Make_Temporary (Loc, 'C');
+      Memory_Id : constant Entity_Id := Make_Temporary (Loc, 'C');
+      Stream_Id : constant Entity_Id := Make_Temporary (Loc, 'C');
+
+      --  Entities of objects that capture the value of pragma arguments
+      Temp_Grid  : constant Entity_Id := Make_Temporary (Loc, 'C');
+      Temp_Block : constant Entity_Id := Make_Temporary (Loc, 'C');
+
+      --  Declarations for temporary block and grids. These needs to be stored
+      --  in temporary declarations as the expressions will need to be
+      --  referenced multiple times but could have side effects.
+      Temp_Grid_Decl : constant Node_Id := Make_Object_Declaration (Loc,
+        Defining_Identifier => Temp_Grid,
+        Object_Definition   => Etype_Or_Dim3 (Grid_Dimensions),
+        Expression          => Grid_Dimensions);
+      Temp_Block_Decl : constant Node_Id := Make_Object_Declaration (Loc,
+        Defining_Identifier => Temp_Block,
+        Object_Definition   => Etype_Or_Dim3 (Block_Dimensions),
+        Expression          => Block_Dimensions);
+
+      --  List holding the entities of the copies of Procedure_Call's arguments
+
+      Kernel_Arg_Copies : constant Elist_Id := New_Elmt_List;
+
+      --  Entity of the array that contains the address of each of the kernel's
+      --  arguments.
+
+      Kernel_Args_Id : constant Entity_Id := Make_Temporary (Loc, 'C');
+
+      --  Calls to the CUDA runtime API.
+
+      Launch_Kernel_Call : Node_Id;
+      Pop_Call           : Node_Id;
+      Push_Call          : Node_Id;
+
+      --  Declaration of all temporaries required for CUDA API Calls
+
+      Blk_Decls  : constant List_Id := New_List;
+
+   --  Start of processing for CUDA_Execute
+
+   begin
+      --  Append temporary declarations
+
+      Append_To (Blk_Decls, Temp_Grid_Decl);
+      Analyze (Temp_Grid_Decl);
+
+      Append_To (Blk_Decls, Temp_Block_Decl);
+      Analyze (Temp_Block_Decl);
+
+      --  Build parameter declarations for CUDA API calls
+
+      Append_To
+        (Blk_Decls,
+         Build_Dim3_Declaration
+           (Grids_Id, New_Occurrence_Of (Temp_Grid, Loc)));
+
+      Append_To
+        (Blk_Decls,
+         Build_Dim3_Declaration
+           (Blocks_Id, New_Occurrence_Of (Temp_Block, Loc)));
+
+      Append_To
+        (Blk_Decls,
+         Build_Shared_Memory_Declaration (Memory_Id, Shared_Memory));
+
+      Append_To
+        (Blk_Decls, Build_Stream_Declaration (Stream_Id, CUDA_Stream));
+
+      Append_Copies
+        (Parameter_Associations (Procedure_Call),
+         Blk_Decls,
+         Kernel_Arg_Copies);
+
+      Append_To
+        (Blk_Decls,
+         Build_Kernel_Args_Declaration
+           (Kernel_Args_Id, Kernel_Arg_Copies));
+
+      --  Build calls to the CUDA API
+
+      Push_Call :=
+         Make_Procedure_Call_Statement (Loc,
+           Name                   =>
+             New_Occurrence_Of (RTE (RE_Push_Call_Configuration), Loc),
+           Parameter_Associations => New_List (
+             New_Occurrence_Of (Grids_Id, Loc),
+             New_Occurrence_Of (Blocks_Id, Loc),
+             New_Occurrence_Of (Memory_Id, Loc),
+             New_Occurrence_Of (Stream_Id, Loc)));
+
+      Pop_Call :=
+        Make_Procedure_Call_Statement (Loc,
+          Name                   =>
+            New_Occurrence_Of (RTE (RE_Pop_Call_Configuration), Loc),
+          Parameter_Associations => To_Addresses
+            (New_Elmt_List
+              (Grids_Id,
+               Blocks_Id,
+               Memory_Id,
+               Stream_Id)));
+
+      Launch_Kernel_Call := Build_Launch_Kernel_Call
+        (Proc       => Entity (Name (Procedure_Call)),
+         Grid_Dims  => Grids_Id,
+         Block_Dims => Blocks_Id,
+         Kernel_Arg => Kernel_Args_Id,
+         Memory     => Memory_Id,
+         Stream     => Stream_Id);
+
+      --  Finally make the block that holds declarations and calls
+
+      Rewrite (N,
+        Make_Block_Statement (Loc,
+          Declarations               => Blk_Decls,
+          Handled_Statement_Sequence =>
+            Make_Handled_Sequence_Of_Statements (Loc,
+             Statements => New_List (
+               Push_Call,
+               Pop_Call,
+               Launch_Kernel_Call))));
+      Analyze (N);
+   end Expand_Pragma_CUDA_Execute;
 
    ----------------------------------
    -- Expand_Pragma_Contract_Cases --
@@ -861,7 +1517,7 @@ package body Exp_Prag is
       is
          Cond  : Node_Id;
          Error : Node_Id;
-
+         Str   : String_Id;
       begin
          --  Generate:
          --    Flag and then not Conseq
@@ -881,18 +1537,25 @@ package body Exp_Prag is
          Store_String_Chars ("failed contract case at ");
          Store_String_Chars (Build_Location_String (Sloc (Conseq)));
 
+         --  Store the string value as the call to RTE can cause a new unit to
+         --  be loaded which causes new strings to be created.
+
+         Str := End_String;
+
          Error :=
            Make_Procedure_Call_Statement (Loc,
              Name                   =>
                New_Occurrence_Of (RTE (RE_Raise_Assert_Failure), Loc),
              Parameter_Associations => New_List (
-               Make_String_Literal (Loc, End_String)));
+               Make_String_Literal (Loc, Str)));
 
          if No (Checks) then
             Checks :=
               Make_Implicit_If_Statement (CCs,
                 Condition       => Cond,
                 Then_Statements => New_List (Error));
+
+            Set_Comes_From_Check_Or_Contract (Checks);
 
          else
             if No (Elsif_Parts (Checks)) then
@@ -942,48 +1605,92 @@ package body Exp_Prag is
          -----------------------
 
          function Expand_Attributes (N : Node_Id) return Traverse_Result is
-            Decl : Node_Id;
-            Pref : Node_Id;
-            Temp : Entity_Id;
+            Decl     : Node_Id;
+            Pref     : Node_Id;
+            Temp     : Entity_Id;
+            Indirect : Boolean := False;
+
+            use Sem_Util.Old_Attr_Util.Indirect_Temps;
+
+            procedure Append_For_Indirect_Temp
+              (N : Node_Id; Is_Eval_Stmt : Boolean);
+
+            --  Append either a declaration (which is to be elaborated
+            --  unconditionally) or an evaluation statement (which is
+            --  to be executed conditionally).
+
+            -------------------------------
+            --  Append_For_Indirect_Temp --
+            -------------------------------
+
+            procedure Append_For_Indirect_Temp
+              (N : Node_Id; Is_Eval_Stmt : Boolean)
+            is
+            begin
+               if Is_Eval_Stmt then
+                  Append_To (Eval_Stmts, N);
+               else
+                  Prepend_To (Decls, N);
+                  --  This use of Prepend (as opposed to Append) is why
+                  --  we have the Append_Decls_In_Reverse_Order parameter.
+               end if;
+            end Append_For_Indirect_Temp;
+
+            procedure Declare_Indirect_Temporary is new
+              Declare_Indirect_Temp (
+                Append_Item                   => Append_For_Indirect_Temp,
+                Append_Decls_In_Reverse_Order => True);
+
+         --  Start of processing for Expand_Attributes
 
          begin
             --  Attribute 'Old
 
-            if Nkind (N) = N_Attribute_Reference
-              and then Attribute_Name (N) = Name_Old
-            then
+            if Is_Attribute_Old (N) then
                Pref := Prefix (N);
-               Temp := Make_Temporary (Loc, 'T', Pref);
-               Set_Etype (Temp, Etype (Pref));
 
-               --  Generate a temporary to capture the value of the prefix:
-               --    Temp : <Pref type>;
+               Indirect := Indirect_Temp_Needed (Etype (Pref));
 
-               Decl :=
-                 Make_Object_Declaration (Loc,
-                   Defining_Identifier => Temp,
-                   Object_Definition   =>
-                     New_Occurrence_Of (Etype (Pref), Loc));
+               if Indirect then
+                  if No (Eval_Stmts) then
+                     Eval_Stmts := New_List;
+                  end if;
 
-               --  Place that temporary at the beginning of declarations, to
-               --  prevent anomalies in the GNATprove flow-analysis pass in
-               --  the precondition procedure that follows.
+                  Declare_Indirect_Temporary
+                    (Attr_Prefix   => Pref,
+                     Indirect_Temp => Temp);
 
-               Prepend_To (Decls, Decl);
-
-               --  If the type is unconstrained, the prefix provides its
-               --  value and constraint, so add it to declaration.
-
-               if not Is_Constrained (Etype (Pref))
-                 and then Is_Entity_Name (Pref)
-               then
-                  Set_Expression (Decl, Pref);
-                  Analyze (Decl);
-
-               --  Otherwise add an assignment statement to temporary using
-               --  prefix as RHS.
+               --  Declare a temporary of the prefix type with no explicit
+               --  initial value. If the appropriate contract case is selected
+               --  at run time, then the temporary will be initialized via an
+               --  assignment statement.
 
                else
+                  Temp := Make_Temporary (Loc, 'T', Pref);
+                  Set_Etype (Temp, Etype (Pref));
+
+                  --  Generate a temporary to capture the value of the prefix:
+                  --    Temp : <Pref type>;
+
+                  Decl :=
+                    Make_Object_Declaration (Loc,
+                      Defining_Identifier => Temp,
+                      Object_Definition   =>
+                        New_Occurrence_Of (Etype (Pref), Loc));
+
+                  --  Place that temporary at the beginning of declarations, to
+                  --  prevent anomalies in the GNATprove flow-analysis pass in
+                  --  the precondition procedure that follows.
+
+                  Prepend_To (Decls, Decl);
+
+                  --  Initially Temp is uninitialized (which is required for
+                  --  correctness if default initialization might have side
+                  --  effects). Assign prefix value to temp on Eval_Statement
+                  --  list, so assignment will be executed conditionally.
+
+                  Mutate_Ekind (Temp, E_Variable);
+                  Set_Suppress_Initialization (Temp);
                   Analyze (Decl);
 
                   if No (Eval_Stmts) then
@@ -994,7 +1701,12 @@ package body Exp_Prag is
                     Make_Assignment_Statement (Loc,
                       Name       => New_Occurrence_Of (Temp, Loc),
                       Expression => Pref));
+               end if;
 
+               --  Mark the temporary as coming from a 'Old reference
+
+               if Present (Temp) then
+                  Set_Stores_Attribute_Old_Prefix (Temp);
                end if;
 
                --  Ensure that the prefix is valid
@@ -1006,7 +1718,13 @@ package body Exp_Prag is
                --  Replace the original attribute 'Old by a reference to the
                --  generated temporary.
 
-               Rewrite (N, New_Occurrence_Of (Temp, Loc));
+               if Indirect then
+                  Rewrite (N,
+                    Indirect_Temp_Value
+                      (Temp => Temp, Typ => Etype (Pref), Loc => Loc));
+               else
+                  Rewrite (N, New_Occurrence_Of (Temp, Loc));
+               end if;
 
             --  Attribute 'Result
 
@@ -1047,6 +1765,8 @@ package body Exp_Prag is
               Make_Implicit_If_Statement (CCs,
                 Condition       => New_Occurrence_Of (Flag, Loc),
                 Then_Statements => Eval_Stmts);
+
+            Set_Comes_From_Check_Or_Contract (Evals);
 
          --  Otherwise generate:
          --    elsif Flag then
@@ -1121,7 +1841,7 @@ package body Exp_Prag is
       --  Do nothing if pragma is not enabled. If pragma is disabled, it has
       --  already been rewritten as a Null statement.
 
-      if Is_Ignored (CCs) then
+      if Is_Ignored_In_Codegen (CCs) then
          return;
 
       --  Guard against malformed contract cases
@@ -1242,6 +1962,8 @@ package body Exp_Prag is
                   Set (Flag),
                   Increment (Count)));
 
+            Set_Comes_From_Check_Or_Contract (If_Stmt);
+
             Append_To (Decls, If_Stmt);
             Analyze (If_Stmt);
 
@@ -1310,6 +2032,8 @@ package body Exp_Prag is
               Right_Opnd => Make_Integer_Literal (Loc, 0)),
           Then_Statements => CG_Stmts);
 
+      Set_Comes_From_Check_Or_Contract (CG_Checks);
+
       --  Detect a possible failure due to several case guards evaluating to
       --  True.
 
@@ -1343,28 +2067,158 @@ package body Exp_Prag is
                            New_Occurrence_Of (Msg_Str, Loc))))))))));
       end if;
 
+      --  Append the checks, but do not analyze them at this point, because
+      --  contracts get potentially expanded as part of a wrapper which gets
+      --  fully analyzed once it is fully formed.
+
       Append_To (Decls, CG_Checks);
-      Analyze (CG_Checks);
 
       --  Once all case guards are evaluated and checked, evaluate any prefixes
       --  of attribute 'Old founds in the selected consequence.
 
       if Present (Old_Evals) then
          Append_To (Decls, Old_Evals);
-         Analyze (Old_Evals);
       end if;
 
       --  Raise Assertion_Error when the corresponding consequence of a case
       --  guard that evaluated to True fails.
 
-      if No (Stmts) then
-         Stmts := New_List;
-      end if;
-
-      Append_To (Stmts, Conseq_Checks);
+      Append_New_To (Stmts, Conseq_Checks);
 
       In_Assertion_Expr := In_Assertion_Expr - 1;
    end Expand_Pragma_Contract_Cases;
+
+   -------------------------------------
+   -- Expand_Pragma_Exceptional_Cases --
+   -------------------------------------
+
+   --  Aspect Exceptional_Cases shoule be expanded in the following manner:
+
+   --  Original declaration
+
+   --     procedure P (...) with
+   --        Exceptional_Cases =>
+   --           (Exp_1 => True,
+   --            Exp_2 => Post_4);
+
+   --  Expanded body
+
+   --     procedure P (...) is
+   --     begin
+   --        --  normal body of of P
+   --        declare
+   --        ...
+   --        end;
+   --
+   --     exception
+   --        when Exp1 =>
+   --           pragma Assert (True);
+   --           raise;
+   --        when E : Exp2 =>
+   --           pragma Assert (Post_4);
+   --           raise;
+   --        when others =>
+   --           pragma Assert (False);
+   --           raise;
+   --     end P;
+
+   procedure Expand_Pragma_Exceptional_Cases (Prag : Node_Id) is
+   begin
+      --  Currently we don't expand this pragma
+
+      Rewrite (Prag, Make_Null_Statement (Sloc (Prag)));
+   end Expand_Pragma_Exceptional_Cases;
+
+   ------------------------------
+   -- Expand_Pragma_Exit_Cases --
+   ------------------------------
+
+   --  Aspect Exit_Cases shoule be expanded in the following manner:
+
+   --    subprogram S is
+   --       Count      : Natural := 0;
+   --       Flag_1     : Boolean := False;
+   --       . . .
+   --       Flag_N     : Boolean := False;
+   --       Flag_N[+1] : Boolean := False; --  if others present
+
+   --       <preconditions (if any)>
+
+   --       --  Evaluate all case guards
+
+   --       if Case_Guard_1 then
+   --          Flag_1 := True;
+   --          Count  := Count + 1;
+   --       end if;
+   --       . . .
+   --       if Case_Guard_N then
+   --          Flag_N := True;
+   --          Count  := Count + 1;
+   --       end if;
+
+   --       --  Emit errors depending on the number of case guards that
+   --       --  evaluated to True.
+
+   --       if Count = 0 then
+   --         Flag_N+1 := True;  --  if others present
+   --       elsif Count > 1 then
+   --          declare
+   --             Str_Base : constant String :=
+   --                      "exit cases overlap for subprogram S";
+   --             Str_Normal_Return : constant String :=
+   --                      (if Flag_... then
+   --                         Str_Base & "case guard at xxx evaluates to True"
+   --                       else Str_Base);
+   --             StrN : constant String :=
+   --                      (if Flag_... then
+   --                         StrN-1 & "case guard at xxx evaluates to True"
+   --                       else StrN-1);
+   --          begin
+   --             raise Assertion_Error with StrN;
+   --          end;
+   --       end if;
+
+   --       procedure _Postconditions is
+   --       begin
+   --          <postconditions (if any)>
+
+   --          if Flag_1 and then Exit_Kind_1 /= Normal_Return then
+   --             raise Assertion_Error with
+   --                 "subprogram returned normally, failed exit case at xxx";
+   --          end if;
+   --          . . .
+   --          if Flag_N[+1] and then Exit_Kind_N[+1] /= Normal_Return then
+   --             raise Assertion_Error with
+   --                 "subprogram returned normally, failed exit case at xxx";
+   --          end if;
+   --       end _Postconditions;
+   --    begin
+   --
+   --        --  normal body of of P
+   --        declare
+   --        ...
+   --        end;
+   --
+   --     exception
+   --        when E : Exp2 =>
+   --           if Flag_1
+   --             and then Exit_Kind_1 /= Exception_Raised
+   --             and then (Nkind (Exit_Kind_1) /= N_Associated_Component
+   --                 or else Expression (Exit_Kind_1) /= E)
+   --           then
+   --             raise Assertion_Error with
+   --                 "subprogram raised " & E & ", failed exit case at xxx";
+   --           end if;
+   --           . . .
+   --           raise;
+   --    end S;
+
+   procedure Expand_Pragma_Exit_Cases (Prag : Node_Id) is
+   begin
+      --  Currently we don't expand this pragma
+
+      Rewrite (Prag, Make_Null_Statement (Sloc (Prag)));
+   end Expand_Pragma_Exit_Cases;
 
    ---------------------------------------
    -- Expand_Pragma_Import_Or_Interface --
@@ -1380,11 +2234,11 @@ package body Exp_Prag is
       if Relaxed_RM_Semantics
         and then List_Length (Pragma_Argument_Associations (N)) = 2
         and then Pragma_Name (N) = Name_Import
-        and then Nkind (Arg2 (N)) = N_String_Literal
+        and then Nkind (Arg_N (N, 2)) = N_String_Literal
       then
-         Def_Id := Entity (Arg1 (N));
+         Def_Id := Entity (Arg_N (N, 1));
       else
-         Def_Id := Entity (Arg2 (N));
+         Def_Id := Entity (Arg_N (N, 2));
       end if;
 
       --  Variable case (we have to undo any initialization already done)
@@ -1400,24 +2254,73 @@ package body Exp_Prag is
          --  Import a C++ convention
 
          declare
+            procedure Check_Class_Suffix;
+            --  Check whether the External Name string designated by
+            --  Name, declared below, ends with "'class" and, if so,
+            --  set Lang_Id accordingly, and drop the suffix from Name
+            --  and from Rtti_Name.
+
             Loc          : constant Source_Ptr := Sloc (N);
-            Rtti_Name    : constant Node_Id    := Arg3 (N);
             Dum          : constant Entity_Id  := Make_Temporary (Loc, 'D');
+            Lang_Id      : Character  := 'C';
+            Rtti_Name    : Node_Id    := Arg_N (N, 3);
+            Name         : String_Id  := Strval (Get_Pragma_Arg (Rtti_Name));
             Exdata       : List_Id;
             Lang_Char    : Node_Id;
             Foreign_Data : Node_Id;
 
+            ------------------------
+            -- Check_Class_Suffix --
+            ------------------------
+
+            procedure Check_Class_Suffix is
+               Attr : constant String := "'class";
+               J : Nat := String_Length (Name);
+            begin
+               --  We can't end with "'class" if there's no room for it
+
+               if J < Attr'Length then
+                  return;
+               end if;
+
+               --  Check that we end with "'class", ignoring case.
+               --  Return if we don't.
+
+               for K in reverse 1 .. Attr'Length loop
+                  if To_Lower (Get_Character (Get_String_Char (Name, J)))
+                    /= Attr (K)
+                  then
+                     return;
+                  end if;
+                  J := J - 1;
+               end loop;
+
+               --  Build a new string without the pseudo attribute.
+               --  Change Lang_Id to use base-type matching.
+
+               Start_String;
+               for I in 1 .. J loop
+                  Store_String_Char (Get_String_Char (Name, I));
+               end loop;
+               Name := End_String;
+               Rtti_Name := Make_String_Literal (Sloc (Rtti_Name),
+                                                 Strval => Name);
+               Lang_Id := 'B';
+            end Check_Class_Suffix;
+
          begin
+            Check_Class_Suffix;
+
             Exdata := Component_Associations (Expression (Parent (Def_Id)));
 
             Lang_Char := Next (First (Exdata));
 
-            --  Change the one-character language designator to 'C'
+            --  Change the one-character language designator to Lang_Id
 
             Rewrite (Expression (Lang_Char),
               Make_Character_Literal (Loc,
                 Chars              => Name_uC,
-                Char_Literal_Value => UI_From_Int (Character'Pos ('C'))));
+                Char_Literal_Value => UI_From_CC (Get_Char_Code (Lang_Id))));
             Analyze (Expression (Lang_Char));
 
             --  Change the value of Foreign_Data
@@ -1444,7 +2347,7 @@ package body Exp_Prag is
                     Expression => Relocate_Node (Rtti_Name))))));
 
             Rewrite (Expression (Foreign_Data),
-              Unchecked_Convert_To (Standard_A_Char,
+              OK_Convert_To (Standard_Address,
                 Make_Attribute_Reference (Loc,
                   Prefix         => Make_Identifier (Loc, Chars (Dum)),
                   Attribute_Name => Name_Address)));
@@ -1615,6 +2518,7 @@ package body Exp_Prag is
       Call         : Node_Id;
       Call_List    : List_Id;
       Call_Loc     : Source_Ptr;
+      Check_Prag   : Node_Id;
       Expr         : Node_Id;
       Loc          : Source_Ptr;
       Proc_Body    : Node_Id;
@@ -1639,7 +2543,7 @@ package body Exp_Prag is
       --  Nothing to do when the pragma is ignored because its semantics are
       --  suppressed.
 
-      if Is_Ignored (IC_Prag) then
+      if Is_Ignored_In_Codegen (IC_Prag) then
          return;
 
       --  Nothing to do when the pragma or its argument are illegal because
@@ -1677,7 +2581,7 @@ package body Exp_Prag is
         Make_Defining_Identifier (Loc,
           Chars => New_External_Name (Chars (Pack_Id), "Initial_Condition"));
 
-      Set_Ekind                          (Proc_Id, E_Procedure);
+      Mutate_Ekind                       (Proc_Id, E_Procedure);
       Set_Is_Initial_Condition_Procedure (Proc_Id);
 
       --  Generate:
@@ -1703,6 +2607,20 @@ package body Exp_Prag is
       --       pragma Check (Initial_Condition, <Expr>);
       --    end <Pack_Id>Initial_Condition;
 
+      Check_Prag :=
+        Make_Pragma
+          (Loc,
+           Chars                        => Name_Check,
+           Pragma_Argument_Associations =>
+             New_List
+               (Make_Pragma_Argument_Association
+                  (Loc,
+                   Expression =>
+                     Make_Identifier (Loc, Name_Initial_Condition)),
+                Make_Pragma_Argument_Association
+                  (Loc, Expression => New_Copy_Tree (Expr))));
+      Copy_Assertion_Policy_Attributes (Check_Prag, IC_Prag);
+
       Proc_Body :=
         Make_Subprogram_Body (Loc,
           Specification              =>
@@ -1710,15 +2628,7 @@ package body Exp_Prag is
           Declarations               => Empty_List,
           Handled_Statement_Sequence =>
             Make_Handled_Sequence_Of_Statements (Loc,
-              Statements => New_List (
-                Make_Pragma (Loc,
-                  Chars                        => Name_Check,
-                  Pragma_Argument_Associations => New_List (
-                    Make_Pragma_Argument_Association (Loc,
-                      Expression =>
-                        Make_Identifier (Loc, Name_Initial_Condition)),
-                    Make_Pragma_Argument_Association (Loc,
-                      Expression => New_Copy_Tree (Expr)))))));
+              Statements => New_List (Check_Prag)));
 
       Append_To (Body_List, Proc_Body);
 
@@ -1761,10 +2671,12 @@ package body Exp_Prag is
 
    procedure Expand_Pragma_Inspection_Point (N : Node_Id) is
       Loc : constant Source_Ptr := Sloc (N);
-      A     : List_Id;
-      Assoc : Node_Id;
-      S     : Entity_Id;
-      E     : Entity_Id;
+
+      A          : List_Id;
+      Assoc      : Node_Id;
+      Faulty_Arg : Node_Id := Empty;
+      E          : Entity_Id;
+      S          : Entity_Id;
 
    begin
       if No (Pragma_Argument_Associations (N)) then
@@ -1777,10 +2689,9 @@ package body Exp_Prag is
                if Comes_From_Source (E)
                  and then Is_Object (E)
                  and then not Is_Entry_Formal (E)
+                 and then not Is_Formal_Object (E)
                  and then Ekind (E) /= E_Component
                  and then Ekind (E) /= E_Discriminant
-                 and then Ekind (E) /= E_Generic_In_Parameter
-                 and then Ekind (E) /= E_Generic_In_Out_Parameter
                then
                   Append_To (A,
                     Make_Pragma_Argument_Association (Loc,
@@ -1796,16 +2707,44 @@ package body Exp_Prag is
          Set_Pragma_Argument_Associations (N, A);
       end if;
 
-      --  Expand the arguments of the pragma. Expanding an entity reference
-      --  is a noop, except in a protected operation, where a reference may
-      --  have to be transformed into a reference to the corresponding prival.
-      --  Are there other pragmas that may require this ???
+      --  Process the arguments of the pragma
 
       Assoc := First (Pragma_Argument_Associations (N));
       while Present (Assoc) loop
-         Expand (Expression (Assoc));
+         --  The back end may need to take the address of the object
+
+         Set_Address_Taken (Entity (Expression (Assoc)));
+
+         --  If any of the objects have a freeze node, it must appear before
+         --  pragma Inspection_Point, otherwise the entity won't be elaborated
+         --  when Gigi processes the pragma.
+
+         if Has_Delayed_Freeze (Entity (Expression (Assoc)))
+           and then not Is_Frozen (Entity (Expression (Assoc)))
+         then
+            Error_Msg_NE
+              ("??inspection point references unfrozen object &",
+               Assoc,
+               Entity (Expression (Assoc)));
+            Faulty_Arg := Assoc;
+         end if;
+
          Next (Assoc);
       end loop;
+
+      --  When the above requirement isn't met, turn the pragma into a no-op
+
+      if Present (Faulty_Arg) then
+         Error_Msg_Sloc := Sloc (Faulty_Arg);
+         Error_Msg_N ("\pragma Inspection_Point # will be ignored",
+           Faulty_Arg);
+
+         --  We can't just remove the pragma from the tree as it might be
+         --  iterated over by the caller. Turn it into a null statement
+         --  instead.
+
+         Rewrite (N, Make_Null_Statement (Loc));
+      end if;
    end Expand_Pragma_Inspection_Point;
 
    --------------------------------------
@@ -1898,32 +2837,6 @@ package body Exp_Prag is
       ---------------------
 
       procedure Process_Variant (Variant : Node_Id; Is_Last : Boolean) is
-         function Make_Op
-           (Loc      : Source_Ptr;
-            Curr_Val : Node_Id;
-            Old_Val  : Node_Id) return Node_Id;
-         --  Generate a comparison between Curr_Val and Old_Val depending on
-         --  the change mode (Increases / Decreases) of the variant.
-
-         -------------
-         -- Make_Op --
-         -------------
-
-         function Make_Op
-           (Loc      : Source_Ptr;
-            Curr_Val : Node_Id;
-            Old_Val  : Node_Id) return Node_Id
-         is
-         begin
-            if Chars (Variant) = Name_Increases then
-               return Make_Op_Gt (Loc, Curr_Val, Old_Val);
-            else pragma Assert (Chars (Variant) = Name_Decreases);
-               return Make_Op_Lt (Loc, Curr_Val, Old_Val);
-            end if;
-         end Make_Op;
-
-         --  Local variables
-
          Expr     : constant Node_Id    := Expression (Variant);
          Expr_Typ : constant Entity_Id  := Etype (Expr);
          Loc      : constant Source_Ptr := Sloc (Expr);
@@ -1931,8 +2844,6 @@ package body Exp_Prag is
          Curr_Id  : Entity_Id;
          Old_Id   : Entity_Id;
          Prag     : Node_Id;
-
-      --  Start of processing for Process_Variant
 
       begin
          --  All temporaries generated in this routine must be inserted before
@@ -2005,28 +2916,20 @@ package body Exp_Prag is
 
          --  Step 3: Store value of the expression from the previous iteration
 
-         if No (Old_Assign) then
-            Old_Assign := New_List;
-         end if;
-
          --  Generate:
          --    Old := Curr;
 
-         Append_To (Old_Assign,
+         Append_New_To (Old_Assign,
            Make_Assignment_Statement (Loc,
              Name       => New_Occurrence_Of (Old_Id, Loc),
              Expression => New_Occurrence_Of (Curr_Id, Loc)));
 
          --  Step 4: Store the current value of the expression
 
-         if No (Curr_Assign) then
-            Curr_Assign := New_List;
-         end if;
-
          --  Generate:
          --    Curr := <Expr>;
 
-         Append_To (Curr_Assign,
+         Append_New_To (Curr_Assign,
            Make_Assignment_Statement (Loc,
              Name       => New_Occurrence_Of (Curr_Id, Loc),
              Expression => Relocate_Node (Expr)));
@@ -2044,9 +2947,12 @@ package body Exp_Prag is
                  Expression => Make_Identifier (Loc, Name_Loop_Variant)),
                Make_Pragma_Argument_Association (Loc,
                  Expression =>
-                   Make_Op (Loc,
+                   Make_Variant_Comparison (Loc,
+                     Mode     => Chars (Variant),
+                     Typ      => Expr_Typ,
                      Curr_Val => New_Occurrence_Of (Curr_Id, Loc),
                      Old_Val  => New_Occurrence_Of (Old_Id, Loc)))));
+         Copy_Assertion_Policy_Attributes (Prag, N);
 
          --  Generate:
          --    if Curr /= Old then
@@ -2101,8 +3007,16 @@ package body Exp_Prag is
    begin
       --  If pragma is not enabled, rewrite as Null statement. If pragma is
       --  disabled, it has already been rewritten as a Null statement.
+      --
+      --  Likewise, ignore structural variants for execution.
+      --
+      --  Also do this in CodePeer mode, because the expanded code is too
+      --  complicated for CodePeer to analyse.
 
-      if Is_Ignored (N) then
+      if Is_Ignored_In_Codegen (N)
+        or else Chars (Last_Var) = Name_Structural
+        or else CodePeer_Mode
+      then
          Rewrite (N, Make_Null_Statement (Loc));
          Analyze (N);
          return;
@@ -2181,6 +3095,16 @@ package body Exp_Prag is
    end Expand_Pragma_Loop_Variant;
 
    --------------------------------
+   -- Expand_Pragma_Program_Exit --
+   --------------------------------
+
+   procedure Expand_Pragma_Program_Exit (Prag : Node_Id) is
+      pragma Unreferenced (Prag);
+   begin
+      null;
+   end Expand_Pragma_Program_Exit;
+
+   --------------------------------
    -- Expand_Pragma_Psect_Object --
    --------------------------------
 
@@ -2219,18 +3143,384 @@ package body Exp_Prag is
                           (Make_Function_Call
                              (Loc, New_Occurrence_Of (RTE (RE_Clock), Loc)))),
                     Right_Opnd  =>
-                      Unchecked_Convert_To (Standard_Duration, Arg1 (N)))))));
+                      Unchecked_Convert_To (
+                        Standard_Duration,
+                        Arg_N (N, 1)))))));
 
          Analyze (N);
       end if;
    end Expand_Pragma_Relative_Deadline;
+
+   --------------------------------------
+   -- Expand_Pragma_Subprogram_Variant --
+   --------------------------------------
+
+   --  Aspect Subprogram_Variant is expanded in the following manner:
+
+   --  Original code
+
+   --     procedure Proc (Param : T) with
+   --        with Variant (Increases => Incr_Expr,
+   --                      Decreases => Decr_Expr)
+   --        <declarations>
+   --     is
+   --        <source statements>
+   --        Proc (New_Param_Value);
+   --     end Proc;
+
+   --  Expanded code
+
+   --     procedure Proc (Param : T) is
+   --        Old_Incr : constant <type of Incr_Expr> := <Incr_Expr>;
+   --        Old_Decr : constant <type of Decr_Expr> := <Decr_Expr> ;
+   --
+   --        procedure Variants (Param : T);
+   --
+   --        procedure Variants (Param : T) is
+   --           Curr_Incr : constant <type of Incr_Expr> := <Incr_Expr>;
+   --           Curr_Decr : constant <type of Decr_Expr> := <Decr_Expr>;
+   --        begin
+   --           if Curr_Incr /= Old_Incr then
+   --              pragma Check (Variant, Curr_Incr > Old_Incr);
+   --           else
+   --              pragma Check (Variant, Curr_Decr < Old_Decr);
+   --           end if;
+   --        end Variants;
+   --
+   --        <declarations>
+   --     begin
+   --        <source statements>
+   --        Variants (New_Param_Value);
+   --        Proc (New_Param_Value);
+   --     end Proc;
+
+   procedure Expand_Pragma_Subprogram_Variant
+     (Prag       : Node_Id;
+      Subp_Id    : Entity_Id;
+      Body_Decls : List_Id)
+   is
+      Curr_Decls : List_Id;
+      If_Stmt    : Node_Id := Empty;
+
+      function Formal_Param_Map
+        (Old_Subp : Entity_Id;
+         New_Subp : Entity_Id) return Elist_Id;
+      --  Given two subprogram entities Old_Subp and New_Subp with the same
+      --  number of formal parameters return a list of the form:
+      --
+      --    old formal 1
+      --    new formal 1
+      --    old formal 2
+      --    new formal 2
+      --    ...
+      --
+      --  as required by New_Copy_Tree to replace references to formal
+      --  parameters of Old_Subp with references to formal parameters of
+      --  New_Subp.
+
+      procedure Process_Variant
+        (Variant    : Node_Id;
+         Formal_Map : Elist_Id;
+         Prev_Decl  : in out Node_Id;
+         Is_Last    : Boolean);
+      --  Process a single increasing / decreasing termination variant given by
+      --  a component association Variant. Formal_Map is a list of formal
+      --  parameters of the annotated subprogram and of the internal procedure
+      --  that verifies the variant in the format required by New_Copy_Tree.
+      --  The Old_... object created by this routine will be appended after
+      --  Prev_Decl and is stored in this parameter for a next call to this
+      --  routine. Is_Last is True when there are no more variants to process.
+
+      function Variants_Function_Name (Prag : Node_Id) return Name_Id;
+      --  The name of the variants function is either
+      --  * _variants: if no assertion level was associated with the pragma.
+      --  * _variants_<Assertion_Level> otherwise.
+
+      ----------------------
+      -- Formal_Param_Map --
+      ----------------------
+
+      function Formal_Param_Map
+        (Old_Subp : Entity_Id;
+         New_Subp : Entity_Id) return Elist_Id
+      is
+         Old_Formal : Entity_Id := First_Formal (Old_Subp);
+         New_Formal : Entity_Id := First_Formal (New_Subp);
+
+         Param_Map : Elist_Id;
+      begin
+         if Present (Old_Formal) then
+            Param_Map := New_Elmt_List;
+            while Present (Old_Formal) and then Present (New_Formal) loop
+               Append_Elmt (Old_Formal,  Param_Map);
+               Append_Elmt (New_Formal, Param_Map);
+
+               Next_Formal (Old_Formal);
+               Next_Formal (New_Formal);
+            end loop;
+
+            return Param_Map;
+         else
+            return No_Elist;
+         end if;
+      end Formal_Param_Map;
+
+      ---------------------
+      -- Process_Variant --
+      ---------------------
+
+      procedure Process_Variant
+        (Variant    : Node_Id;
+         Formal_Map : Elist_Id;
+         Prev_Decl  : in out Node_Id;
+         Is_Last    : Boolean)
+      is
+         Expr     : constant Node_Id    := Expression (Variant);
+         Expr_Typ : constant Entity_Id  := Etype (Expr);
+         Loc      : constant Source_Ptr := Sloc (Expr);
+
+         Old_Id     : Entity_Id;
+         Old_Decl   : Node_Id;
+         Curr_Id    : Entity_Id;
+         Curr_Decl  : Node_Id;
+         Check_Prag : Node_Id;
+
+      begin
+         --  Create temporaries that store the old values of the associated
+         --  expression.
+
+         --  Generate:
+         --    Old : constant <type of Expr> := <Expr>;
+
+         Old_Id := Make_Temporary (Loc, 'P');
+
+         Old_Decl :=
+           Make_Object_Declaration (Loc,
+             Defining_Identifier => Old_Id,
+             Constant_Present    => True,
+             Object_Definition   => New_Occurrence_Of (Expr_Typ, Loc),
+             Expression          => New_Copy_Tree (Expr));
+
+         Insert_After_And_Analyze (Prev_Decl, Old_Decl);
+
+         Prev_Decl := Old_Decl;
+
+         --  Generate:
+         --    Curr : constant <type of Expr> := <Expr>;
+
+         Curr_Id := Make_Temporary (Loc, 'C');
+
+         Curr_Decl :=
+           Make_Object_Declaration (Loc,
+             Defining_Identifier => Curr_Id,
+             Constant_Present    => True,
+             Object_Definition   => New_Occurrence_Of (Expr_Typ, Loc),
+             Expression          =>
+               New_Copy_Tree (Expr, Map => Formal_Map));
+
+         Append (Curr_Decl, Curr_Decls);
+
+         --  Generate:
+         --    pragma Check (Variant, Curr <|> Old);
+
+         Check_Prag :=
+           Make_Pragma (Loc,
+             Chars                        => Name_Check,
+             Pragma_Argument_Associations => New_List (
+               Make_Pragma_Argument_Association (Loc,
+                 Expression =>
+                   Make_Identifier (Loc,
+                     Name_Subprogram_Variant)),
+               Make_Pragma_Argument_Association (Loc,
+                 Expression =>
+                   Make_Variant_Comparison (Loc,
+                     Mode     => Chars (First (Choices (Variant))),
+                     Typ      => Expr_Typ,
+                     Curr_Val => New_Occurrence_Of (Curr_Id, Loc),
+                     Old_Val  => New_Occurrence_Of (Old_Id, Loc)))));
+         Copy_Assertion_Policy_Attributes (Check_Prag, Prag);
+
+         --  Generate:
+         --    if Curr /= Old then
+         --       <Prag>;
+
+         if No (If_Stmt) then
+
+            --  When there is just one termination variant, do not compare
+            --  the old and current value for equality, just check the
+            --  pragma.
+
+            if Is_Last then
+               If_Stmt := Check_Prag;
+            else
+               If_Stmt :=
+                 Make_If_Statement (Loc,
+                   Condition       =>
+                     Make_Op_Ne (Loc,
+                       Left_Opnd  => New_Occurrence_Of (Curr_Id, Loc),
+                       Right_Opnd => New_Occurrence_Of (Old_Id, Loc)),
+                   Then_Statements => New_List (Check_Prag));
+            end if;
+
+            --  Generate:
+            --    else
+            --       <Prag>;
+            --    end if;
+
+         elsif Is_Last then
+            Set_Else_Statements (If_Stmt, New_List (Check_Prag));
+
+            --  Generate:
+            --    elsif Curr /= Old then
+            --       <Prag>;
+
+         else
+            if Elsif_Parts (If_Stmt) = No_List then
+               Set_Elsif_Parts (If_Stmt, New_List);
+            end if;
+
+            Append_To (Elsif_Parts (If_Stmt),
+              Make_Elsif_Part (Loc,
+              Condition       =>
+              Make_Op_Ne (Loc,
+                Left_Opnd  => New_Occurrence_Of (Curr_Id, Loc),
+                Right_Opnd => New_Occurrence_Of (Old_Id, Loc)),
+              Then_Statements => New_List (Check_Prag)));
+         end if;
+      end Process_Variant;
+
+      ----------------------------
+      -- Variants_Function_Name --
+      ----------------------------
+
+      function Variants_Function_Name (Prag : Node_Id) return Name_Id is
+      begin
+         if Present (Pragma_Ghost_Assertion_Level (Prag))
+           and then Pragma_Ghost_Assertion_Level (Prag)
+                    /= Standard_Level_Default
+         then
+            Get_Name_String (Name_uVariants);
+            Add_Str_To_Name_Buffer ("_");
+            Get_Name_String_And_Append
+              (Chars (Pragma_Ghost_Assertion_Level (Prag)));
+            return Name_Enter;
+         else
+            return Name_uVariants;
+         end if;
+      end Variants_Function_Name;
+
+      --  Local variables
+
+      Loc : constant Source_Ptr := Sloc (Prag);
+
+      Aggr         : constant Node_Id :=
+        Expression (First (Pragma_Argument_Associations (Prag)));
+      Formal_Map   : Elist_Id;
+      Last         : Node_Id;
+      Last_Variant : constant Node_Id :=
+        Nlists.Last (Component_Associations (Aggr));
+      Proc_Bod     : Node_Id;
+      Proc_Decl    : Node_Id;
+      Proc_Id      : Entity_Id;
+      Proc_Nam     : Name_Id;
+      Proc_Spec    : Node_Id;
+      Variant      : Node_Id;
+
+   begin
+      --  Do nothing if pragma is not present or is disabled.
+      --  Also ignore structural variants for execution.
+
+      if Is_Ignored_In_Codegen (Prag)
+        or else Chars (Nlists.Last (Choices (Last_Variant))) = Name_Structural
+      then
+         return;
+      end if;
+
+      --  The expansion of Subprogram Variant is quite distributed as it
+      --  produces various statements to capture and compare the arguments.
+      --  To preserve the original context, set the Is_Assertion_Expr flag.
+      --  This aids the Ghost legality checks when verifying the placement
+      --  of a reference to a Ghost entity.
+
+      In_Assertion_Expr := In_Assertion_Expr + 1;
+
+      --  Create declaration of the procedure that compares values of the
+      --  variant expressions captured at the start of subprogram with their
+      --  values at the recursive call of the subprogram.
+
+      Proc_Nam := Variants_Function_Name (Prag);
+
+      Proc_Id := Make_Defining_Identifier (Loc, Proc_Nam);
+
+      Proc_Spec :=
+        Make_Procedure_Specification
+          (Loc,
+           Defining_Unit_Name       => Proc_Id,
+           Parameter_Specifications => Copy_Parameter_List (Subp_Id));
+
+      Proc_Decl :=
+        Make_Subprogram_Declaration (Loc, Proc_Spec);
+
+      Insert_Before_First_Source_Declaration (Proc_Decl, Body_Decls);
+      Analyze (Proc_Decl);
+
+      --  Create a mapping between formals of the annotated subprogram (which
+      --  are used to compute values of the variant expression at the start of
+      --  subprogram) and formals of the internal procedure (which are used to
+      --  compute values of of the variant expression at the recursive call).
+
+      Formal_Map :=
+        Formal_Param_Map (Old_Subp => Subp_Id, New_Subp => Proc_Id);
+
+      --  Process invidual increasing / decreasing variants
+
+      Last         := Proc_Decl;
+      Curr_Decls   := New_List;
+
+      Variant := First (Component_Associations (Aggr));
+      while Present (Variant) loop
+         Process_Variant
+           (Variant    => Variant,
+            Formal_Map => Formal_Map,
+            Prev_Decl  => Last,
+            Is_Last    => Variant = Last_Variant);
+         Next (Variant);
+      end loop;
+
+      --  Create a subprogram body with declarations of objects that capture
+      --  the current values of variant expressions at a recursive call and an
+      --  if-then-else statement that compares current with old values.
+
+      Proc_Bod :=
+        Make_Subprogram_Body (Loc,
+          Specification              =>
+            Copy_Subprogram_Spec (Proc_Spec),
+          Declarations               => Curr_Decls,
+          Handled_Statement_Sequence =>
+            Make_Handled_Sequence_Of_Statements (Loc,
+              Statements => New_List (If_Stmt),
+              End_Label  => Make_Identifier (Loc, Chars (Proc_Id))));
+
+      Insert_After_And_Analyze (Last, Proc_Bod);
+
+      --  Restore assertion context
+
+      In_Assertion_Expr := In_Assertion_Expr - 1;
+
+      --  Rewrite the aspect expression, which is no longer needed, with
+      --  a reference to the procedure that has just been created. We will
+      --  generate a call to this procedure at each recursive call of the
+      --  subprogram that has been annotated with Subprogram_Variant.
+
+      Rewrite (Aggr, New_Occurrence_Of (Proc_Id, Loc));
+   end Expand_Pragma_Subprogram_Variant;
 
    -------------------------------------------
    -- Expand_Pragma_Suppress_Initialization --
    -------------------------------------------
 
    procedure Expand_Pragma_Suppress_Initialization (N : Node_Id) is
-      Def_Id : constant Entity_Id  := Entity (Arg1 (N));
+      Def_Id : constant Entity_Id  := Entity (Arg_N (N, 1));
 
    begin
       --  Variable case (we have to undo any initialization already done)
@@ -2250,7 +3540,7 @@ package body Exp_Prag is
    begin
       --  When applied to a variable, the default initialization must not be
       --  done. As it is already done when the pragma is found, we just get rid
-      --  of the call the initialization procedure which followed the object
+      --  of the call to the initialization procedure which followed the object
       --  declaration. The call is inserted after the declaration, but validity
       --  checks may also have been inserted and thus the initialization call
       --  does not necessarily appear immediately after the object declaration.
@@ -2271,27 +3561,6 @@ package body Exp_Prag is
 
       if No (Init_Call) and then Present (Expression (Parent (Def_Id))) then
          Set_Expression (Parent (Def_Id), Empty);
-      end if;
-
-      --  The object may not have any initialization, but in the presence of
-      --  Initialize_Scalars code is inserted after then declaration, which
-      --  must now be removed as well. The code carries the same source
-      --  location as the declaration itself.
-
-      if Initialize_Scalars and then Is_Array_Type (Etype (Def_Id)) then
-         declare
-            Init : Node_Id;
-            Nxt  : Node_Id;
-         begin
-            Init := Next (Parent (Def_Id));
-            while not Comes_From_Source (Init)
-              and then Sloc (Init) = Sloc (Def_Id)
-            loop
-               Nxt := Next (Init);
-               Remove (Init);
-               Init := Nxt;
-            end loop;
-         end;
       end if;
    end Undo_Initialization;
 

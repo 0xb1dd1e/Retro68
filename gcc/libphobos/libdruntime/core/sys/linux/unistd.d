@@ -5,6 +5,9 @@ public import core.sys.posix.unistd;
 version (linux):
 extern(C):
 nothrow:
+@nogc:
+
+import core.stdc.config : c_long;
 
 // Additional seek constants for sparse file handling
 // from Linux's unistd.h, stdio.h, and linux/fs.h
@@ -18,3 +21,12 @@ enum {
 
 /// Prompt for a password without echoing it.
 char* getpass(const(char)* prompt);
+
+// Exit all threads in a process
+void exit_group(int status);
+
+/// Close all open file descriptors greater or equal to `lowfd`
+void closefrom(int lowfd);
+
+/// Invoke system call number `sysno`, passing it the remaining arguments.
+c_long syscall(c_long sysno, ...);

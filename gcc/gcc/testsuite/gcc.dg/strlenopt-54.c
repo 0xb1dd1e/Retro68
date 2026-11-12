@@ -16,7 +16,7 @@
 /* Macro to emit a call to function named
    call_in_true_branch_not_eliminated_on_line_NNN()
    for each call that's expected to be eliminated.  The dg-final
-   scan-tree-dump-time directive at the bottom of the test verifies
+   scan-tree-dump-times directive at the bottom of the test verifies
    that no such call appears in output.  */
 #define ELIM(expr)							\
   if (!(expr)) FAIL (in_true_branch_not_eliminated); else (void)0
@@ -105,5 +105,5 @@ void elim_after_init_memcpy (void)
   T ("AB\000CD", 0, "ab\000c", 4, 2);
 }
 
-/* { dg-final { scan-tree-dump-times "strlen" 0 "optimized" } }
+/* { dg-final { scan-tree-dump-times "strlen1" 0 "optimized" } }
    { dg-final { scan-tree-dump-times "call_in_true_branch_not_eliminated" 0 "optimized" } } */

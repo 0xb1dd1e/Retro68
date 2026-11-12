@@ -19,7 +19,8 @@ test (A &b, B c)
 					// { dg-error "expected primary-expression before 'decltype'" "" { target c++11_down } .-2 }
   auto & & && & [ m, n, o ] = b;	// { dg-error "multiple ref-qualifiers" }
 					// { dg-warning "structured bindings only available with '-std=c..17' or '-std=gnu..17'" "" { target c++14_down } .-1 }
-  constexpr auto [ p ] = c;		// { dg-error "structured binding declaration cannot be 'constexpr'" }
+  constexpr B c2 = { 42 };
+  constexpr auto [ p ] = c2;		// { dg-warning "structured binding declaration can be 'constexpr' only with" "" { target c++23_down } }
 					// { dg-warning "structured bindings only available with '-std=c..17' or '-std=gnu..17'" "" { target c++14_down } .-1 }
   friend auto [ q ] = c;		// { dg-error "'friend' used outside of class" }
 					// { dg-warning "structured bindings only available with '-std=c..17' or '-std=gnu..17'" "" { target c++14_down } .-1 }
@@ -35,11 +36,16 @@ test (A &b, B c)
 					// { dg-warning "structured bindings only available with '-std=c..17' or '-std=gnu..17'" "" { target c++14_down } .-1 }
   explicit auto [ w ] = c;		// { dg-error "'explicit' outside class declaration" }
 					// { dg-warning "structured bindings only available with '-std=c..17' or '-std=gnu..17'" "" { target c++14_down } .-1 }
-  static auto [ x ] = c;		// { dg-error "structured binding declaration cannot be 'static'" }
+  static auto [ x ] = c;		// { dg-warning "structured binding declaration can be 'static' only in" "" { target c++17_down } }
 					// { dg-warning "structured bindings only available with '-std=c..17' or '-std=gnu..17'" "" { target c++14_down } .-1 }
   extern auto [ y ] { c };		// { dg-error "structured binding declaration cannot be 'extern'" }
 					// { dg-warning "structured bindings only available with '-std=c..17' or '-std=gnu..17'" "" { target c++14_down } .-1 }
+  thread_local auto [ z ] = c;		// { dg-warning "structured binding declaration can be 'thread_local' only in" "" { target c++17_down } }
+					// { dg-warning "structured bindings only available with '-std=c..17' or '-std=gnu..17'" "" { target c++14_down } .-1 }
 }
+
+__thread auto [ z2 ] = B ();		// { dg-warning "structured binding declaration can be '__thread' only in" "" { target c++17_down } }
+					// { dg-warning "structured bindings only available with '-std=c..17' or '-std=gnu..17'" "" { target c++14_down } .-1 }
 
 void
 test2 (auto & [ p ] = bar ())		// { dg-error "'p' was not declared in this scope" }

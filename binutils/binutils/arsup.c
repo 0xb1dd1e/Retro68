@@ -1,5 +1,5 @@
 /* arsup.c - Archive support for MRI compatibility
-   Copyright (C) 1992-2018 Free Software Foundation, Inc.
+   Copyright (C) 1992-2026 Free Software Foundation, Inc.
 
    This file is part of GNU Binutils.
 
@@ -32,16 +32,13 @@
 #include "bucomm.h"
 #include "arsup.h"
 
-static void map_over_list
-  (bfd *, void (*function) (bfd *, bfd *), struct list *);
-static void ar_directory_doer (bfd *, bfd *);
-static void ar_addlib_doer (bfd *, bfd *);
-
 extern int verbose;
 extern int deterministic;
 
 static bfd *obfd;
 static char *real_name;
+static char *temp_name;
+static int temp_fd;
 static FILE *outfile;
 
 static void
@@ -72,15 +69,15 @@ map_over_list (bfd *arch, void (*function) (bfd *, bfd *), struct list *list)
 	 want to hack multiple references.  */
       for (ptr = list; ptr; ptr = ptr->next)
 	{
-	  bfd_boolean found = FALSE;
+	  bool found = false;
 	  bfd *prev = arch;
 
 	  for (head = arch->archive_next; head; head = head->archive_next)
 	    {
-	      if (head->filename != NULL
-		  && FILENAME_CMP (ptr->name, head->filename) == 0)
+	      if (bfd_get_filename (head) != NULL
+		  && FILENAME_CMP (ptr->name, bfd_get_filename (head)) == 0)
 		{
-		  found = TRUE;
+		  found = true;
 		  function (head, prev);
 		}
 	      prev = head;
@@ -96,7 +93,7 @@ map_over_list (bfd *arch, void (*function) (bfd *, bfd *), struct list *list)
 static void
 ar_directory_doer (bfd *abfd, bfd *ignore ATTRIBUTE_UNUSED)
 {
-  print_arelt_descr(outfile, abfd, verbose, FALSE);
+  print_arelt_descr(outfile, abfd, verbose, false);
 }
 
 void
@@ -149,20 +146,24 @@ maybequit (void)
 void
 ar_open (char *name, int t)
 {
-  char *tname = (char *) xmalloc (strlen (name) + 10);
-  const char *bname = lbasename (name);
-  real_name = name;
+  real_name = xstrdup (name);
+  temp_name = make_tempname (real_name, &temp_fd);
 
-  /* Prepend tmp- to the beginning, to avoid file-name clashes after
-     truncation on filesystems with limited namespaces (DOS).  */
-  sprintf (tname, "%.*stmp-%s", (int) (bname - name), name, bname);
-  obfd = bfd_openw (tname, NULL);
+  if (temp_name == NULL)
+    {
+      fprintf (stderr, _("%s: Can't open temporary file (%s)\n"),
+	       program_name, strerror(errno));
+      maybequit ();
+      return;
+    }
+
+  obfd = bfd_fdopenw (temp_name, NULL, temp_fd);
 
   if (!obfd)
     {
       fprintf (stderr,
 	       _("%s: Can't open output archive %s\n"),
-	       program_name,  tname);
+	       program_name, temp_name);
 
       maybequit ();
     }
@@ -256,11 +257,7 @@ ar_addmod (struct list *list)
 	{
 	  bfd *abfd;
 
-#if BFD_SUPPORTS_PLUGINS	  
-	  abfd = bfd_openr (list->name, "plugin");
-#else
 	  abfd = bfd_openr (list->name, NULL);
-#endif
 	  if (!abfd)
 	    {
 	      fprintf (stderr, _("%s: can't open file %s\n"),
@@ -304,7 +301,7 @@ ar_delete (struct list *list)
 
 	  while (member)
 	    {
-	      if (FILENAME_CMP(member->filename, list->name) == 0)
+	      if (FILENAME_CMP (bfd_get_filename (member), list->name) == 0)
 		{
 		  *prev = member->archive_next;
 		  found = 1;
@@ -337,16 +334,31 @@ ar_save (void)
     }
   else
     {
-      char *ofilename = xstrdup (bfd_get_filename (obfd));
+      struct stat target_stat;
 
       if (deterministic > 0)
         obfd->flags |= BFD_DETERMINISTIC_OUTPUT;
 
+      temp_fd = dup (temp_fd);
       bfd_close (obfd);
 
-      smart_rename (ofilename, real_name, 0);
+      if (stat (real_name, &target_stat) != 0)
+	{
+	  /* The temp file created in ar_open has mode 0600 as per mkstemp.
+	     Create the real empty output file here so smart_rename will
+	     update the mode according to the process umask.  */
+	  obfd = bfd_openw (real_name, NULL);
+	  if (obfd != NULL)
+	    {
+	      bfd_set_format (obfd, bfd_archive);
+	      bfd_close (obfd);
+	    }
+	}
+
+      smart_rename (temp_name, real_name, temp_fd, NULL, false);
       obfd = 0;
-      free (ofilename);
+      free (temp_name);
+      free (real_name);
     }
 }
 
@@ -369,7 +381,7 @@ ar_replace (struct list *list)
 
 	  while (member)
 	    {
-	      if (FILENAME_CMP (member->filename, list->name) == 0)
+	      if (FILENAME_CMP (bfd_get_filename (member), list->name) == 0)
 		{
 		  /* Found the one to replace.  */
 		  bfd *abfd = bfd_openr (list->name, NULL);
@@ -444,8 +456,9 @@ ar_end (void)
 {
   if (obfd)
     {
-      bfd_cache_close (obfd);
-      unlink (bfd_get_filename (obfd));
+      const char *filename = bfd_get_filename (obfd);
+      bfd_close_all_done (obfd);
+      unlink (filename);
     }
 }
 
@@ -467,7 +480,7 @@ ar_extract (struct list *list)
 
 	  while (member && !found)
 	    {
-	      if (FILENAME_CMP (member->filename, list->name) == 0)
+	      if (FILENAME_CMP (bfd_get_filename (member), list->name) == 0)
 		{
 		  extract_file (member);
 		  found = 1;
@@ -478,7 +491,6 @@ ar_extract (struct list *list)
 
 	  if (!found)
 	    {
-	      bfd_openr (list->name, NULL);
 	      fprintf (stderr, _("%s: can't find module file %s\n"),
 		       program_name, list->name);
 	    }

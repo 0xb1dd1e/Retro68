@@ -1,6 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /* Definitions of target machine for GNU compiler,
    for IBM RS/6000 POWER running AIX.
-   Copyright (C) 2000-2019 Free Software Foundation, Inc.
+   Copyright (C) 2000-2026 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -23,17 +24,13 @@
 #undef  TARGET_AIX
 #define TARGET_AIX 1
 
-/* System headers are not C++-aware.  */
-#define SYSTEM_IMPLICIT_EXTERN_C 1
-
 /* Linux64.h wants to redefine TARGET_AIX based on -m64, but it can't be used
    in the #if conditional in options-default.h, so provide another macro.  */
 #undef  TARGET_AIX_OS
 #define TARGET_AIX_OS 1
 
 /* AIX always has a TOC.  */
-#define TARGET_NO_TOC 0
-#define TARGET_TOC 1
+#define TARGET_HAS_TOC 1
 #define FIXED_R2 1
 
 /* AIX allows r13 to be used in 32-bit mode.  */
@@ -68,10 +65,10 @@
 
    The default value for this macro is `STACK_POINTER_OFFSET' plus the
    length of the outgoing arguments.  The default is correct for most
-   machines.  See `function.c' for details.
+   machines.  See `function.cc' for details.
 
    This value must be a multiple of STACK_BOUNDARY (hard coded in
-   `emit-rtl.c').  */
+   `emit-rtl.cc').  */
 #undef STACK_DYNAMIC_OFFSET
 #define STACK_DYNAMIC_OFFSET(FUNDECL)					\
    RS6000_ALIGN (crtl->outgoing_args_size.to_constant ()		\
@@ -185,7 +182,7 @@
    Don't do this until the fixed IBM assembler is more generally available.
    When this becomes permanently defined, the ASM_OUTPUT_EXTERNAL,
    ASM_OUTPUT_EXTERNAL_LIBCALL, and RS6000_OUTPUT_BASENAME macros will no
-   longer be needed.  Also, the extern declaration of mcount in 
+   longer be needed.  Also, the extern declaration of mcount in
    rs6000_xcoff_file_start will no longer be needed.  */
 
 /* #define ASM_SPEC "-u %(asm_cpu)" */
@@ -224,17 +221,14 @@
 /* This now supports a natural alignment mode.  */
 /* AIX word-aligns FP doubles but doubleword-aligns 64-bit ints.  */
 #define ADJUST_FIELD_ALIGN(FIELD, TYPE, COMPUTED) \
-  ((TARGET_ALIGN_NATURAL == 0						\
-    && TYPE_MODE (strip_array_types (TYPE)) == DFmode)			\
-   ? MIN ((COMPUTED), 32)						\
+  (TARGET_ALIGN_NATURAL == 0						\
+   ? rs6000_special_adjust_field_align (TYPE, COMPUTED)			\
    : (COMPUTED))
 
 /* AIX increases natural record alignment to doubleword if the first
    field is an FP double while the FP fields remain word aligned.  */
 #define ROUND_TYPE_ALIGN(STRUCT, COMPUTED, SPECIFIED)			\
-  ((TREE_CODE (STRUCT) == RECORD_TYPE					\
-    || TREE_CODE (STRUCT) == UNION_TYPE					\
-    || TREE_CODE (STRUCT) == QUAL_UNION_TYPE)				\
+  (RECORD_OR_UNION_TYPE_P (STRUCT)				\
    && TARGET_ALIGN_NATURAL == 0						\
    ? rs6000_special_round_type_align (STRUCT, COMPUTED, SPECIFIED)	\
    : MAX ((COMPUTED), (SPECIFIED)))
@@ -281,3 +275,12 @@
 /* Use standard DWARF numbering for DWARF debugging information.  */
 #define RS6000_USE_DWARF_NUMBERING
 
+#define TARGET_PRECOMPUTE_TLS_P rs6000_aix_precompute_tls_p
+
+/* Replace -m64 with -maix64 and -m32 with -maix32.  */
+#undef SUBTARGET_DRIVER_SELF_SPECS
+#define SUBTARGET_DRIVER_SELF_SPECS	\
+"%{m64:-maix64} %<m64",			\
+"%{m32:-maix32} %<m32",			\
+"%{fstack-protector*: %<fstack-protector* \
+   %estack-protector not supported on AIX}"

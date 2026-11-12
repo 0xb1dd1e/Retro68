@@ -7,7 +7,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 2000-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 2000-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -30,8 +30,8 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-pragma Style_Checks ("M32766");
---  Allow long lines
+pragma Style_Checks ("N");
+--  Disable style checks
 
 */
 
@@ -86,7 +86,7 @@ pragma Style_Checks ("M32766");
  ** a number of non-POSIX but useful/required features.
  **/
 
-#if defined (__linux__) || defined (__ANDROID__)
+#if defined (__linux__) || defined (__ANDROID__) || defined (__GNU__)
 
 /* Define _XOPEN_SOURCE to get IOV_MAX */
 # if !defined (_XOPEN_SOURCE)
@@ -96,7 +96,7 @@ pragma Style_Checks ("M32766");
 /* Define _BSD_SOURCE to get CRTSCTS */
 # define _BSD_SOURCE
 
-#endif /* defined (__linux__) */
+#endif /* defined (__linux__) || defined (__ANDROID__) || defined (__GNU__) */
 
 /* Include gsocket.h before any system header so it can redefine FD_SETSIZE */
 
@@ -121,6 +121,8 @@ pragma Style_Checks ("M32766");
  **/
 
 # include <vxWorks.h>
+#elif !defined(__MINGW32__)
+#include <poll.h>
 #endif
 
 #include "adaint.h"
@@ -158,7 +160,7 @@ pragma Style_Checks ("M32766");
 #endif
 
 #if defined (__linux__) || defined (__ANDROID__) || defined (__QNX__) \
-  || defined (__rtems__)
+  || defined (__rtems__) || defined (__GNU__)
 # include <pthread.h>
 # include <signal.h>
 #endif
@@ -235,9 +237,6 @@ int counter = 0;
 #define CST(name,comment) C(#name,String,name,comment)
 /* String constant */
 
-#define STR(x) STR1(x)
-#define STR1(x) #x
-
 #ifdef __MINGW32__
 unsigned int _CRT_fmode = _O_BINARY;
 #endif
@@ -261,6 +260,14 @@ main (void) {
 TXT("--  This is the version for " TARGET)
 TXT("")
 TXT("with Interfaces.C;")
+#if defined (__MINGW32__) || defined (__CYGWIN__)
+# define TARGET_OS "Windows"
+# define Serial_Port_Descriptor "System.Win32.HANDLE"
+TXT("with System.Win32;")
+#else
+# define TARGET_OS "Other_OS"
+# define Serial_Port_Descriptor "Interfaces.C.int"
+#endif
 
 /*
 package System.OS_Constants is
@@ -280,11 +287,6 @@ package System.OS_Constants is
 
    type OS_Type is (Windows, Other_OS);
 */
-#if defined (__MINGW32__)
-# define TARGET_OS "Windows"
-#else
-# define TARGET_OS "Other_OS"
-#endif
 C("Target_OS", OS_Type, TARGET_OS, "")
 /*
    pragma Warnings (Off, Target_OS);
@@ -302,6 +304,8 @@ CST(Target_Name, "")
  **/
 #define SIZEOF_unsigned_int sizeof (unsigned int)
 CND(SIZEOF_unsigned_int, "Size of unsigned int")
+
+SUB(Serial_Port_Descriptor)
 
 /*
 
@@ -405,10 +409,10 @@ CND(FNDELAY, "Nonblocking")
 
 #if defined (__FreeBSD__) || defined (__DragonFly__)
 # define CNI CNU
-# define IOCTL_Req_T "unsigned"
+# define IOCTL_Req_T "Interfaces.C.unsigned"
 #else
 # define CNI CND
-# define IOCTL_Req_T "int"
+# define IOCTL_Req_T "Interfaces.C.int"
 #endif
 
 SUB(IOCTL_Req_T)
@@ -716,6 +720,41 @@ CNU(CRTSCTS, "Output hw flow control")
 # define CREAD -1
 #endif
 CNU(CREAD, "Read")
+
+#ifndef ICANON
+# define ICANON -1
+#endif
+CNU(ICANON, "canonical mode")
+
+#ifndef CBAUD
+# define CBAUD -1
+#endif
+CNU(CBAUD, "baud speed mask")
+
+#ifndef ECHO
+# define ECHO -1
+#endif
+CNU(ECHO, "echo input characters")
+
+#ifndef ECHOE
+# define ECHOE -1
+#endif
+CNU(ECHOE, "erase preceding characters")
+
+#ifndef ECHOK
+# define ECHOK -1
+#endif
+CNU(ECHOK, "kill character, erases current line")
+
+#ifndef ECHOCTL
+# define ECHOCTL -1
+#endif
+CNU(ECHOCTL, "echo special characters")
+
+#ifndef ECHONL
+# define ECHONL -1
+#endif
+CNU(ECHONL, "force echo NL character")
 
 #ifndef CS5
 # define CS5 -1
@@ -1048,6 +1087,11 @@ CND(AF_INET, "IPv4 address family")
 #endif
 CND(AF_INET6, "IPv6 address family")
 
+#ifndef AF_UNIX
+# define AF_UNIX -1
+#endif
+CND(AF_UNIX, "Local unix family")
+
 #ifndef AF_UNSPEC
 # define AF_UNSPEC -1
 #else
@@ -1287,6 +1331,111 @@ CND(IPPROTO_UDP, "UDP")
 #endif
 CND(IPPROTO_TCP, "TCP")
 
+#ifndef IPPROTO_ICMP
+# define IPPROTO_ICMP -1
+#endif
+CND(IPPROTO_ICMP, "Internet Control Message Protocol")
+
+#ifndef IPPROTO_IGMP
+# define IPPROTO_IGMP -1
+#endif
+CND(IPPROTO_IGMP, "Internet Group Management Protocol")
+
+#ifndef IPPROTO_IPIP
+# define IPPROTO_IPIP -1
+#endif
+CND(IPPROTO_IPIP, "IPIP tunnels (older KA9Q tunnels use 94)")
+
+#ifndef IPPROTO_EGP
+# define IPPROTO_EGP -1
+#endif
+CND(IPPROTO_EGP, "Exterior Gateway Protocol")
+
+#ifndef IPPROTO_PUP
+# define IPPROTO_PUP -1
+#endif
+CND(IPPROTO_PUP, "PUP protocol")
+
+#ifndef IPPROTO_IDP
+# define IPPROTO_IDP -1
+#endif
+CND(IPPROTO_IDP, "XNS IDP protocol")
+
+#ifndef IPPROTO_TP
+# define IPPROTO_TP -1
+#endif
+CND(IPPROTO_TP, "SO Transport Protocol Class 4")
+
+#ifndef IPPROTO_DCCP
+# define IPPROTO_DCCP -1
+#endif
+CND(IPPROTO_DCCP, "Datagram Congestion Control Protocol")
+
+#ifndef IPPROTO_RSVP
+# define IPPROTO_RSVP -1
+#endif
+CND(IPPROTO_RSVP, "Reservation Protocol")
+
+#ifndef IPPROTO_GRE
+# define IPPROTO_GRE -1
+#endif
+CND(IPPROTO_GRE, "General Routing Encapsulation")
+
+#ifndef IPPROTO_ESP
+# define IPPROTO_ESP -1
+#endif
+CND(IPPROTO_ESP, "encapsulating security payload")
+
+#ifndef IPPROTO_AH
+# define IPPROTO_AH -1
+#endif
+CND(IPPROTO_AH, "authentication header")
+
+#ifndef IPPROTO_MTP
+# define IPPROTO_MTP -1
+#endif
+CND(IPPROTO_MTP, "Multicast Transport Protocol")
+
+#ifndef IPPROTO_BEETPH
+# define IPPROTO_BEETPH -1
+#endif
+CND(IPPROTO_BEETPH, "IP option pseudo header for BEET")
+
+#ifndef IPPROTO_ENCAP
+# define IPPROTO_ENCAP -1
+#endif
+CND(IPPROTO_ENCAP, "Encapsulation Header")
+
+#ifndef IPPROTO_PIM
+# define IPPROTO_PIM -1
+#endif
+CND(IPPROTO_PIM, "Protocol Independent Multicast")
+
+#ifndef IPPROTO_COMP
+# define IPPROTO_COMP -1
+#endif
+CND(IPPROTO_COMP, "Compression Header Protocol")
+
+#ifndef IPPROTO_SCTP
+# define IPPROTO_SCTP -1
+#endif
+CND(IPPROTO_SCTP, "Stream Control Transmission Protocol")
+
+#ifndef IPPROTO_UDPLITE
+# define IPPROTO_UDPLITE -1
+#endif
+CND(IPPROTO_UDPLITE, "UDP-Lite protocol")
+
+#ifndef IPPROTO_MPLS
+# define IPPROTO_MPLS -1
+#endif
+CND(IPPROTO_MPLS, "MPLS in IP")
+
+#ifndef IPPROTO_RAW
+# define IPPROTO_RAW -1
+#endif
+CND(IPPROTO_RAW, "Raw IP packets")
+
 /*
 
    -------------------
@@ -1311,13 +1460,7 @@ CND(MSG_PEEK, "Peek at incoming data")
 CND(MSG_EOR, "Send end of record")
 
 #ifndef MSG_WAITALL
-#ifdef __MINWGW32__
-/* The value of MSG_WAITALL is 8.  Nevertheless winsock.h doesn't
-   define it, but it is still usable as we link to winsock2 API.  */
-# define MSG_WAITALL (1 << 3)
-#else
 # define MSG_WAITALL -1
-#endif
 #endif
 CND(MSG_WAITALL, "Wait for full reception")
 
@@ -1326,7 +1469,7 @@ CND(MSG_WAITALL, "Wait for full reception")
 #endif
 CND(MSG_NOSIGNAL, "No SIGPIPE on send")
 
-#if defined (__linux__) || defined (__ANDROID__) || defined (__QNX__)
+#if defined (__linux__) || defined (__ANDROID__) || defined (__QNX__) || defined (__GNU__)
 # define MSG_Forced_Flags "MSG_NOSIGNAL"
 #else
 # define MSG_Forced_Flags "0"
@@ -1349,6 +1492,39 @@ CNS(MSG_Forced_Flags, "")
 #endif
 CND(TCP_NODELAY, "Do not coalesce packets")
 
+#ifndef TCP_KEEPCNT
+#ifdef __MINGW32__
+/* Windows headers can be too old to have all available constants.
+ * We know this one. */
+# define TCP_KEEPCNT 16
+#else
+# define TCP_KEEPCNT -1
+#endif
+#endif
+CND(TCP_KEEPCNT, "Maximum number of keepalive probes")
+
+#ifndef TCP_KEEPIDLE
+#ifdef __MINGW32__
+/* Windows headers can be too old to have all available constants.
+ * We know this one. */
+# define TCP_KEEPIDLE 3
+#else
+# define TCP_KEEPIDLE -1
+#endif
+#endif
+CND(TCP_KEEPIDLE, "Idle time before TCP starts sending keepalive probes")
+
+#ifndef TCP_KEEPINTVL
+#ifdef __MINGW32__
+/* Windows headers can be too old to have all available constants.
+ * We know this one. */
+# define TCP_KEEPINTVL 17
+#else
+# define TCP_KEEPINTVL -1
+#endif
+#endif
+CND(TCP_KEEPINTVL, "Time between individual keepalive probes")
+
 #ifndef SO_REUSEADDR
 # define SO_REUSEADDR -1
 #endif
@@ -1368,6 +1544,11 @@ CND(SO_KEEPALIVE, "Enable keep-alive msgs")
 # define SO_LINGER -1
 #endif
 CND(SO_LINGER, "Defer close to flush data")
+
+#ifndef SO_BINDTODEVICE
+# define SO_BINDTODEVICE -1
+#endif
+CND(SO_BINDTODEVICE, "Bind to a NIC - Network Interface Controller")
 
 #ifndef SO_BROADCAST
 # define SO_BROADCAST -1
@@ -1510,7 +1691,13 @@ CND(IPV6_DSTOPTS, "Set the destination options delivery")
 CND(IPV6_HOPOPTS, "Set the hop options delivery")
 
 #ifndef IPV6_FLOWINFO
+#ifdef __linux__
+/* The IPV6_FLOWINFO is defined in linux/in6.h, but we can't include it because
+ * of conflicts with other headers. */
+# define IPV6_FLOWINFO 11
+#else
 # define IPV6_FLOWINFO -1
+#endif
 #endif
 CND(IPV6_FLOWINFO, "Set the flow ID delivery")
 
@@ -1577,6 +1764,17 @@ CND(SIZEOF_tv_usec, "tv_usec")
 #endif
 CNS(MAX_tv_sec, "")
 }
+
+{
+  struct timespec ts;
+/*
+   --  Sizes (in bytes) of the components of struct timespec.
+   --  The tv_sec field is the same as in struct timeval.
+*/
+#define SIZEOF_tv_nsec (sizeof (ts.tv_nsec))
+CND(SIZEOF_tv_nsec, "tv_nsec");
+}
+
 /*
 
    --  Sizes of various data types
@@ -1591,6 +1789,22 @@ CND(SIZEOF_sockaddr_in, "struct sockaddr_in")
 #endif
 CND(SIZEOF_sockaddr_in6, "struct sockaddr_in6")
 
+/**
+ ** The sockaddr_un structure is not defined in MINGW C headers
+ ** but Windows supports it from build 17063.
+ **/
+#if defined(__MINGW32__)
+struct sockaddr_un {
+  ADDRESS_FAMILY sun_family;    /* AF_UNIX */
+  char           sun_path[108]; /* Pathname */
+};
+#endif
+#define SIZEOF_sockaddr_un (sizeof (struct sockaddr_un))
+CND(SIZEOF_sockaddr_un, "struct sockaddr_un")
+
+#define BACKLOG_MAX 15
+CND(BACKLOG_MAX, "number of outstanding connections in the socket's listen queue")
+
 #define SIZEOF_fd_set (sizeof (fd_set))
 CND(SIZEOF_fd_set, "fd_set")
 CND(FD_SETSIZE, "Max fd value")
@@ -1601,17 +1815,31 @@ CND(SIZEOF_struct_hostent, "struct hostent")
 #define SIZEOF_struct_servent (sizeof (struct servent))
 CND(SIZEOF_struct_servent, "struct servent")
 
-#if defined (__linux__) || defined (__ANDROID__) || defined (__QNX__)
-#define SIZEOF_sigset (sizeof (sigset_t))
-CND(SIZEOF_sigset, "sigset")
-#endif
-
 #if defined(_WIN32) || defined(__vxworks)
+#define SIZEOF_nfds_t sizeof (int) * 8
 #define SIZEOF_socklen_t sizeof (size_t)
+#elif defined(__Lynx__)
+#define SIZEOF_nfds_t sizeof (unsigned long int) * 8
+#define SIZEOF_socklen_t sizeof (socklen_t)
 #else
+#define SIZEOF_nfds_t sizeof (nfds_t) * 8
 #define SIZEOF_socklen_t sizeof (socklen_t)
 #endif
+CND(SIZEOF_nfds_t, "Size of nfds_t");
 CND(SIZEOF_socklen_t, "Size of socklen_t");
+
+{
+#if defined(__vxworks)
+#define SIZEOF_fd_type sizeof (int) * 8
+#define SIZEOF_pollfd_events sizeof (short) * 8
+#else
+const struct pollfd v_pollfd;
+#define SIZEOF_fd_type sizeof (v_pollfd.fd) * 8
+#define SIZEOF_pollfd_events sizeof (v_pollfd.events) * 8
+#endif
+CND(SIZEOF_fd_type, "Size of socket fd");
+CND(SIZEOF_pollfd_events, "Size of pollfd.events");
+}
 
 #ifndef IF_NAMESIZE
 #ifdef IF_MAX_STRING_SIZE
@@ -1624,13 +1852,58 @@ CND(IF_NAMESIZE, "Max size of interface name with 0 terminator");
 
 /*
 
+   --  Poll values
+
+*/
+
+#if defined(__vxworks)
+#ifndef POLLIN
+#define POLLIN 1
+#endif
+
+#ifndef POLLPRI
+#define POLLPRI 2
+#endif
+
+#ifndef POLLOUT
+#define POLLOUT 4
+#endif
+
+#ifndef POLLERR
+#define POLLERR 8
+#endif
+
+#ifndef POLLHUP
+#define POLLHUP 16
+#endif
+
+#ifndef POLLNVAL
+#define POLLNVAL 32
+#endif
+
+#elif defined(_WIN32)
+#undef  POLLPRI
+#define POLLPRI 0
+/*  If the POLLPRI flag is set on a socket for the Microsoft Winsock provider,
+ *  the WSAPoll function will fail. */
+#endif
+
+CND(POLLIN, "There is data to read");
+CND(POLLPRI, "Urgent data to read");
+CND(POLLOUT, "Writing will not block");
+CND(POLLERR, "Error (output only)");
+CND(POLLHUP, "Hang up (output only)");
+CND(POLLNVAL, "Invalid request");
+
+/*
+
    --  Fields of struct msghdr
 */
 
 #if defined (__sun__) || defined (__hpux__)
-# define Msg_Iovlen_T "int"
+# define Msg_Iovlen_T "Interfaces.C.int"
 #else
-# define Msg_Iovlen_T "size_t"
+# define Msg_Iovlen_T "Interfaces.C.size_t"
 #endif
 
 SUB(Msg_Iovlen_T)
@@ -1671,7 +1944,19 @@ CST(Inet_Pton_Linkname, "")
 #endif
 CST(Inet_Ntop_Linkname, "")
 
+#if defined(_WIN32)
+# define Poll_Linkname "WSAPoll"
+#else
+# define Poll_Linkname "poll"
+#endif
+CST(Poll_Linkname, "")
+
 #endif /* HAVE_SOCKETS */
+
+#if defined (__linux__) || defined (__ANDROID__) || defined (__QNX__) || defined (__GNU__)
+#define SIZEOF_sigset (sizeof (sigset_t))
+CND(SIZEOF_sigset, "sigset")
+#endif
 
 /*
 
@@ -1705,7 +1990,8 @@ CND(CLOCK_THREAD_CPUTIME_ID, "Thread CPU clock")
 
 #if defined(__linux__) || defined(__FreeBSD__) \
  || (defined(_AIX) && defined(_AIXVERSION_530)) \
- || defined(__DragonFly__) || defined(__QNX__)
+ || defined(__DragonFly__) || defined(__QNX__) \
+ || (defined (__vxworks) && /* VxWorks7 */ defined (_VSB_CONFIG_FILE))
 /** On these platforms use system provided monotonic clock instead of
  ** the default CLOCK_REALTIME. We then need to set up cond var attributes
  ** appropriately (see thread.c).
@@ -1714,6 +2000,10 @@ CND(CLOCK_THREAD_CPUTIME_ID, "Thread CPU clock")
  ** pthread_cond_timedwait (and does not have pthread_condattr_setclock),
  ** hence the conditionalization on AIX version above). _AIXVERSION_530
  ** is defined in AIX 5.3 and more recent versions.
+ **
+ ** VxWorks6 lacks pthread_condattr_setclock, so define CLOCK_RT_Ada to
+ ** CLOCK_REALTIME to get the dummy definition of __gnat_pthread_condattr_setup
+ ** in libgnarl/thread.c.
  **/
 # define CLOCK_RT_Ada "CLOCK_MONOTONIC"
 
@@ -1726,8 +2016,10 @@ CND(CLOCK_THREAD_CPUTIME_ID, "Thread CPU clock")
 CNS(CLOCK_RT_Ada, "")
 #endif
 
-#if defined (__APPLE__) || defined (__linux__) || defined (__ANDROID__) \
-  || defined (__QNX__) || defined (__rtems__) || defined (DUMMY)
+#if defined (__APPLE__) || defined (__ANDROID__) || defined (DUMMY) \
+  || defined (__FreeBSD__) || defined (__linux__) \
+  || defined (__QNX__) || defined (__rtems__) || defined (__GNU__)
+
 /*
 
    --  Sizes of pthread data types
@@ -1770,7 +2062,8 @@ CND(PTHREAD_RWLOCKATTR_SIZE, "pthread_rwlockattr_t")
 CND(PTHREAD_RWLOCK_SIZE,     "pthread_rwlock_t")
 CND(PTHREAD_ONCE_SIZE,       "pthread_once_t")
 
-#endif /* __APPLE__ || __linux__ || __ANDROID__ || __rtems__ */
+#endif /* __APPLE__ || __ANDROID__ || __FreeBSD ||__linux__
+          || __QNX__|| __rtems__ || __GNU__ */
 
 /*
 

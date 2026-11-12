@@ -1,4 +1,4 @@
-/* Copyright (C) 2002-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2002-2026 Free Software Foundation, Inc.
    Contributed by Andy Vaught
    Namelist transfer functions contributed by Paul Thomas
    F2003 I/O support contributed by Jerry DeLisle
@@ -56,6 +56,7 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
       transfer_complex
       transfer_real128
       transfer_complex128
+      transfer_unsigned
 
     and for WRITE
 
@@ -67,6 +68,7 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
       transfer_complex_write
       transfer_real128_write
       transfer_complex128_write
+      transfer_unsigned_write
 
     These subroutines do not return status. The *128 functions
     are in the file transfer128.c.
@@ -81,6 +83,12 @@ export_proto(transfer_integer);
 
 extern void transfer_integer_write (st_parameter_dt *, void *, int);
 export_proto(transfer_integer_write);
+
+extern void transfer_unsigned (st_parameter_dt *, void *, int);
+export_proto(transfer_unsigned);
+
+extern void transfer_unsigned_write (st_parameter_dt *, void *, int);
+export_proto(transfer_unsigned_write);
 
 extern void transfer_real (st_parameter_dt *, void *, int);
 export_proto(transfer_real);
@@ -193,7 +201,8 @@ static const st_option async_opt[] = {
 
 typedef enum
 { FORMATTED_SEQUENTIAL, UNFORMATTED_SEQUENTIAL,
-  FORMATTED_DIRECT, UNFORMATTED_DIRECT, FORMATTED_STREAM, UNFORMATTED_STREAM
+  FORMATTED_DIRECT, UNFORMATTED_DIRECT, FORMATTED_STREAM,
+  UNFORMATTED_STREAM, FORMATTED_UNSPECIFIED
 }
 file_mode;
 
@@ -203,7 +212,7 @@ current_mode (st_parameter_dt *dtp)
 {
   file_mode m;
 
-  m = FORM_UNSPECIFIED;
+  m = FORMATTED_UNSPECIFIED;
 
   if (dtp->u.p.current_unit->flags.access == ACCESS_DIRECT)
     {
@@ -490,7 +499,7 @@ read_sf (st_parameter_dt *dtp, size_t *length)
 
    If the read is short, then it is because the current record does not
    have enough data to satisfy the read request and the file was
-   opened with PAD=YES.  The caller must assume tailing spaces for
+   opened with PAD=YES.  The caller must assume trailing spaces for
    short reads.  */
 
 void *
@@ -1087,19 +1096,21 @@ static void
 unformatted_read (st_parameter_dt *dtp, bt type,
 		  void *dest, int kind, size_t size, size_t nelems)
 {
+  unit_convert convert;
+
   if (type == BT_CLASS)
     {
-	  int unit = dtp->u.p.current_unit->unit_number;
+	  GFC_INTEGER_4 unit = dtp->u.p.current_unit->unit_number;
 	  char tmp_iomsg[IOMSG_LEN] = "";
 	  char *child_iomsg;
 	  gfc_charlen_type child_iomsg_len;
-	  int noiostat;
-	  int *child_iostat = NULL;
+	  GFC_INTEGER_4 noiostat;
+	  GFC_INTEGER_4 *child_iostat = NULL;
 
 	  /* Set iostat, intent(out).  */
 	  noiostat = 0;
-	  child_iostat = (dtp->common.flags & IOPARM_HAS_IOSTAT) ?
-			  dtp->common.iostat : &noiostat;
+	  child_iostat = ((dtp->common.flags & IOPARM_HAS_IOSTAT)
+			  ? dtp->common.iostat : &noiostat);
 
 	  /* Set iomsg, intent(inout).  */
 	  if (dtp->common.flags & IOPARM_HAS_IOMSG)
@@ -1116,8 +1127,22 @@ unformatted_read (st_parameter_dt *dtp, bt type,
 	  /* Call the user defined unformatted READ procedure.  */
 	  dtp->u.p.current_unit->child_dtio++;
 	  dtp->u.p.ufdtio_ptr (dest, &unit, child_iostat, child_iomsg,
-			      child_iomsg_len);
+			       child_iomsg_len);
+	  dtp->u.p.child_saved_iostat = *child_iostat;
 	  dtp->u.p.current_unit->child_dtio--;
+
+	  if ((dtp->u.p.child_saved_iostat != 0) &&
+	      !(dtp->common.flags & IOPARM_HAS_IOMSG) &&
+	      !(dtp->common.flags & IOPARM_HAS_IOSTAT))
+	    {
+	      char message[IOMSG_LEN + 1];
+	      child_iomsg_len = string_len_trim (IOMSG_LEN, child_iomsg);
+	      fstrcpy (message, child_iomsg_len, child_iomsg, child_iomsg_len);
+	      message[child_iomsg_len] = '\0';
+	      generate_error (&dtp->common, dtp->u.p.child_saved_iostat,
+			      message);
+	    }
+
 	  return;
     }
 
@@ -1125,8 +1150,8 @@ unformatted_read (st_parameter_dt *dtp, bt type,
     size *= GFC_SIZE_OF_CHAR_KIND(kind);
   read_block_direct (dtp, dest, size * nelems);
 
-  if (unlikely (dtp->u.p.current_unit->flags.convert == GFC_CONVERT_SWAP)
-      && kind != 1)
+  convert = dtp->u.p.current_unit->flags.convert;
+  if (unlikely (convert != GFC_CONVERT_NATIVE) && kind != 1)
     {
       /* Handle wide chracters.  */
       if (type == BT_CHARACTER)
@@ -1141,7 +1166,67 @@ unformatted_read (st_parameter_dt *dtp, bt type,
   	  nelems *= 2;
   	  size /= 2;
   	}
+#ifndef HAVE_GFC_REAL_17
+#if defined(HAVE_GFC_REAL_16) && GFC_REAL_16_DIGITS == 106
+      /* IBM extended format is stored as a pair of IEEE754
+	 double values, with the more significant value first
+	 in both big and little endian.  */
+      if (kind == 16 && (type == BT_REAL || type == BT_COMPLEX))
+	{
+	  nelems *= 2;
+	  size /= 2;
+	}
+#endif
       bswap_array (dest, dest, size, nelems);
+#else
+      unit_convert bswap = convert & ~(GFC_CONVERT_R16_IEEE | GFC_CONVERT_R16_IBM);
+      if (bswap == GFC_CONVERT_SWAP)
+	{
+	  if ((type == BT_REAL || type == BT_COMPLEX)
+	      && ((kind == 16 && (convert & GFC_CONVERT_R16_IEEE) == 0)
+		  || (kind == 17 && (convert & GFC_CONVERT_R16_IBM))))
+	    bswap_array (dest, dest, size / 2, nelems * 2);
+	  else
+	    bswap_array (dest, dest, size, nelems);
+	}
+
+      if ((convert & GFC_CONVERT_R16_IEEE)
+	  && kind == 16
+	  && (type == BT_REAL || type == BT_COMPLEX))
+	{
+	  char *pd = dest;
+	  for (size_t i = 0; i < nelems; i++)
+	    {
+	      GFC_REAL_16 r16;
+	      GFC_REAL_17 r17;
+	      memcpy (&r17, pd, 16);
+	      r16 = r17;
+	      memcpy (pd, &r16, 16);
+	      pd += size;
+	    }
+	}
+      else if ((dtp->u.p.current_unit->flags.convert & GFC_CONVERT_R16_IBM)
+	       && kind == 17
+	       && (type == BT_REAL || type == BT_COMPLEX))
+	{
+	  if (type == BT_COMPLEX && size == 32)
+	    {
+	      nelems *= 2;
+	      size /= 2;
+	    }
+
+	  char *pd = dest;
+	  for (size_t i = 0; i < nelems; i++)
+	    {
+	      GFC_REAL_16 r16;
+	      GFC_REAL_17 r17;
+	      memcpy (&r16, pd, 16);
+	      r17 = r16;
+	      memcpy (pd, &r17, 16);
+	      pd += size;
+	    }
+	}
+#endif /* HAVE_GFC_REAL_17.  */
     }
 }
 
@@ -1155,19 +1240,21 @@ static void
 unformatted_write (st_parameter_dt *dtp, bt type,
 		   void *source, int kind, size_t size, size_t nelems)
 {
+  unit_convert convert;
+
   if (type == BT_CLASS)
     {
-	  int unit = dtp->u.p.current_unit->unit_number;
+	  GFC_INTEGER_4 unit = dtp->u.p.current_unit->unit_number;
 	  char tmp_iomsg[IOMSG_LEN] = "";
 	  char *child_iomsg;
 	  gfc_charlen_type child_iomsg_len;
-	  int noiostat;
-	  int *child_iostat = NULL;
+	  GFC_INTEGER_4 noiostat;
+	  GFC_INTEGER_4 *child_iostat = NULL;
 
 	  /* Set iostat, intent(out).  */
 	  noiostat = 0;
-	  child_iostat = (dtp->common.flags & IOPARM_HAS_IOSTAT) ?
-			  dtp->common.iostat : &noiostat;
+	  child_iostat = ((dtp->common.flags & IOPARM_HAS_IOSTAT)
+			  ? dtp->common.iostat : &noiostat);
 
 	  /* Set iomsg, intent(inout).  */
 	  if (dtp->common.flags & IOPARM_HAS_IOMSG)
@@ -1184,13 +1271,32 @@ unformatted_write (st_parameter_dt *dtp, bt type,
 	  /* Call the user defined unformatted WRITE procedure.  */
 	  dtp->u.p.current_unit->child_dtio++;
 	  dtp->u.p.ufdtio_ptr (source, &unit, child_iostat, child_iomsg,
-			      child_iomsg_len);
+			       child_iomsg_len);
+	  dtp->u.p.child_saved_iostat = *child_iostat;
 	  dtp->u.p.current_unit->child_dtio--;
+
+	  if ((dtp->u.p.child_saved_iostat != 0) &&
+	      !(dtp->common.flags & IOPARM_HAS_IOMSG) &&
+	      !(dtp->common.flags & IOPARM_HAS_IOSTAT))
+	    {
+	      char message[IOMSG_LEN + 1];
+	      child_iomsg_len = string_len_trim (IOMSG_LEN, child_iomsg);
+	      fstrcpy (message, child_iomsg_len, child_iomsg, child_iomsg_len);
+	      message[child_iomsg_len] = '\0';
+	      generate_error (&dtp->common, dtp->u.p.child_saved_iostat,
+			      message);
+	    }
 	  return;
     }
 
-  if (likely (dtp->u.p.current_unit->flags.convert == GFC_CONVERT_NATIVE)
-      || kind == 1)
+  convert = dtp->u.p.current_unit->flags.convert;
+  if (likely (convert == GFC_CONVERT_NATIVE) || kind == 1
+#ifdef HAVE_GFC_REAL_17
+      || ((type == BT_REAL || type == BT_COMPLEX)
+	  && ((kind == 16 && convert == GFC_CONVERT_R16_IBM)
+	      || (kind == 17 && convert == GFC_CONVERT_R16_IEEE)))
+#endif
+      )
     {
       size_t stride = type == BT_CHARACTER ?
 		  size * GFC_SIZE_OF_CHAR_KIND(kind) : size;
@@ -1220,6 +1326,18 @@ unformatted_write (st_parameter_dt *dtp, bt type,
 	  size /= 2;
 	}
 
+#if !defined(HAVE_GFC_REAL_17) && defined(HAVE_GFC_REAL_16) \
+    && GFC_REAL_16_DIGITS == 106
+      /* IBM extended format is stored as a pair of IEEE754
+	 double values, with the more significant value first
+	 in both big and little endian.  */
+      if (kind == 16 && (type == BT_REAL || type == BT_COMPLEX))
+	{
+	  nelems *= 2;
+	  size /= 2;
+	}
+#endif
+
       /* By now, all complex variables have been split into their
 	 constituent reals.  */
 
@@ -1232,9 +1350,55 @@ unformatted_write (st_parameter_dt *dtp, bt type,
 	  else
 	    nc = nrem;
 
-	  bswap_array (buffer, p, size, nc);
+#ifdef HAVE_GFC_REAL_17
+	  if ((dtp->u.p.current_unit->flags.convert & GFC_CONVERT_R16_IEEE)
+	      && kind == 16
+	      && (type == BT_REAL || type == BT_COMPLEX))
+	    {
+	      for (size_t i = 0; i < nc; i++)
+		{
+		  GFC_REAL_16 r16;
+		  GFC_REAL_17 r17;
+		  memcpy (&r16, p, 16);
+		  r17 = r16;
+		  memcpy (&buffer[i * 16], &r17, 16);
+		  p += 16;
+		}
+	      if ((dtp->u.p.current_unit->flags.convert
+		   & ~(GFC_CONVERT_R16_IEEE | GFC_CONVERT_R16_IBM))
+		  == GFC_CONVERT_SWAP)
+		bswap_array (buffer, buffer, size, nc);
+	    }
+	  else if ((dtp->u.p.current_unit->flags.convert & GFC_CONVERT_R16_IBM)
+		   && kind == 17
+		   && (type == BT_REAL || type == BT_COMPLEX))
+	    {
+	      for (size_t i = 0; i < nc; i++)
+		{
+		  GFC_REAL_16 r16;
+		  GFC_REAL_17 r17;
+		  memcpy (&r17, p, 16);
+		  r16 = r17;
+		  memcpy (&buffer[i * 16], &r16, 16);
+		  p += 16;
+		}
+	      if ((dtp->u.p.current_unit->flags.convert
+		   & ~(GFC_CONVERT_R16_IEEE | GFC_CONVERT_R16_IBM))
+		  == GFC_CONVERT_SWAP)
+		bswap_array (buffer, buffer, size / 2, nc * 2);
+	    }
+	  else if (kind == 16 && (type == BT_REAL || type == BT_COMPLEX))
+	    {
+	      bswap_array (buffer, p, size / 2, nc * 2);
+	      p += size * nc;
+	    }
+	  else
+#endif
+	    {
+	      bswap_array (buffer, p, size, nc);
+	      p += size * nc;
+	    }
 	  write_buf (dtp, buffer, size * nc);
-	  p += size * nc;
 	  nrem -= nc;
 	}
       while (nrem > 0);
@@ -1253,6 +1417,9 @@ type_name (bt type)
     {
     case BT_INTEGER:
       p = "INTEGER";
+      break;
+    case BT_UNSIGNED:
+      p = "UNSIGNED";
       break;
     case BT_LOGICAL:
       p = "LOGICAL";
@@ -1329,6 +1496,31 @@ require_type (st_parameter_dt *dtp, bt expected, bt actual, const fnode *f)
   return 1;
 }
 
+/* Check that the actual matches one of two expected types; issue an error
+   if that is not the case.  */
+
+
+static int
+require_one_of_two_types (st_parameter_dt *dtp, bt expected1, bt expected2,
+			  bt actual, const fnode *f)
+{
+  char buffer[BUFLEN];
+
+  if (actual == expected1)
+    return 0;
+
+  if (actual == expected2)
+    return 0;
+
+  snprintf (buffer, BUFLEN,
+	    "Expected %s or %s for item %d in formatted transfer, got %s",
+	    type_name (expected1), type_name (expected2),
+	    dtp->u.p.item_count - 1, type_name (actual));
+
+  format_error (dtp, f, buffer);
+  return 1;
+
+}
 
 /* Check that the dtio procedure required for formatted IO is present.  */
 
@@ -1471,9 +1663,12 @@ formatted_transfer_scalar_read (st_parameter_dt *dtp, bt type, void *p, int kind
 	case FMT_I:
 	  if (n == 0)
 	    goto need_read_data;
-	  if (require_type (dtp, BT_INTEGER, type, f))
+	  if (require_one_of_two_types (dtp, BT_INTEGER, BT_UNSIGNED, type, f))
 	    return;
-	  read_decimal (dtp, f, p, kind);
+	  if (type == BT_INTEGER)
+	    read_decimal (dtp, f, p, kind);
+	  else
+	    read_decimal_unsigned (dtp, f, p, kind);
 	  break;
 
 	case FMT_B:
@@ -1485,6 +1680,10 @@ formatted_transfer_scalar_read (st_parameter_dt *dtp, bt type, void *p, int kind
 	  if (!(compile_options.allow_std & GFC_STD_F2008)
               && require_type (dtp, BT_INTEGER, type, f))
 	    return;
+#ifdef HAVE_GFC_REAL_17
+	  if (type == BT_REAL && kind == 17)
+	    kind = 16;
+#endif
 	  read_radix (dtp, f, p, kind, 2);
 	  break;
 
@@ -1497,6 +1696,10 @@ formatted_transfer_scalar_read (st_parameter_dt *dtp, bt type, void *p, int kind
 	  if (!(compile_options.allow_std & GFC_STD_F2008)
               && require_type (dtp, BT_INTEGER, type, f))
 	    return;
+#ifdef HAVE_GFC_REAL_17
+	  if (type == BT_REAL && kind == 17)
+	    kind = 16;
+#endif
 	  read_radix (dtp, f, p, kind, 8);
 	  break;
 
@@ -1509,6 +1712,10 @@ formatted_transfer_scalar_read (st_parameter_dt *dtp, bt type, void *p, int kind
 	  if (!(compile_options.allow_std & GFC_STD_F2008)
               && require_type (dtp, BT_INTEGER, type, f))
 	    return;
+#ifdef HAVE_GFC_REAL_17
+	  if (type == BT_REAL && kind == 17)
+	    kind = 16;
+#endif
 	  read_radix (dtp, f, p, kind, 16);
 	  break;
 
@@ -1547,13 +1754,13 @@ formatted_transfer_scalar_read (st_parameter_dt *dtp, bt type, void *p, int kind
 	    return;
 	  if (require_type (dtp, BT_CLASS, type, f))
 	    return;
-	  int unit = dtp->u.p.current_unit->unit_number;
+	  GFC_INTEGER_4 unit = dtp->u.p.current_unit->unit_number;
 	  char dt[] = "DT";
 	  char tmp_iomsg[IOMSG_LEN] = "";
 	  char *child_iomsg;
 	  gfc_charlen_type child_iomsg_len;
-	  int noiostat;
-	  int *child_iostat = NULL;
+	  GFC_INTEGER_4 noiostat;
+	  GFC_INTEGER_4 *child_iostat = NULL;
 	  char *iotype;
 	  gfc_charlen_type iotype_len = f->u.udf.string_len;
 
@@ -1568,8 +1775,8 @@ formatted_transfer_scalar_read (st_parameter_dt *dtp, bt type, void *p, int kind
 
 	  /* Set iostat, intent(out).  */
 	  noiostat = 0;
-	  child_iostat = (dtp->common.flags & IOPARM_HAS_IOSTAT) ?
-			  dtp->common.iostat : &noiostat;
+	  child_iostat = ((dtp->common.flags & IOPARM_HAS_IOSTAT)
+			  ? dtp->common.iostat : &noiostat);
 
 	  /* Set iomsg, intent(inout).  */
 	  if (dtp->common.flags & IOPARM_HAS_IOMSG)
@@ -1589,7 +1796,20 @@ formatted_transfer_scalar_read (st_parameter_dt *dtp, bt type, void *p, int kind
 	  dtp->u.p.fdtio_ptr (p, &unit, iotype, f->u.udf.vlist,
 			      child_iostat, child_iomsg,
 			      iotype_len, child_iomsg_len);
+	  dtp->u.p.child_saved_iostat = *child_iostat;
 	  dtp->u.p.current_unit->child_dtio--;
+
+	  if ((dtp->u.p.child_saved_iostat != 0) &&
+	      !(dtp->common.flags & IOPARM_HAS_IOMSG) &&
+	      !(dtp->common.flags & IOPARM_HAS_IOSTAT))
+	    {
+	      char message[IOMSG_LEN + 1];
+	      child_iomsg_len = string_len_trim (IOMSG_LEN, child_iomsg);
+	      fstrcpy (message, child_iomsg_len, child_iomsg, child_iomsg_len);
+	      message[child_iomsg_len] = '\0';
+	      generate_error (&dtp->common, dtp->u.p.child_saved_iostat,
+			      message);
+	    }
 
 	  if (f->u.udf.string_len != 0)
 	    free (iotype);
@@ -1727,17 +1947,17 @@ formatted_transfer_scalar_read (st_parameter_dt *dtp, bt type, void *p, int kind
 
 	case FMT_S:
 	  consume_data_flag = 0;
-	  dtp->u.p.sign_status = SIGN_S;
+	  dtp->u.p.sign_status = SIGN_PROCDEFINED;
 	  break;
 
 	case FMT_SS:
 	  consume_data_flag = 0;
-	  dtp->u.p.sign_status = SIGN_SS;
+	  dtp->u.p.sign_status = SIGN_SUPPRESS;
 	  break;
 
 	case FMT_SP:
 	  consume_data_flag = 0;
-	  dtp->u.p.sign_status = SIGN_SP;
+	  dtp->u.p.sign_status = SIGN_PLUS;
 	  break;
 
 	case FMT_BN:
@@ -1848,11 +2068,13 @@ static void
 formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kind,
 				 size_t size)
 {
-  gfc_offset pos, bytes_used;
+  gfc_offset tab_pos, bytes_used;
   const fnode *f;
   format_token t;
   int n;
   int consume_data_flag;
+
+  tab_pos = 0; bytes_used = 0;
 
   /* Change a complex data item into a pair of reals.  */
 
@@ -1931,20 +2153,23 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 	  dtp->u.p.skips = dtp->u.p.pending_spaces = 0;
 	}
 
-      bytes_used = dtp->u.p.current_unit->recl
-		   - dtp->u.p.current_unit->bytes_left;
-
       if (is_stream_io(dtp))
-	bytes_used = 0;
+	bytes_used = dtp->u.p.current_unit->fbuf->act;
+      else
+	bytes_used = dtp->u.p.current_unit->recl
+		    - dtp->u.p.current_unit->bytes_left;
 
       switch (t)
 	{
 	case FMT_I:
 	  if (n == 0)
 	    goto need_data;
-	  if (require_type (dtp, BT_INTEGER, type, f))
+	  if (require_one_of_two_types (dtp, BT_INTEGER, BT_UNSIGNED, type, f))
 	    return;
-	  write_i (dtp, f, p, kind);
+	  if (type == BT_INTEGER)
+	    write_i (dtp, f, p, kind);
+	  else
+	    write_iu (dtp, f, p, kind);
 	  break;
 
 	case FMT_B:
@@ -1956,6 +2181,10 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 	  if (!(compile_options.allow_std & GFC_STD_F2008)
               && require_type (dtp, BT_INTEGER, type, f))
 	    return;
+#ifdef HAVE_GFC_REAL_17
+	  if (type == BT_REAL && kind == 17)
+	    kind = 16;
+#endif
 	  write_b (dtp, f, p, kind);
 	  break;
 
@@ -1968,6 +2197,10 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 	  if (!(compile_options.allow_std & GFC_STD_F2008)
               && require_type (dtp, BT_INTEGER, type, f))
 	    return;
+#ifdef HAVE_GFC_REAL_17
+	  if (type == BT_REAL && kind == 17)
+	    kind = 16;
+#endif
 	  write_o (dtp, f, p, kind);
 	  break;
 
@@ -1980,6 +2213,10 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 	  if (!(compile_options.allow_std & GFC_STD_F2008)
               && require_type (dtp, BT_INTEGER, type, f))
 	    return;
+#ifdef HAVE_GFC_REAL_17
+	  if (type == BT_REAL && kind == 17)
+	    kind = 16;
+#endif
 	  write_z (dtp, f, p, kind);
 	  break;
 
@@ -2007,19 +2244,22 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 	    goto need_data;
 	  if (require_type (dtp, BT_REAL, type, f))
 	    return;
-	  write_d (dtp, f, p, kind);
+	  if (f->u.real.w == 0)
+	    write_real_w0 (dtp, p, kind, f);
+	  else
+	    write_d (dtp, f, p, kind);
 	  break;
 
 	case FMT_DT:
 	  if (n == 0)
 	    goto need_data;
-	  int unit = dtp->u.p.current_unit->unit_number;
+	  GFC_INTEGER_4 unit = dtp->u.p.current_unit->unit_number;
 	  char dt[] = "DT";
 	  char tmp_iomsg[IOMSG_LEN] = "";
 	  char *child_iomsg;
 	  gfc_charlen_type child_iomsg_len;
-	  int noiostat;
-	  int *child_iostat = NULL;
+	  GFC_INTEGER_4 noiostat;
+	  GFC_INTEGER_4 *child_iostat = NULL;
 	  char *iotype;
 	  gfc_charlen_type iotype_len = f->u.udf.string_len;
 
@@ -2034,8 +2274,8 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 
 	  /* Set iostat, intent(out).  */
 	  noiostat = 0;
-	  child_iostat = (dtp->common.flags & IOPARM_HAS_IOSTAT) ?
-			  dtp->common.iostat : &noiostat;
+	  child_iostat = ((dtp->common.flags & IOPARM_HAS_IOSTAT)
+			  ? dtp->common.iostat : &noiostat);
 
 	  /* Set iomsg, intent(inout).  */
 	  if (dtp->common.flags & IOPARM_HAS_IOMSG)
@@ -2058,7 +2298,20 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 	  dtp->u.p.fdtio_ptr (p, &unit, iotype, f->u.udf.vlist,
 			      child_iostat, child_iomsg,
 			      iotype_len, child_iomsg_len);
+	  dtp->u.p.child_saved_iostat = *child_iostat;
 	  dtp->u.p.current_unit->child_dtio--;
+
+	  if ((dtp->u.p.child_saved_iostat != 0) &&
+	      !(dtp->common.flags & IOPARM_HAS_IOMSG) &&
+	      !(dtp->common.flags & IOPARM_HAS_IOSTAT))
+	    {
+	      char message[IOMSG_LEN + 1];
+	      child_iomsg_len = string_len_trim (IOMSG_LEN, child_iomsg);
+	      fstrcpy (message, child_iomsg_len, child_iomsg, child_iomsg_len);
+	      message[child_iomsg_len] = '\0';
+	      generate_error (&dtp->common, dtp->u.p.child_saved_iostat,
+			      message);
+	    }
 
 	  if (f->u.udf.string_len != 0)
 	    free (iotype);
@@ -2070,7 +2323,10 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 	    goto need_data;
 	  if (require_type (dtp, BT_REAL, type, f))
 	    return;
-	  write_e (dtp, f, p, kind);
+	  if (f->u.real.w == 0)
+	    write_real_w0 (dtp, p, kind, f);
+	  else
+	    write_e (dtp, f, p, kind);
 	  break;
 
 	case FMT_EN:
@@ -2078,7 +2334,10 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 	    goto need_data;
 	  if (require_type (dtp, BT_REAL, type, f))
 	    return;
-	  write_en (dtp, f, p, kind);
+	  if (f->u.real.w == 0)
+	    write_real_w0 (dtp, p, kind, f);
+	  else
+	    write_en (dtp, f, p, kind);
 	  break;
 
 	case FMT_ES:
@@ -2086,7 +2345,10 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 	    goto need_data;
 	  if (require_type (dtp, BT_REAL, type, f))
 	    return;
-	  write_es (dtp, f, p, kind);
+	  if (f->u.real.w == 0)
+	    write_real_w0 (dtp, p, kind, f);
+	  else
+	    write_es (dtp, f, p, kind);
 	  break;
 
 	case FMT_F:
@@ -2105,6 +2367,9 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 	      case BT_INTEGER:
 		write_i (dtp, f, p, kind);
 		break;
+	      case BT_UNSIGNED:
+		write_iu (dtp, f, p, kind);
+		break;
 	      case BT_LOGICAL:
 		write_l (dtp, f, p, kind);
 		break;
@@ -2116,7 +2381,7 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 		break;
 	      case BT_REAL:
 		if (f->u.real.w == 0)
-                  write_real_g0 (dtp, p, kind, f->u.real.d);
+		  write_real_w0 (dtp, p, kind, f);
 		else
 		  write_d (dtp, f, p, kind);
 		break;
@@ -2135,10 +2400,12 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 	case FMT_X:
 	case FMT_TR:
 	  consume_data_flag = 0;
-
 	  dtp->u.p.skips += f->u.n;
-	  pos = bytes_used + dtp->u.p.skips - 1;
-	  dtp->u.p.pending_spaces = pos - dtp->u.p.max_pos + 1;
+	  tab_pos = bytes_used + dtp->u.p.skips - 1;
+	  dtp->u.p.pending_spaces = tab_pos - dtp->u.p.max_pos + 1;
+	  dtp->u.p.pending_spaces = dtp->u.p.pending_spaces < 0
+				    ? f->u.n : dtp->u.p.pending_spaces;
+
 	  /* Writes occur just before the switch on f->format, above, so
 	     that trailing blanks are suppressed, unless we are doing a
 	     non-advancing write in which case we want to output the blanks
@@ -2151,52 +2418,67 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 	  break;
 
 	case FMT_TL:
-	case FMT_T:
 	  consume_data_flag = 0;
-
-	  if (f->format == FMT_TL)
+	  /* Handle the special case when no bytes have been used yet.
+	     Cannot go below zero. */
+	  if (bytes_used == 0)
 	    {
-
-	      /* Handle the special case when no bytes have been used yet.
-	         Cannot go below zero. */
-	      if (bytes_used == 0)
-		{
-		  dtp->u.p.pending_spaces -= f->u.n;
-		  dtp->u.p.skips -= f->u.n;
-		  dtp->u.p.skips = dtp->u.p.skips < 0 ? 0 : dtp->u.p.skips;
-		}
-
-	      pos = bytes_used - f->u.n;
+	      dtp->u.p.pending_spaces -= f->u.n;
+	      dtp->u.p.skips -= f->u.n;
+	      dtp->u.p.skips = dtp->u.p.skips < 0 ? 0 : dtp->u.p.skips;
 	    }
-	  else /* FMT_T */
-	    pos = f->u.n - dtp->u.p.pending_spaces - 1;
+
+	  tab_pos = bytes_used - f->u.n;
 
 	  /* Standard 10.6.1.1: excessive left tabbing is reset to the
 	     left tab limit.  We do not check if the position has gone
 	     beyond the end of record because a subsequent tab could
 	     bring us back again.  */
-	  pos = pos < 0 ? 0 : pos;
+	  tab_pos = tab_pos < 0 ? 0 : tab_pos;
 
-	  dtp->u.p.skips = dtp->u.p.skips + pos - bytes_used;
+	  dtp->u.p.skips = dtp->u.p.skips + tab_pos - bytes_used;
 	  dtp->u.p.pending_spaces = dtp->u.p.pending_spaces
-				    + pos - dtp->u.p.max_pos;
+				    + tab_pos - dtp->u.p.max_pos;
+	  dtp->u.p.pending_spaces = dtp->u.p.pending_spaces < 0
+				    ? 0 : dtp->u.p.pending_spaces;
+	  break;
+
+	case FMT_T:
+	  consume_data_flag = 0;
+	  if (f->u.n < tab_pos + 1)
+	    {
+	      tab_pos = f->u.n;
+	      dtp->u.p.skips = tab_pos - bytes_used - 1;
+	      dtp->u.p.pending_spaces = tab_pos - bytes_used - 1;
+	    }
+	  else
+	    {
+	      tab_pos = f->u.n - dtp->u.p.pending_spaces - 1;
+
+	      /* Excessive left tabbing is reset to the left tab limit.  */
+	      tab_pos = tab_pos < 0 ? 0 : tab_pos;
+
+	      dtp->u.p.skips = dtp->u.p.skips + tab_pos - bytes_used;
+	      dtp->u.p.pending_spaces = dtp->u.p.pending_spaces
+				      + tab_pos - dtp->u.p.max_pos;
+	    }
 	  dtp->u.p.pending_spaces = dtp->u.p.pending_spaces < 0
 				    ? 0 : dtp->u.p.pending_spaces;
 	  break;
 
 	case FMT_S:
 	  consume_data_flag = 0;
-	  dtp->u.p.sign_status = SIGN_S;
+	  dtp->u.p.sign_status = SIGN_PROCDEFINED;
 	  break;
 
 	case FMT_SS:
 	  consume_data_flag = 0;
-	  dtp->u.p.sign_status = SIGN_SS;
+	  dtp->u.p.sign_status = SIGN_SUPPRESS;
 	  break;
 
 	case FMT_SP:
 	  consume_data_flag = 0;
-	  dtp->u.p.sign_status = SIGN_SP;
+	  dtp->u.p.sign_status = SIGN_PLUS;
 	  break;
 
 	case FMT_BN:
@@ -2287,8 +2569,16 @@ formatted_transfer_scalar_write (st_parameter_dt *dtp, bt type, void *p, int kin
 	  p = ((char *) p) + size;
 	}
 
-      pos = dtp->u.p.current_unit->recl - dtp->u.p.current_unit->bytes_left;
-      dtp->u.p.max_pos = (dtp->u.p.max_pos > pos) ? dtp->u.p.max_pos : pos;
+      /* Calculate the new max_pos if any.  */
+      gfc_offset new_pos;
+      if (is_stream_io(dtp))
+	new_pos = dtp->u.p.current_unit->fbuf->act;
+      else
+	new_pos = dtp->u.p.current_unit->recl
+		   - dtp->u.p.current_unit->bytes_left;
+
+      dtp->u.p.max_pos = (dtp->u.p.max_pos > new_pos) ?
+			  dtp->u.p.max_pos : new_pos;
     }
 
   return;
@@ -2384,6 +2674,18 @@ void
 transfer_integer_write (st_parameter_dt *dtp, void *p, int kind)
 {
   transfer_integer (dtp, p, kind);
+}
+
+void
+transfer_unsigned (st_parameter_dt *dtp, void *p, int kind)
+{
+    wrap_scalar_transfer (dtp, BT_UNSIGNED, p, kind, kind, 1);
+}
+
+void
+transfer_unsigned_write (st_parameter_dt *dtp, void *p, int kind)
+{
+  transfer_unsigned (dtp, p, kind);
 }
 
 void
@@ -2529,26 +2831,62 @@ transfer_array_inner (st_parameter_dt *dtp, gfc_array_char *desc, int kind,
 
   data = GFC_DESCRIPTOR_DATA (desc);
 
-  while (data)
+  /* When reading, we need to check endfile conditions so we do not miss
+     an END=label.  Make this separate so we do not have an extra test
+     in a tight loop when it is not needed.  */
+
+  if (dtp->u.p.current_unit && dtp->u.p.mode == READING)
     {
-      dtp->u.p.transfer (dtp, iotype, data, kind, size, tsize);
-      data += stride0 * tsize;
-      count[0] += tsize;
-      n = 0;
-      while (count[n] == extent[n])
+      while (data)
 	{
-	  count[n] = 0;
-	  data -= stride[n] * extent[n];
-	  n++;
-	  if (n == rank)
+	  if (unlikely (dtp->u.p.current_unit->endfile == AFTER_ENDFILE))
+	    return;
+
+	  dtp->u.p.transfer (dtp, iotype, data, kind, size, tsize);
+	  data += stride0 * tsize;
+	  count[0] += tsize;
+	  n = 0;
+	  while (count[n] == extent[n])
 	    {
-	      data = NULL;
-	      break;
+	      count[n] = 0;
+	      data -= stride[n] * extent[n];
+	      n++;
+	      if (n == rank)
+		{
+		  data = NULL;
+		  break;
+		}
+	      else
+		{
+		  count[n]++;
+		  data += stride[n];
+		}
 	    }
-	  else
+	}
+    }
+  else
+    {
+      while (data)
+	{
+	  dtp->u.p.transfer (dtp, iotype, data, kind, size, tsize);
+	  data += stride0 * tsize;
+	  count[0] += tsize;
+	  n = 0;
+	  while (count[n] == extent[n])
 	    {
-	      count[n]++;
-	      data += stride[n];
+	      count[n] = 0;
+	      data -= stride[n] * extent[n];
+	      n++;
+	      if (n == rank)
+		{
+		  data = NULL;
+		  break;
+		}
+	      else
+		{
+		  count[n]++;
+		  data += stride[n];
+		}
 	    }
 	}
     }
@@ -2642,8 +2980,12 @@ us_read (st_parameter_dt *dtp, int continued)
       return;
     }
 
+  int convert = dtp->u.p.current_unit->flags.convert;
+#ifdef HAVE_GFC_REAL_17
+  convert &= ~(GFC_CONVERT_R16_IEEE | GFC_CONVERT_R16_IBM);
+#endif
   /* Only GFC_CONVERT_NATIVE and GFC_CONVERT_SWAP are valid here.  */
-  if (likely (dtp->u.p.current_unit->flags.convert == GFC_CONVERT_NATIVE))
+  if (likely (convert == GFC_CONVERT_NATIVE))
     {
       switch (nr)
 	{
@@ -2766,6 +3108,8 @@ pre_position (st_parameter_dt *dtp)
     case UNFORMATTED_DIRECT:
       dtp->u.p.current_unit->bytes_left = dtp->u.p.current_unit->recl;
       break;
+    case FORMATTED_UNSPECIFIED:
+      gcc_unreachable ();
     }
 
   dtp->u.p.current_unit->current_record = 1;
@@ -2784,6 +3128,8 @@ data_transfer_init (st_parameter_dt *dtp, int read_flag)
   async_unit *au;
 
   NOTE ("data_transfer_init");
+
+  check_for_recursive (dtp);
 
   ionml = ((cf & IOPARM_DT_IONML_SET) != 0) ? dtp->u.p.ionml : NULL;
 
@@ -2843,6 +3189,13 @@ data_transfer_init (st_parameter_dt *dtp, int read_flag)
       if (conv == GFC_CONVERT_NONE)
 	conv = compile_options.convert;
 
+      u_flags.convert = 0;
+
+#ifdef HAVE_GFC_REAL_17
+      u_flags.convert = conv & (GFC_CONVERT_R16_IEEE | GFC_CONVERT_R16_IBM);
+      conv &= ~(GFC_CONVERT_R16_IEEE | GFC_CONVERT_R16_IBM);
+#endif
+
       switch (conv)
 	{
 	case GFC_CONVERT_NATIVE:
@@ -2862,7 +3215,7 @@ data_transfer_init (st_parameter_dt *dtp, int read_flag)
 	  break;
 	}
 
-      u_flags.convert = conv;
+      u_flags.convert |= conv;
 
       opp.common = dtp->common;
       opp.common.flags &= IOPARM_COMMON_MASK;
@@ -3258,8 +3611,9 @@ data_transfer_init_worker (st_parameter_dt *dtp, int read_flag)
 
           if (dtp->pos != dtp->u.p.current_unit->strm_pos)
             {
-              fbuf_flush (dtp->u.p.current_unit, dtp->u.p.mode);
-              if (sseek (dtp->u.p.current_unit->s, dtp->pos - 1, SEEK_SET) < 0)
+	      fbuf_reset (dtp->u.p.current_unit);
+	      if (sseek (dtp->u.p.current_unit->s, dtp->pos - 1,
+			 SEEK_SET) < 0)
                 {
                   generate_error (&dtp->common, LIBERROR_OS, NULL);
                   return;
@@ -3358,7 +3712,7 @@ data_transfer_init_worker (st_parameter_dt *dtp, int read_flag)
 
   if (dtp->u.p.current_unit->flags.form == FORM_FORMATTED)
     {
-#ifdef HAVE_USELOCALE
+#ifdef HAVE_POSIX_2008_LOCALE
       dtp->u.p.old_locale = uselocale (c_locale);
 #else
       __gthread_mutex_lock (&old_locale_lock);
@@ -3637,6 +3991,8 @@ next_record_r (st_parameter_dt *dtp, int done)
 	  while (p != '\n');
 	}
       break;
+    case FORMATTED_UNSPECIFIED:
+      gcc_unreachable ();
     }
 }
 
@@ -3656,8 +4012,12 @@ write_us_marker (st_parameter_dt *dtp, const gfc_offset buf)
   else
     len = compile_options.record_marker;
 
+  int convert = dtp->u.p.current_unit->flags.convert;
+#ifdef HAVE_GFC_REAL_17
+  convert &= ~(GFC_CONVERT_R16_IEEE | GFC_CONVERT_R16_IBM);
+#endif
   /* Only GFC_CONVERT_NATIVE and GFC_CONVERT_SWAP are valid here.  */
-  if (likely (dtp->u.p.current_unit->flags.convert == GFC_CONVERT_NATIVE))
+  if (likely (convert == GFC_CONVERT_NATIVE))
     {
       switch (len)
 	{
@@ -3966,6 +4326,8 @@ next_record_w (st_parameter_dt *dtp, int done)
 		}
 	    }
 	}
+      else if (dtp->u.p.seen_dollar == 1)
+	break;
       /* Handle legacy CARRIAGECONTROL line endings.  */
       else if (dtp->u.p.current_unit->flags.cc == CC_FORTRAN)
 	next_record_cc (dtp);
@@ -4002,6 +4364,8 @@ next_record_w (st_parameter_dt *dtp, int done)
 	}
 
       break;
+    case FORMATTED_UNSPECIFIED:
+      gcc_unreachable ();
 
     io_error:
       generate_error (&dtp->common, LIBERROR_OS, NULL);
@@ -4067,6 +4431,14 @@ finalize_transfer (st_parameter_dt *dtp)
   if ((dtp->u.p.ionml != NULL)
       && (cf & IOPARM_DT_HAS_NAMELIST_NAME) != 0)
     {
+       if (dtp->u.p.current_unit->flags.form == FORM_UNFORMATTED)
+	 {
+	   generate_error (&dtp->common, LIBERROR_OPTION_CONFLICT,
+			   "Namelist formatting for unit connected "
+			   "with FORM='UNFORMATTED'");
+	   return;
+	 }
+
        dtp->u.p.namelist_mode = 1;
        if ((cf & IOPARM_DT_NAMELIST_READ_MODE) != 0)
 	 namelist_read (dtp);
@@ -4179,7 +4551,7 @@ finalize_transfer (st_parameter_dt *dtp)
 	}
     }
 
-#ifdef HAVE_USELOCALE
+#ifdef HAVE_POSIX_2008_LOCALE
   if (dtp->u.p.old_locale != (locale_t) 0)
     {
       uselocale (dtp->u.p.old_locale);
@@ -4271,8 +4643,9 @@ extern void st_read_done (st_parameter_dt *);
 export_proto(st_read_done);
 
 void
-st_read_done_worker (st_parameter_dt *dtp)
+st_read_done_worker (st_parameter_dt *dtp, bool unlock)
 {
+  bool free_newunit = false;
   finalize_transfer (dtp);
 
   free_ionml (dtp);
@@ -4288,11 +4661,10 @@ st_read_done_worker (st_parameter_dt *dtp)
 	    {
 	      free (dtp->u.p.current_unit->filename);
 	      dtp->u.p.current_unit->filename = NULL;
-	      if (dtp->u.p.current_unit->ls)
-		free (dtp->u.p.current_unit->ls);
+	      free (dtp->u.p.current_unit->ls);
 	      dtp->u.p.current_unit->ls = NULL;
 	    }
-	  newunit_free (dtp->common.unit);
+	  free_newunit = true;
 	}
       if (dtp->u.p.unit_is_internal || dtp->u.p.format_not_saved)
 	{
@@ -4300,6 +4672,15 @@ st_read_done_worker (st_parameter_dt *dtp)
 	  free_format (dtp);
 	}
     }
+   if (unlock)
+     unlock_unit (dtp->u.p.current_unit);
+   if (free_newunit)
+     {
+       /* Avoid inverse lock issues by placing after unlock_unit.  */
+       WRLOCK (&unit_rwlock);
+       newunit_free (dtp->common.unit);
+       RWUNLOCK (&unit_rwlock);
+     }
 }
 
 void
@@ -4310,17 +4691,16 @@ st_read_done (st_parameter_dt *dtp)
       if (dtp->u.p.current_unit->au)
 	{
 	  if (dtp->common.flags & IOPARM_DT_HAS_ID)
-	    *dtp->id = enqueue_done_id (dtp->u.p.current_unit->au, AIO_READ_DONE);  
+	    *dtp->id = enqueue_done_id (dtp->u.p.current_unit->au, AIO_READ_DONE);
 	  else
 	    {
 	      if (dtp->u.p.async)
 		enqueue_done (dtp->u.p.current_unit->au, AIO_READ_DONE);
 	    }
+	  unlock_unit (dtp->u.p.current_unit);
 	}
       else
-	st_read_done_worker (dtp);
-
-      unlock_unit (dtp->u.p.current_unit);
+	st_read_done_worker (dtp, true);  /* Calls unlock_unit.  */
     }
 
   library_end ();
@@ -4338,8 +4718,9 @@ st_write (st_parameter_dt *dtp)
 
 
 void
-st_write_done_worker (st_parameter_dt *dtp)
+st_write_done_worker (st_parameter_dt *dtp, bool unlock)
 {
+  bool free_newunit = false;
   finalize_transfer (dtp);
 
   if (dtp->u.p.current_unit != NULL
@@ -4376,11 +4757,10 @@ st_write_done_worker (st_parameter_dt *dtp)
 	    {
 	      free (dtp->u.p.current_unit->filename);
 	      dtp->u.p.current_unit->filename = NULL;
-	      if (dtp->u.p.current_unit->ls)
-		free (dtp->u.p.current_unit->ls);
+	      free (dtp->u.p.current_unit->ls);
 	      dtp->u.p.current_unit->ls = NULL;
 	    }
-	  newunit_free (dtp->common.unit);
+	  free_newunit = true;
 	}
       if (dtp->u.p.unit_is_internal || dtp->u.p.format_not_saved)
 	{
@@ -4388,6 +4768,15 @@ st_write_done_worker (st_parameter_dt *dtp)
 	  free_format (dtp);
 	}
     }
+   if (unlock)
+     unlock_unit (dtp->u.p.current_unit);
+   if (free_newunit)
+     {
+       /* Avoid inverse lock issues by placing after unlock_unit.  */
+       WRLOCK (&unit_rwlock);
+       newunit_free (dtp->common.unit);
+       RWUNLOCK (&unit_rwlock);
+     }
 }
 
 extern void st_write_done (st_parameter_dt *);
@@ -4410,11 +4799,10 @@ st_write_done (st_parameter_dt *dtp)
 	      if (dtp->u.p.async)
 		enqueue_done (dtp->u.p.current_unit->au, AIO_WRITE_DONE);
 	    }
+	  unlock_unit (dtp->u.p.current_unit);
 	}
       else
-	st_write_done_worker (dtp);
-
-      unlock_unit (dtp->u.p.current_unit);
+	st_write_done_worker (dtp, true);  /* Calls unlock_unit.  */
     }
 
   library_end ();
@@ -4436,7 +4824,7 @@ void
 st_wait_async (st_parameter_wait *wtp)
 {
   gfc_unit *u = find_unit (wtp->common.unit);
-  if (ASYNC_IO && u->au)
+  if (ASYNC_IO && u && u->au)
     {
       if (wtp->common.flags & IOPARM_WAIT_HAS_ID)
 	async_wait_id (&(wtp->common), u->au, *wtp->id);

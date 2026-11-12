@@ -161,3 +161,11 @@ bad	.byte	xtrn@ntpoff
 bad	.byte	xtrn@tpoff
 	.long	xtrn@got + 4
 	.long	xtrn@got - 4
+bad	.long	xtrn@plt - .
+
+	.text
+	movl	$ptr@PLT, %eax
+
+	.data
+ptr:
+	.dc.a 0

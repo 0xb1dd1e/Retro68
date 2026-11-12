@@ -1,5 +1,5 @@
 /* ns32k.c  -- Assemble on the National Semiconductor 32k series
-   Copyright (C) 1987-2018 Free Software Foundation, Inc.
+   Copyright (C) 1987-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -84,7 +84,7 @@ struct addr_mode
 typedef struct addr_mode addr_modeS;
 
 char *freeptr, *freeptr_static;	/* Points at some number of free bytes.  */
-struct hash_control *inst_hash_handle;
+htab_t inst_hash_handle;
 
 struct ns32k_opcode *desc;	/* Pointer at description of instruction.  */
 addr_modeS addr_modeP;
@@ -442,7 +442,7 @@ addr_mode (char *operand,
     case 'e':
       if (str[strl - 1] != ']')
 	{
-	  if ((!strncmp (str, "ext(", 4)) && strl > 7)
+	  if ((startswith (str, "ext(")) && strl > 7)
 	    {				/* external */
 	      addrmodeP->disp[0] = str + 4;
 	      i = 0;
@@ -493,10 +493,10 @@ addr_mode (char *operand,
 	default:
 	  break;
 	}
-      /* Drop through.  */
+      /* Fall through.  */
 
     case 3:
-      if (!strncmp (str, "tos", 3))
+      if (startswith (str, "tos"))
 	{
 	  addrmodeP->mode = 23;	/* TopOfStack */
 	  return -1;
@@ -513,11 +513,11 @@ addr_mode (char *operand,
 	{
 	  if (str[strl - 2] == ')')
 	    {
-	      if (!strncmp (&str[strl - 5], "(fp", 3))
+	      if (startswith (&str[strl - 5], "(fp"))
 		mode = 16;		/* Memory Relative.  */
-	      else if (!strncmp (&str[strl - 5], "(sp", 3))
+	      else if (startswith (&str[strl - 5], "(sp"))
 		mode = 17;
-	      else if (!strncmp (&str[strl - 5], "(sb", 3))
+	      else if (startswith (&str[strl - 5], "(sb"))
 		mode = 18;
 
 	      if (mode != DEFAULT)
@@ -568,13 +568,13 @@ addr_mode (char *operand,
 	      /* Fall through.  */
 
 	    default:
-	      if (!strncmp (&str[strl - 4], "(fp", 3))
+	      if (startswith (&str[strl - 4], "(fp"))
 		mode = 24;
-	      else if (!strncmp (&str[strl - 4], "(sp", 3))
+	      else if (startswith (&str[strl - 4], "(sp"))
 		mode = 25;
-	      else if (!strncmp (&str[strl - 4], "(sb", 3))
+	      else if (startswith (&str[strl - 4], "(sb"))
 		mode = 26;
-	      else if (!strncmp (&str[strl - 4], "(pc", 3))
+	      else if (startswith (&str[strl - 4], "(pc"))
 		mode = 27;
 
 	      if (mode != DEFAULT)
@@ -1097,13 +1097,16 @@ parse (const char *line, int recursive_level)
   if (recursive_level <= 0)
     {
       /* Called from md_assemble.  */
-      for (lineptr = line; (*lineptr) != '\0' && (*lineptr) != ' '; lineptr++)
+      for (lineptr = line;
+	   (*lineptr) != '\0' && !is_whitespace (*lineptr);
+	   lineptr++)
 	continue;
 
       c = *lineptr;
       *(char *) lineptr = '\0';
 
-      if (!(desc = (struct ns32k_opcode *) hash_find (inst_hash_handle, line)))
+      desc = str_hash_find (inst_hash_handle, line);
+      if (!desc)
 	as_fatal (_("No such opcode"));
 
       *(char *) lineptr = c;
@@ -1331,7 +1334,7 @@ fix_new_ns32k (fragS *frag,		/* Which frag? */
   fix_bsr (fixP) = bsr;
   fix_bit_fixP (fixP) = bit_fixP;
   /* We have a MD overflow check for displacements.  */
-  fixP->fx_no_overflow = (im_disp != 0);
+  fixP->fx_no_overflow = im_disp != 0 || bit_fixP != NULL;
 }
 
 static void
@@ -1359,7 +1362,7 @@ fix_new_ns32k_exp (fragS *frag,		/* Which frag? */
   fix_bsr (fixP) = bsr;
   fix_bit_fixP (fixP) = bit_fixP;
   /* We have a MD overflow check for displacements.  */
-  fixP->fx_no_overflow = (im_disp != 0);
+  fixP->fx_no_overflow = im_disp != 0 || bit_fixP != NULL;
 }
 
 /* Convert number to chars in correct order.  */
@@ -1574,13 +1577,13 @@ md_number_to_field (char *buf, long val, bit_fixS *field_ptr)
 #ifdef ENDIAN
       *mem_ptr = object;
 #else
-      mem_ptr[0] = (char) object;
+      mem_ptr[0] = object;
       object >>= 8;
-      mem_ptr[1] = (char) object;
+      mem_ptr[1] = object;
       object >>= 8;
-      mem_ptr[2] = (char) object;
+      mem_ptr[2] = object;
       object >>= 8;
-      mem_ptr[3] = (char) object;
+      mem_ptr[3] = object;
 #endif
     }
   else
@@ -1720,26 +1723,26 @@ convert_iif (void)
 			    {
 			    case 4:
 			      gen_to_words (words, 2, 8);
-			      md_number_to_imm (memP, (long) words[0],
+			      md_number_to_imm (memP, words[0],
 						sizeof (LITTLENUM_TYPE));
 			      md_number_to_imm (memP + sizeof (LITTLENUM_TYPE),
-						(long) words[1],
+						words[1],
 						sizeof (LITTLENUM_TYPE));
 			      break;
 			    case 8:
 			      gen_to_words (words, 4, 11);
-			      md_number_to_imm (memP, (long) words[0],
+			      md_number_to_imm (memP, words[0],
 						sizeof (LITTLENUM_TYPE));
 			      md_number_to_imm (memP + sizeof (LITTLENUM_TYPE),
-						(long) words[1],
+						words[1],
 						sizeof (LITTLENUM_TYPE));
 			      md_number_to_imm ((memP + 2
 						 * sizeof (LITTLENUM_TYPE)),
-						(long) words[2],
+						words[2],
 						sizeof (LITTLENUM_TYPE));
 			      md_number_to_imm ((memP + 3
 						 * sizeof (LITTLENUM_TYPE)),
-						(long) words[3],
+						words[3],
 						sizeof (LITTLENUM_TYPE));
 			      break;
 			    }
@@ -1755,7 +1758,7 @@ convert_iif (void)
                          the object later.  */
 		      exprP.X_add_number += iif.iifP[i].object_adjust;
 		      fix_new_ns32k_exp (frag_now,
-					 (long) (memP - frag_now->fr_literal),
+					 memP - frag_now->fr_literal,
 					 size,
 					 &exprP,
 					 iif.iifP[i].pcrel,
@@ -1803,12 +1806,12 @@ convert_iif (void)
 		    size = default_disp_size; /* Normally 4 bytes.  */
 		    memP = frag_more (size);
 		    fix_new_ns32k_exp (frag_now,
-				       (long) (memP - frag_now->fr_literal),
+				       memP - frag_now->fr_literal,
 				       size,
 				       &exprP,
 				       0, /* never iif.iifP[i].pcrel, */
 				       1, /* always iif.iifP[i].im_disp */
-				       (bit_fixS *) 0, 0,
+				       0, 0,
 				       inst_frag,
 				       inst_offset);
 		    break;		/* Exit this absolute hack.  */
@@ -1895,18 +1898,14 @@ md_begin (void)
 {
   /* Build a hashtable of the instructions.  */
   const struct ns32k_opcode *ptr;
-  const char *status;
   const struct ns32k_opcode *endop;
 
-  inst_hash_handle = hash_new ();
+  inst_hash_handle = str_htab_create ();
 
   endop = ns32k_opcodes + sizeof (ns32k_opcodes) / sizeof (ns32k_opcodes[0]);
   for (ptr = ns32k_opcodes; ptr < endop; ptr++)
-    {
-      if ((status = hash_insert (inst_hash_handle, ptr->name, (char *) ptr)))
-	/* Fatal.  */
-	as_fatal (_("Can't hash %s: %s"), ptr->name, status);
-    }
+    if (str_hash_insert (inst_hash_handle, ptr->name, ptr, 0) != NULL)
+      as_fatal (_("duplicate %s"), ptr->name);
 
   /* Some private space please!  */
   freeptr_static = XNEWVEC (char, PRIVATE_SIZE);
@@ -1920,7 +1919,7 @@ md_begin (void)
 const char *
 md_atof (int type, char *litP, int *sizeP)
 {
-  return ieee_md_atof (type, litP, sizeP, FALSE);
+  return ieee_md_atof (type, litP, sizeP, false);
 }
 
 int
@@ -1967,7 +1966,7 @@ md_fix_pcrel_adjust (fixS *fixP)
 void
 md_apply_fix (fixS *fixP, valueT * valP, segT seg ATTRIBUTE_UNUSED)
 {
-  long val = * (long *) valP;
+  long val = *valP;
   char *buf = fixP->fx_where + fixP->fx_frag->fr_literal;
 
   if (fix_bit_fixP (fixP))
@@ -2036,7 +2035,7 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED,
   disp = (S_GET_VALUE (fragP->fr_symbol) + fragP->fr_offset) - object_address;
   disp += md_pcrel_adjust (fragP);
 
-  md_number_to_disp (buffer_address, (long) disp, (int) ext);
+  md_number_to_disp (buffer_address, disp, ext);
   fragP->fr_fix += ext;
 }
 
@@ -2054,7 +2053,7 @@ md_estimate_size_before_relax (fragS *fragP, segT segment)
 	  /* We don't relax symbols defined in another segment.  The
 	     thing to do is to assume the object will occupy 4 bytes.  */
 	  fix_new_ns32k (fragP,
-			 (int) (fragP->fr_fix),
+			 fragP->fr_fix,
 			 4,
 			 fragP->fr_symbol,
 			 fragP->fr_offset,
@@ -2094,8 +2093,8 @@ md_create_short_jump (char *ptr,
   valueT offset;
 
   offset = to_addr - from_addr;
-  md_number_to_chars (ptr, (valueT) 0xEA, 1);
-  md_number_to_disp (ptr + 1, (valueT) offset, 2);
+  *ptr++ = 0xEA;
+  md_number_to_disp (ptr, offset, 2);
 }
 
 void
@@ -2108,20 +2107,20 @@ md_create_long_jump (char *ptr,
   valueT offset;
 
   offset = to_addr - from_addr;
-  md_number_to_chars (ptr, (valueT) 0xEA, 1);
-  md_number_to_disp (ptr + 1, (valueT) offset, 4);
+  *ptr++ = 0xEA;
+  md_number_to_disp (ptr, offset, 4);
 }
 
-const char *md_shortopts = "m:";
+const char md_shortopts[] = "m:";
 
-struct option md_longopts[] =
+const struct option md_longopts[] =
 {
 #define OPTION_DISP_SIZE (OPTION_MD_BASE)
   {"disp-size-default", required_argument , NULL, OPTION_DISP_SIZE},
   {NULL, no_argument, NULL, 0}
 };
 
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 int
 md_parse_option (int c, const char *arg)
@@ -2229,8 +2228,8 @@ tc_gen_reloc (asection *section ATTRIBUTE_UNUSED, fixS *fixp)
 
   code = reloc (fixp->fx_size, fixp->fx_pcrel, fix_im_disp (fixp));
 
-  rel = XNEW (arelent);
-  rel->sym_ptr_ptr = XNEW (asymbol *);
+  rel = notes_alloc (sizeof (arelent));
+  rel->sym_ptr_ptr = notes_alloc (sizeof (asymbol *));
   *rel->sym_ptr_ptr = symbol_get_bfdsym (fixp->fx_addsy);
   rel->address = fixp->fx_frag->fr_address + fixp->fx_where;
   if (fixp->fx_pcrel)

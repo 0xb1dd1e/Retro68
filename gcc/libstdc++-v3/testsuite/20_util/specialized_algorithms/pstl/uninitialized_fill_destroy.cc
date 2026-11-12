@@ -1,7 +1,8 @@
 // -*- C++ -*-
-// { dg-options "-std=gnu++17 -ltbb" }
+// { dg-options "-ltbb" }
 // { dg-do run { target c++17 } }
-// { dg-require-effective-target tbb-backend }
+// { dg-timeout-factor 3 }
+// { dg-require-effective-target tbb_backend }
 
 //===-- uninitialized_fill_destroy.pass.cpp -------------------------------===//
 //
@@ -82,11 +83,11 @@ test_uninitialized_fill_destroy_by_type()
     {
         std::unique_ptr<T[]> p(new T[n]);
         invoke_on_all_policies(test_uninitialized_fill_destroy(), p.get(), std::next(p.get(), n), T(), n,
-                               std::is_trivial<T>());
+                               std::conjunction<std::is_trivially_copyable<T>, std::is_trivially_default_constructible<T>>());
     }
 }
 
-int32_t
+int
 main()
 {
     // for trivial types

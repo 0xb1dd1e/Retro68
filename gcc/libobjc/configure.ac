@@ -1,5 +1,5 @@
 # Process this file with autoconf to produce a configure script.
-#   Copyright (C) 1994-2019 Free Software Foundation, Inc.
+#   Copyright (C) 1994-2026 Free Software Foundation, Inc.
 #   Originally contributed by Dave Love (d.love@dl.ac.uk).
 #
 #This file is part of GCC.
@@ -20,6 +20,7 @@
 
 AC_INIT(package-unused, version-unused,, libobjc)
 AC_CONFIG_SRCDIR([objc/objc.h])
+AC_CONFIG_MACRO_DIRS([../config] [..])
 GCC_TOPLEV_SUBDIRS
 
 # We need the following definitions because AC_PROG_LIBTOOL relies on them
@@ -76,6 +77,8 @@ case $srcdir in
 esac
 AC_SUBST(glibcpp_srcdir)
 
+GCC_WITH_TOOLEXECLIBDIR
+
 # Calculate toolexeclibdir
 # Also toolexecdir, though it's only used in toolexeclibdir
 case ${version_specific_libs} in
@@ -91,7 +94,14 @@ case ${version_specific_libs} in
        test x"$with_cross_host" != x"no"; then
       # Install a library built with a cross compiler in tooldir, not libdir.
       toolexecdir='$(exec_prefix)/$(target_noncanonical)'
-      toolexeclibdir='$(toolexecdir)/lib'
+      case ${with_toolexeclibdir} in
+	no)
+	  toolexeclibdir='$(toolexecdir)/lib'
+	  ;;
+	*)
+	  toolexeclibdir=${with_toolexeclibdir}
+	  ;;
+      esac
     else
       toolexecdir='$(libdir)/gcc-lib/$(target_noncanonical)'
       toolexeclibdir='$(libdir)'
@@ -138,17 +148,6 @@ m4_rename_force([real_PRECIOUS],[_AC_ARG_VAR_PRECIOUS])
 
 # extra LD Flags which are required for targets
 ACX_LT_HOST_FLAGS
-case "${host}" in
-  *-darwin*)
-    # Darwin needs -single_module when linking libobjc
-    extra_ldflags_libobjc='$(lt_host_flags) -Wl,-single_module'
-    ;;
-  *-cygwin*|*-mingw*)
-    # Tell libtool to build DLLs on Windows
-    extra_ldflags_libobjc='$(lt_host_flags)'
-    ;;
-esac
-AC_SUBST(extra_ldflags_libobjc)
 
 # Add CET specific flags if CET is enabled
 GCC_CET_FLAGS(CET_FLAGS)
@@ -172,6 +171,31 @@ AC_PROG_LIBTOOL
 AM_PROG_CC_C_O
 
 AC_PROG_MAKE_SET
+
+AM_CONDITIONAL([ENABLE_DARWIN_AT_RPATH], [test x$enable_darwin_at_rpath = xyes])
+
+# Must come after libtool is initialized.
+case "${host}" in
+  *-darwin[[4567]]*)
+    # Earlier Darwin versions need -single_module when linking libobjc; they
+    # do not support @rpath.
+    extra_ldflags_libobjc='$(lt_host_flags) -Wl,-single_module'
+    ;;
+  *-darwin*)
+    # Otherwise, single_module is the default and multi-module is ignored and
+    # obsolete.
+    extra_ldflags_libobjc='$(lt_host_flags)'
+    if test "x$enable_darwin_at_rpath" = "xyes"; then
+      extra_ldflags_libobjc="${extra_ldflags_libobjc} -Wc,-nodefaultrpaths"
+      extra_ldflags_libobjc="${extra_ldflags_libobjc} -Wl,-rpath,@loader_path"
+    fi
+    ;;
+  *-cygwin*|*-mingw*)
+    # Tell libtool to build DLLs on Windows
+    extra_ldflags_libobjc='$(lt_host_flags)'
+    ;;
+esac
+AC_SUBST(extra_ldflags_libobjc)
 
 # -------
 # Headers

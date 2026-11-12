@@ -1,5 +1,5 @@
 /* Target Definitions for OpenRISC.
-   Copyright (C) 2018-2019 Free Software Foundation, Inc.
+   Copyright (C) 2018-2026 Free Software Foundation, Inc.
    Contributed by Stafford Horne.
 
    This file is part of GCC.
@@ -21,6 +21,8 @@
 #ifndef GCC_OR1K_H
 #define GCC_OR1K_H
 
+#include "config/or1k/or1k-opts.h"
+
 /* Names to predefine in the preprocessor for this target machine.  */
 #define TARGET_CPU_CPP_BUILTINS()		\
   do						\
@@ -30,10 +32,17 @@
       builtin_define ("__or1k__");		\
       if (TARGET_CMOV)				\
 	builtin_define ("__or1k_cmov__");	\
+      if (TARGET_HARD_FLOAT)			\
+	builtin_define ("__or1k_hard_float__");	\
       builtin_assert ("cpu=or1k");		\
       builtin_assert ("machine=or1k");		\
     }						\
   while (0)
+
+#define TARGET_CMODEL_SMALL \
+  (or1k_code_model == CMODEL_SMALL)
+#define TARGET_CMODEL_LARGE \
+  (or1k_code_model == CMODEL_LARGE)
 
 /* Storage layout.  */
 
@@ -58,9 +67,6 @@
 #define SHORT_TYPE_SIZE 16
 #define LONG_TYPE_SIZE 32
 #define LONG_LONG_TYPE_SIZE 64
-#define FLOAT_TYPE_SIZE 32
-#define DOUBLE_TYPE_SIZE 64
-#define LONG_DOUBLE_TYPE_SIZE 64
 #define WCHAR_TYPE_SIZE 32
 
 #undef SIZE_TYPE
@@ -137,7 +143,7 @@
    : (X) < 24 ? ((X) - 16) * 2 + 17	\
    : ((X) - 24) * 2 + 16)
 
-#define DBX_REGISTER_NUMBER(X)  GCC_TO_HW_REGNO(X)
+#define DEBUGGER_REGNO(X)  GCC_TO_HW_REGNO(X)
 
 #define REGISTER_NAMES { \
   "r0",   "r1",   "r2",   "r3",   "r4",   "r5",   "r6",   "r7",   \
@@ -189,6 +195,8 @@ enum reg_class
 {
   NO_REGS,
   SIBCALL_REGS,
+  DOUBLE_REGS,
+  GOT_REGS,
   GENERAL_REGS,
   FLAG_REGS,
   ALL_REGS,
@@ -200,6 +208,8 @@ enum reg_class
 #define REG_CLASS_NAMES {	\
   "NO_REGS", 			\
   "SIBCALL_REGS",		\
+  "DOUBLE_REGS",		\
+  "GOT_REGS",			\
   "GENERAL_REGS",		\
   "FLAG_REGS",			\
   "ALL_REGS" }
@@ -212,6 +222,8 @@ enum reg_class
 #define REG_CLASS_CONTENTS      \
 { { 0x00000000, 0x00000000 },	\
   { SIBCALL_REGS_MASK,   0 },	\
+  { 0x7f7ffffe, 0x00000000 },	\
+  { 0xfffffdff, 0x00000000 },	\
   { 0xffffffff, 0x00000003 },	\
   { 0x00000000, 0x00000004 },	\
   { 0xffffffff, 0x00000007 }	\
@@ -373,8 +385,14 @@ do {                                                    \
 /* Always pass the SYMBOL_REF for direct calls to the expanders.  */
 #define NO_FUNCTION_CSE 1
 
-/* Profiling */
-#define FUNCTION_PROFILER(FILE,LABELNO) (abort (), 0)
+#define NO_PROFILE_COUNTERS 1
+
+/* Emit rtl for profiling.  Output assembler code to call "_mcount" for
+   profiling a function entry.  */
+#define PROFILE_HOOK(LABEL)  or1k_profile_hook()
+
+/* All the work is done in PROFILE_HOOK, but this is still required.  */
+#define FUNCTION_PROFILER(STREAM, LABELNO) do { } while (0)
 
 /* Dwarf 2 Support */
 #define DWARF2_DEBUGGING_INFO 1
@@ -388,5 +406,9 @@ do {                                                    \
 #define EH_RETURN_DATA_REGNO(N)	\
     ((N) < 4 ? HW_TO_GCC_REGNO (25) + (N) : INVALID_REGNUM)
 #define EH_RETURN_STACKADJ_RTX gen_rtx_REG (Pmode, EH_RETURN_REGNUM)
+
+/* Select a format to encode pointers in exception handling data.  */
+#define ASM_PREFERRED_EH_DATA_FORMAT(CODE, GLOBAL) \
+  (((GLOBAL) ? DW_EH_PE_indirect : 0) | DW_EH_PE_pcrel | DW_EH_PE_sdata4)
 
 #endif /* GCC_OR1K_H */

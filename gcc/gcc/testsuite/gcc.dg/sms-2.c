@@ -2,7 +2,7 @@
    traversal of the loops after versioning.  */
 
 /* { dg-do compile } */
-/* { dg-options "-O2 -fmodulo-sched -fdump-rtl-sms" } */
+/* { dg-options "-Wno-old-style-definition -O2 -fmodulo-sched -fdump-rtl-sms" } */
 
 int th, h, em, nlwm, nlwS, nlw, sy;
 void
@@ -31,5 +31,3 @@ fun (nb)
 	  sy = 0;
       }
 }
-
-/* { dg-final { scan-rtl-dump-times "SMS loop many exits" 1 "sms" { target spu-*-* powerpc*-*-* } } } */

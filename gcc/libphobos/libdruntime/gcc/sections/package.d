@@ -1,5 +1,5 @@
 // Run-time support for retrieving platform-specific sections.
-// Copyright (C) 2019 Free Software Foundation, Inc.
+// Copyright (C) 2019-2026 Free Software Foundation, Inc.
 
 // GCC is free software; you can redistribute it and/or modify it under
 // the terms of the GNU General Public License as published by the Free
@@ -22,27 +22,52 @@
 
 module gcc.sections;
 
-version (CRuntime_Glibc)
-    public import gcc.sections.elf_shared;
-else version (CRuntime_Musl)
-    public import gcc.sections.elf_shared;
-else version (CRuntime_UClibc)
-    public import gcc.sections.elf_shared;
-else version (FreeBSD)
-    public import gcc.sections.elf_shared;
-else version (NetBSD)
-    public import gcc.sections.elf_shared;
-else version (DragonFlyBSD)
-    public import gcc.sections.elf_shared;
-else version (Solaris)
-    public import gcc.sections.elf_shared;
-else version (OSX)
-    public import gcc.sections.osx;
-else version (CRuntime_DigitalMars)
-    public import gcc.sections.win32;
-else version (CRuntime_Microsoft)
-    public import gcc.sections.win64;
-else version (CRuntime_Bionic)
-    public import gcc.sections.android;
+version (CRuntime_Glibc)  version = SectionsElf;
+version (CRuntime_Musl)   version = SectionsElf;
+version (CRuntime_UClibc) version = SectionsElf;
+version (FreeBSD)         version = SectionsElf;
+version (NetBSD)          version = SectionsElf;
+version (OpenBSD)         version = SectionsElf;
+version (DragonFlyBSD)    version = SectionsElf;
+version (Solaris)         version = SectionsElf;
+version (OSX)             version = SectionsMacho;
+version (Windows)         version = SectionsPeCoff;
+
+version (SectionsElf)
+    public import gcc.sections.elf;
+else version (SectionsMacho)
+    public import gcc.sections.macho;
+else version (SectionsPeCoff)
+    public import gcc.sections.pecoff;
 else
     static assert(0, "unimplemented");
+
+import core.internal.traits : externDFunc;
+
+version (Shared)
+{
+    // interface for core.thread.osthread to inherit loaded libraries
+    pragma(mangle, externDFunc!("rt.sections_elf_shared.pinLoadedLibraries",
+                                void* function() @nogc nothrow).mangleof)
+    void* pinLoadedLibraries() @nogc nothrow;
+
+    pragma(mangle, externDFunc!("rt.sections_elf_shared.unpinLoadedLibraries",
+                                void function(void*) @nogc nothrow).mangleof)
+    void unpinLoadedLibraries(void* p) @nogc nothrow;
+
+    pragma(mangle, externDFunc!("rt.sections_elf_shared.inheritLoadedLibraries",
+                                void function(void*) @nogc nothrow).mangleof)
+    void inheritLoadedLibraries(void* p) @nogc nothrow;
+
+    pragma(mangle, externDFunc!("rt.sections_elf_shared.cleanupLoadedLibraries",
+                                void function() @nogc nothrow).mangleof)
+    void cleanupLoadedLibraries() @nogc nothrow;
+}
+
+version (SectionsElf)
+{
+    // interface for core.thread.osthread to adjust stack size
+    pragma(mangle, externDFunc!("rt.sections_elf_shared.sizeOfTLS",
+                                size_t function() @nogc nothrow).mangleof)
+    size_t sizeOfTLS() @nogc nothrow;
+}

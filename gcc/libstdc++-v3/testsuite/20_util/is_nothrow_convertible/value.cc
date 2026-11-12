@@ -1,4 +1,4 @@
-// Copyright (C) 2018-2019 Free Software Foundation, Inc.
+// Copyright (C) 2018-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -15,15 +15,15 @@
 // with this library; see the file COPYING3.  If not see
 // <http://www.gnu.org/licenses/>.
 
-// { dg-options "-std=gnu++2a" }
-// { dg-do compile { target c++2a } }
+// { dg-do compile { target c++20 } }
 
 #include <type_traits>
 #include <testsuite_tr1.h>
 
+using std::is_nothrow_convertible;
+
 void test01()
 {
-  using std::is_nothrow_convertible;
   using namespace __gnu_test;
 
   // Positive conversion tests.
@@ -174,4 +174,17 @@ void test01()
   static_assert(test_relationship<is_nothrow_convertible,
 				  NoexceptMoveConsClass&,
 				  NoexceptMoveConsClass>(false));
+}
+
+void test02()
+{
+  struct X { };
+
+  struct Y
+  {
+    explicit Y(X) noexcept; // not viable for implicit conversions
+    Y(...);
+  };
+
+  static_assert(!is_nothrow_convertible<X, Y>::value, "");
 }

@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O2 -fdump-tree-vrp1" } */
+/* { dg-options "-Wno-old-style-definition -O2 -fdump-tree-vrp1" } */
      
 
 extern const unsigned char mode_size[];
@@ -7,7 +7,7 @@ unsigned int
 subreg_highpart_offset (outermode, innermode)
      int outermode, innermode;
 {
-  unsigned int offset = 0;
+  unsigned int offset = 1;
   int difference = (mode_size[innermode] - mode_size[outermode]);
   if (difference > 0)
     {

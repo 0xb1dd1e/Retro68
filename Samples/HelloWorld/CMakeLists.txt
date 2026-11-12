@@ -19,3 +19,21 @@ if(CMAKE_SYSTEM_NAME MATCHES Retro68)
 else()
     set_target_properties(HelloWorld PROPERTIES LINK_FLAGS "-Wl,-gc-sections")
 endif()
+
+add_application(HelloWorldCpp
+    hello.cc
+    CONSOLE
+   )
+target_compile_features(HelloWorldCpp PUBLIC cxx_std_23)
+set_target_properties(HelloWorldCpp PROPERTIES COMPILE_OPTIONS -ffunction-sections)
+if(CMAKE_SYSTEM_NAME MATCHES Retro68)
+    set_target_properties(HelloWorldCpp PROPERTIES LINK_FLAGS "-Wl,-gc-sections -Wl,--mac-strip-macsbug")
+else()
+    set_target_properties(HelloWorldCpp PROPERTIES LINK_FLAGS "-Wl,-gc-sections")
+endif()
+
+if(CMAKE_SYSTEM_NAME MATCHES Retro68)
+    add_test(NAME ${TESTCASE_PREFIX}HelloWorld.Size COMMAND ${CMAKE_COMMAND} "-DFILE=${CMAKE_CURRENT_BINARY_DIR}/HelloWorld.bin" -DMAX_BYTES=204800 -P "${CMAKE_SOURCE_DIR}/cmake/check-size.cmake")
+else()
+    add_test(NAME ${TESTCASE_PREFIX}HelloWorld.Size COMMAND ${CMAKE_COMMAND} "-DFILE=${CMAKE_CURRENT_BINARY_DIR}/HelloWorld.bin" -DMAX_BYTES=409600 -P "${CMAKE_SOURCE_DIR}/cmake/check-size.cmake")
+endif()

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                  S p e c                                 --
 --                                                                          --
---          Copyright (C) 1991-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1991-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -31,25 +31,19 @@
 
 --  This is a no tasking version of this package
 
-pragma Polling (Off);
---  Turn off polling, we do not want ATC polling to take place during tasking
---  operations. It causes infinite loops and other problems.
+with System.OS_Locks;
 
 package System.Task_Primitives is
    pragma Preelaborate;
 
    type Lock is new Integer;
 
-   type RTS_Lock is new Integer;
-
-   type Suspension_Object is new Integer;
-
    type Task_Body_Access is access procedure;
 
    type Private_Data is limited record
       Thread : aliased Integer;
       CV     : aliased Integer;
-      L      : aliased RTS_Lock;
+      L      : aliased System.OS_Locks.RTS_Lock;
    end record;
 
    subtype Task_Address is System.Address;

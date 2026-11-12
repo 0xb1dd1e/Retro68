@@ -1,5 +1,5 @@
 /* ldmain.h -
-   Copyright (C) 1991-2018 Free Software Foundation, Inc.
+   Copyright (C) 1991-2026 Free Software Foundation, Inc.
 
    This file is part of the GNU Binutils.
 
@@ -21,22 +21,25 @@
 #ifndef LDMAIN_H
 #define LDMAIN_H
 
-extern char *program_name;
+extern const char *program_name;
 extern const char *ld_sysroot;
 extern char *ld_canon_sysroot;
 extern int ld_canon_sysroot_len;
 extern FILE *saved_script_handle;
 extern FILE *previous_script_handle;
-extern bfd_boolean force_make_executable;
+extern bool force_make_executable;
 extern char *default_target;
-extern bfd_boolean trace_files;
-extern bfd_boolean verbose;
-extern bfd_boolean version_printed;
-extern bfd_boolean demangling;
+extern unsigned int trace_files;
+extern bool verbose;
+extern bool version_printed;
+extern bool demangling;
 extern int g_switch_value;
 extern const char *output_filename;
 extern struct bfd_link_info link_info;
 extern int overflow_cutoff_limit;
+#if SUPPORT_ERROR_HANDLING_SCRIPT
+extern char *error_handling_script;
+#endif
 
 #define RELAXATION_DISABLED_BY_DEFAULT	\
   (link_info.disable_target_specific_optimizations < 0)
@@ -58,5 +61,6 @@ extern void add_ysym (const char *);
 extern void add_wrap (const char *);
 extern void add_ignoresym (struct bfd_link_info *, const char *);
 extern void add_keepsyms_file (const char *);
+extern void track_dependency_files (const char *);
 
 #endif

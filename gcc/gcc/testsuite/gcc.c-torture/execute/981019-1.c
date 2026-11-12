@@ -1,5 +1,4 @@
-/* { dg-skip-if "ptxas seg faults" { nvptx-*-* } { "-O3*" } { "" } } */
-
+extern void abort(void);
 extern int f2(void);
 extern int f3(void);
 extern void f1(void);

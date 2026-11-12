@@ -8,6 +8,7 @@ struct A {
 };
 
 template <class T>
-concept bool C = A::val<T>;
+concept C = A::val<T>;
 
-C{T} struct B {};
+template<C T>
+struct B {};

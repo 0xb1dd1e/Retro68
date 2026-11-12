@@ -1,5 +1,5 @@
 /* macro.h - header file for macro support for gas
-   Copyright (C) 1994-2018 Free Software Foundation, Inc.
+   Copyright (C) 1994-2026 Free Software Foundation, Inc.
 
    Written by Steve and Judy Chamberlain of Cygnus Support,
       sac@cygnus.com
@@ -60,13 +60,14 @@ typedef struct formal_struct {
 
 typedef struct macro_struct
 {
-  sb sub;				/* Substitution text.  */
-  int formal_count;			/* Number of formal args.  */
-  formal_entry *formals;		/* Pointer to list of formal_structs.  */
-  struct hash_control *formal_hash;	/* Hash table of formals.  */
-  const char *name;			/* Macro name.  */
-  const char *file;				/* File the macro was defined in.  */
-  unsigned int line;			/* Line number of definition.  */
+  sb              sub;			/* Substitution text.  */
+  int             formal_count;		/* Number of formal args.  */
+  formal_entry *  formals;		/* List of formal_structs.  */
+  htab_t          formal_hash;		/* Hash table of formals.  */
+  const char *    name;			/* Macro name.  */
+  const char *    file;			/* File the macro was defined in.  */
+  unsigned int    line;			/* Line number of definition.  */
+  unsigned int    count;                /* Invocation count.  */
 } macro_entry;
 
 /* Whether any macros have been defined.  */
@@ -79,16 +80,13 @@ extern int macro_nest;
 
 /* The macro hash table.  */
 
-extern struct hash_control *macro_hash;
+extern htab_t macro_hash;
 
 extern int buffer_and_nest (const char *, const char *, sb *,
 			    size_t (*) (sb *));
-extern void macro_init (int, int, int,
-			size_t (*) (const char *, size_t, sb *, offsetT *));
-extern void macro_set_alternate (int);
-extern void macro_mri_mode (int);
-extern const char *define_macro (size_t, sb *, sb *, size_t (*) (sb *),
-				 const char *, unsigned int, const char **);
+extern void macro_init (void);
+extern void macro_end (void);
+extern macro_entry *define_macro (sb *, sb *, size_t (*) (sb *));
 extern int check_macro (const char *, sb *, const char **, macro_entry **);
 extern void delete_macro (const char *);
 extern const char *expand_irp (int, size_t, sb *, sb *, size_t (*) (sb *));

@@ -1,5 +1,5 @@
 /* tc-i386.h -- Header file for tc-i386.c
-   Copyright (C) 1989-2018 Free Software Foundation, Inc.
+   Copyright (C) 1989-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -59,10 +59,6 @@ extern unsigned long i386_mach (void);
 #define ELF_TARGET_FORMAT64	"elf64-x86-64-freebsd"
 #elif defined (TE_VXWORKS)
 #define ELF_TARGET_FORMAT	"elf32-i386-vxworks"
-#elif defined (TE_NACL)
-#define ELF_TARGET_FORMAT	"elf32-i386-nacl"
-#define ELF_TARGET_FORMAT32	"elf32-x86-64-nacl"
-#define ELF_TARGET_FORMAT64	"elf64-x86-64-nacl"
 #endif
 
 #ifdef TE_SOLARIS
@@ -82,21 +78,11 @@ extern unsigned long i386_mach (void);
 #define ELF_TARGET_FORMAT32	"elf32-x86-64"
 #endif
 
-#ifndef ELF_TARGET_L1OM_FORMAT
-#define ELF_TARGET_L1OM_FORMAT	"elf64-l1om"
-#endif
-
-#ifndef ELF_TARGET_K1OM_FORMAT
-#define ELF_TARGET_K1OM_FORMAT	"elf64-k1om"
-#endif
-
 #ifndef ELF_TARGET_IAMCU_FORMAT
 #define ELF_TARGET_IAMCU_FORMAT	"elf32-iamcu"
 #endif
 
-#if ((defined (OBJ_MAYBE_COFF) && defined (OBJ_MAYBE_AOUT)) \
-     || defined (OBJ_ELF) || defined (OBJ_MAYBE_ELF) \
-     || defined (TE_PE) || defined (TE_PEP) || defined (OBJ_MACH_O))
+#if (defined (OBJ_ELF) || defined (TE_PE) || defined (OBJ_MACH_O))
 extern const char *i386_target_format (void);
 #define TARGET_FORMAT i386_target_format ()
 #else
@@ -128,15 +114,16 @@ extern const char *i386_comment_chars;
 #define GLOBAL_OFFSET_TABLE_NAME "_GLOBAL_OFFSET_TABLE_"
 #endif
 
-#if (defined (OBJ_ELF) || defined (OBJ_MAYBE_ELF)) && !defined (LEX_AT)
 #define TC_PARSE_CONS_EXPRESSION(EXP, NBYTES) x86_cons (EXP, NBYTES)
-#endif
 extern bfd_reloc_code_real_type x86_cons (expressionS *, int);
 
 #define TC_CONS_FIX_NEW(FRAG, OFF, LEN, EXP, RELOC)	\
   x86_cons_fix_new(FRAG, OFF, LEN, EXP, RELOC)
 extern void x86_cons_fix_new
 (fragS *, unsigned int, unsigned int, expressionS *, bfd_reloc_code_real_type);
+
+#define X_PRECISION     5
+#define X_PRECISION_PAD 0
 
 #define TC_ADDRESS_BYTES x86_address_bytes
 extern int x86_address_bytes (void);
@@ -145,11 +132,18 @@ extern int x86_address_bytes (void);
 
 #define NO_RELOC BFD_RELOC_NONE
 
-void i386_validate_fix (struct fix *);
-#define TC_VALIDATE_FIX(FIX,SEGTYPE,SKIP) i386_validate_fix(FIX)
+int i386_validate_fix (struct fix *);
+#define TC_VALIDATE_FIX(FIX,SEGTYPE,SKIP) do { \
+    if (!i386_validate_fix(FIX)) goto SKIP;      \
+  } while (0)
 
+#ifdef OBJ_ELF
 #define tc_fix_adjustable(X)  tc_i386_fix_adjustable(X)
 extern int tc_i386_fix_adjustable (struct fix *);
+#else
+#define tc_fix_adjustable(X)  ((void)(X), 1)
+#define md_undefined_symbol(N) ((void)(N), NULL)
+#endif
 
 /* Values passed to md_apply_fix don't include the symbol value.  */
 #define MD_APPLY_SYM_VALUE(FIX) 0
@@ -157,11 +151,9 @@ extern int tc_i386_fix_adjustable (struct fix *);
 /* ELF wants external syms kept, as does PE COFF.  */
 #if defined (TE_PE) && defined (STRICT_PE_FORMAT)
 #define EXTERN_FORCE_RELOC				\
-  (OUTPUT_FLAVOR == bfd_target_elf_flavour		\
-   || OUTPUT_FLAVOR == bfd_target_coff_flavour)
+  (IS_ELF || OUTPUT_FLAVOR == bfd_target_coff_flavour)
 #else
-#define EXTERN_FORCE_RELOC				\
-  (OUTPUT_FLAVOR == bfd_target_elf_flavour)
+#define EXTERN_FORCE_RELOC	IS_ELF
 #endif
 
 /* This expression evaluates to true if the relocation is for a local
@@ -174,17 +166,48 @@ extern int tc_i386_fix_adjustable (struct fix *);
   (GENERIC_FORCE_RELOCATION_LOCAL (FIX)				\
    || (FIX)->fx_r_type == BFD_RELOC_386_PLT32			\
    || (FIX)->fx_r_type == BFD_RELOC_386_GOTPC			\
+   || (FIX)->fx_r_type == BFD_RELOC_X86_64_GOTPCREL		\
    || (FIX)->fx_r_type == BFD_RELOC_X86_64_GOTPCRELX		\
-   || (FIX)->fx_r_type == BFD_RELOC_X86_64_REX_GOTPCRELX)
+   || (FIX)->fx_r_type == BFD_RELOC_X86_64_REX_GOTPCRELX	\
+   || (FIX)->fx_r_type == BFD_RELOC_X86_64_CODE_4_GOTPCRELX	\
+   || (FIX)->fx_r_type == BFD_RELOC_X86_64_CODE_5_GOTPCRELX	\
+   || (FIX)->fx_r_type == BFD_RELOC_X86_64_CODE_6_GOTPCRELX)
 
-extern int i386_parse_name (char *, expressionS *, char *);
-#define md_parse_name(s, e, m, c) i386_parse_name (s, e, c)
+#define TC_FORCE_RELOCATION_ABS(FIX)				\
+  (TC_FORCE_RELOCATION (FIX)					\
+   || (FIX)->fx_r_type == BFD_RELOC_386_GOT32			\
+   || (FIX)->fx_r_type == BFD_RELOC_386_GOT32X			\
+   || (FIX)->fx_r_type == BFD_RELOC_X86_64_GOTPCREL		\
+   || (FIX)->fx_r_type == BFD_RELOC_X86_64_GOTPCRELX		\
+   || (FIX)->fx_r_type == BFD_RELOC_X86_64_REX_GOTPCRELX	\
+   || (FIX)->fx_r_type == BFD_RELOC_X86_64_CODE_4_GOTPCRELX	\
+   || (FIX)->fx_r_type == BFD_RELOC_X86_64_CODE_5_GOTPCRELX	\
+   || (FIX)->fx_r_type == BFD_RELOC_X86_64_CODE_6_GOTPCRELX)
+
+extern void i386_start_line (void);
+#define md_start_line_hook i386_start_line
+
+extern bool i386_check_label (void);
+#define TC_START_LABEL(STR, NUL_CHAR, NEXT_CHAR) \
+  (NEXT_CHAR == ':' && i386_check_label ())
+
+extern int i386_unrecognized_line (int);
+#define tc_unrecognized_line i386_unrecognized_line
+
+extern int i386_parse_name (char *, expressionS *, enum expr_mode, char *);
+#define md_parse_name(s, e, m, c) i386_parse_name (s, e, m, c)
 
 extern operatorT i386_operator (const char *name, unsigned int operands, char *);
 #define md_operator i386_operator
 
 extern int i386_need_index_operator (void);
 #define md_need_index_operator i386_need_index_operator
+
+#ifdef BFD64
+extern bool i386_record_operator
+  (operatorT, const expressionS *, const expressionS *);
+#define md_optimize_expr(l, o, r) i386_record_operator (o, l, r)
+#endif
 
 #define md_register_arithmetic 0
 
@@ -205,51 +228,108 @@ if ((n)									\
     goto around;							\
   }
 
-#define MAX_MEM_FOR_RS_ALIGN_CODE 4095
+extern void i386_cons_align (int);
+#define md_cons_align(nbytes) i386_cons_align (nbytes)
+
+#ifndef OBJ_AOUT
+#define md_section_align(seg, value) ((void)(seg), (value))
+#endif
 
 void i386_print_statistics (FILE *);
 #define tc_print_statistics i386_print_statistics
 
+void i386_md_end (void);
+#define md_end i386_md_end
+
 extern unsigned int i386_frag_max_var (fragS *);
 #define md_frag_max_var i386_frag_max_var
+
+extern long i386_generic_table_relax_frag (segT, fragS *, long);
+#define md_generic_table_relax_frag(segment, fragP, stretch) \
+  i386_generic_table_relax_frag (segment, fragP, stretch)
 
 #define md_number_to_chars number_to_chars_littleendian
 
 enum processor_type
 {
   PROCESSOR_UNKNOWN,
+  PROCESSOR_GENERIC32,
+  PROCESSOR_GENERIC64,
   PROCESSOR_I386,
   PROCESSOR_I486,
   PROCESSOR_PENTIUM,
+  PROCESSOR_I686,
   PROCESSOR_PENTIUMPRO,
   PROCESSOR_PENTIUM4,
   PROCESSOR_NOCONA,
   PROCESSOR_CORE,
   PROCESSOR_CORE2,
   PROCESSOR_COREI7,
-  PROCESSOR_L1OM,
-  PROCESSOR_K1OM,
   PROCESSOR_IAMCU,
   PROCESSOR_K6,
   PROCESSOR_ATHLON,
   PROCESSOR_K8,
-  PROCESSOR_GENERIC32,
-  PROCESSOR_GENERIC64,
   PROCESSOR_AMDFAM10,
   PROCESSOR_BD,
   PROCESSOR_ZNVER,
-  PROCESSOR_BT
+  PROCESSOR_BT,
+  /* Keep this last.  */
+  PROCESSOR_NONE
 };
 
-extern enum processor_type cpu_arch_tune;
-extern enum processor_type cpu_arch_isa;
-extern i386_cpu_flags cpu_arch_isa_flags;
+/* We support four different modes.  I386_FLAG_CODE variable is used to
+   distinguish three of these.  */
+
+enum i386_flag_code {
+	CODE_32BIT,
+	CODE_16BIT,
+	CODE_64BIT
+};
+
+struct i386_segment_info {
+  /* Type of previous "instruction", e.g. .byte or stand-alone prefix.  */
+  struct last_insn {
+    const char *file;
+    const char *name;
+    unsigned int line;
+    enum last_insn_kind
+      {
+	last_insn_other = 0,
+	last_insn_directive,
+	last_insn_prefix
+      } kind;
+  } last_insn;
+  subsegT subseg;
+  struct i386_segment_info *next;
+};
+
+#define TC_SEGMENT_INFO_TYPE struct i386_segment_info
 
 struct i386_tc_frag_data
 {
+  union
+    {
+      fragS *padding_fragP;
+      fragS *branch_fragP;
+    } u;
+  addressT padding_address;
   enum processor_type isa;
-  i386_cpu_flags isa_flags;
   enum processor_type tune;
+  enum i386_flag_code code;
+  unsigned int max_bytes;
+  unsigned char length;
+  unsigned char last_length;
+  unsigned char max_prefix_length;
+  unsigned char prefix_length;
+  unsigned char default_prefix;
+  unsigned char cmp_size;
+  unsigned int mf_type : 3;
+  unsigned int classified : 1;
+  unsigned int branch_type : 3;
+  unsigned int cpunop : 1;
+  unsigned int isanop : 1;
+  unsigned int last_insn_normal : 1;
+  bool no_cond_jump_promotion : 1;
 };
 
 /* We need to emit the right NOP pattern in .align frags.  This is
@@ -257,14 +337,8 @@ struct i386_tc_frag_data
    the isa/tune settings at the time the .align was assembled.  */
 #define TC_FRAG_TYPE struct i386_tc_frag_data
 
-#define TC_FRAG_INIT(FRAGP)					\
- do								\
-   {								\
-     (FRAGP)->tc_frag_data.isa = cpu_arch_isa;			\
-     (FRAGP)->tc_frag_data.isa_flags = cpu_arch_isa_flags;	\
-     (FRAGP)->tc_frag_data.tune = cpu_arch_tune;		\
-   }								\
- while (0)
+void i386_frag_init (fragS *, size_t);
+#define TC_FRAG_INIT(fragP, max_bytes) i386_frag_init (fragP, max_bytes)
 
 #define WORKING_DOT_WORD 1
 
@@ -273,16 +347,43 @@ extern void i386_generate_nops (fragS *, char *, offsetT, int);
 #define md_generate_nops(frag, where, amount, control) \
   i386_generate_nops ((frag), (where), (amount), (control))
 
-#define HANDLE_ALIGN(fragP)						\
+#define HANDLE_ALIGN(sec, fragP) \
 if (fragP->fr_type == rs_align_code) 					\
   {									\
     offsetT __count = (fragP->fr_next->fr_address			\
 		       - fragP->fr_address				\
 		       - fragP->fr_fix);				\
-    if (__count > 0 && __count <= MAX_MEM_FOR_RS_ALIGN_CODE)		\
-      md_generate_nops (fragP, fragP->fr_literal + fragP->fr_fix,	\
-			__count, 0);					\
+    if (__count > 0)							\
+      {									\
+	know (fragP->tc_frag_data.max_bytes >= (valueT) __count		\
+	      || (fragP->tc_frag_data.max_bytes				\
+		  >= MAX_MEM_FOR_RS_ALIGN_CODE (fragP->fr_offset,	\
+						fragP->fr_subtype)));	\
+	md_generate_nops (fragP, fragP->fr_literal + fragP->fr_fix,	\
+			  __count, 0);					\
+      }									\
   }
+/* Possible plain nop, branch, twice largest nop less 1.
+   Yes, the branch might be one byte longer in CODE_16BIT but then the
+   largest nop is smaller.  */
+#define MAX_MEM_FOR_RS_SPACE_NOP (1 + 5 + 2 * 15 - 1)
+
+static inline unsigned int
+max_mem_for_rs_align_code (unsigned int p2align, unsigned int max)
+{
+  unsigned int bytes = 1;
+  if (p2align != 0)
+    {
+      bytes = MAX_MEM_FOR_RS_SPACE_NOP;
+      if (bytes > (1ull << p2align) - 1)
+	bytes = (1ull << p2align) - 1;
+      if (max != 0 && bytes > max)
+	bytes = max;
+    }
+  return bytes;
+}
+#define MAX_MEM_FOR_RS_ALIGN_CODE(p2align, max) \
+  max_mem_for_rs_align_code (p2align, max)
 
 /* We want .cfi_* pseudo-ops for generating unwind info.  */
 #define TARGET_USE_CFIPOP 1
@@ -302,8 +403,19 @@ extern void tc_x86_parse_to_dw2regnum (expressionS *);
 #define tc_cfi_frame_initial_instructions tc_x86_frame_initial_instructions
 extern void tc_x86_frame_initial_instructions (void);
 
+/* DWARF register number of the frame-pointer register in 64-bit mode.  */
+#define REG_FP 6
+/* DWARF register number of the stack-pointer register in 64-bit mode.  */
+#define REG_SP 7
+/* DWARF register number of the (pseudo) return address register in 64-bit
+   mode.  This is the same as reg RIP in i386-reg.tbl.  */
+#define REG_RA 16
+
 #define md_elf_section_type(str,len) i386_elf_section_type (str, len)
 extern int i386_elf_section_type (const char *, size_t);
+
+#define md_elf_section_change_hook i386_elf_section_change_hook
+extern void i386_elf_section_change_hook (void);
 
 #ifdef TE_SOLARIS
 #define md_fix_up_eh_frame(sec) i386_solaris_fix_up_eh_frame (sec)
@@ -311,10 +423,67 @@ extern void i386_solaris_fix_up_eh_frame (segT);
 #endif
 
 /* Support for SHF_X86_64_LARGE */
-extern bfd_vma x86_64_section_word (char *, size_t);
 extern bfd_vma x86_64_section_letter (int, const char **);
 #define md_elf_section_letter(LETTER, PTR_MSG)	x86_64_section_letter (LETTER, PTR_MSG)
-#define md_elf_section_word(STR, LEN)		x86_64_section_word (STR, LEN)
+
+#ifdef OBJ_ELF
+extern void x86_cleanup (void);
+#define md_cleanup() x86_cleanup ()
+
+#define TARGET_USE_GINSN 1
+/* Allow GAS to synthesize DWARF CFI for hand-written asm.
+   PS: TARGET_USE_CFIPOP is a pre-condition.  */
+#define TARGET_USE_SCFI 1
+/* Identify the maximum DWARF register number of all the registers being
+   tracked for SCFI.  This is the last DWARF register number of the set
+   of SP, BP, and all callee-saved registers.  For AMD64, this means
+   R15 (15).  Use SCFI_CALLEE_SAVED_REG_P to identify which registers
+   are callee-saved from this set.  */
+#define SCFI_MAX_REG_ID 15
+/* Some ABIs, like AMD64, use stack for call instruction.  For such an ABI,
+   identify the initial (CFA) offset from RSP at the entry of function.  */
+#define SCFI_INIT_CFA_OFFSET 8
+
+#define SCFI_CALLEE_SAVED_REG_P(dw2reg)  x86_scfi_callee_saved_p (dw2reg)
+extern bool x86_scfi_callee_saved_p (uint32_t dw2reg_num);
+
+/* Whether SFrame stack trace info is supported.  */
+extern bool x86_support_sframe_p (void);
+#define support_sframe_p x86_support_sframe_p
+
+/* The stack pointer DWARF register number for SFrame CFA tracking.  */
+extern const unsigned int x86_sframe_cfa_sp_reg;
+#define SFRAME_CFA_SP_REG x86_sframe_cfa_sp_reg
+
+/* The frame pointer DWARF register number for SFrame CFA and FP tracking.  */
+extern const unsigned int x86_sframe_cfa_fp_reg;
+#define SFRAME_CFA_FP_REG x86_sframe_cfa_fp_reg
+
+/* The return address DWARF register number for SFrame purposes.  Although for
+   AMD64, RA tracking is disabled, specific constructs, like for indicating
+   the _start function, may use it.  */
+extern const unsigned int x86_sframe_cfa_ra_reg;
+#define SFRAME_CFA_RA_REG x86_sframe_cfa_ra_reg
+
+/* Whether SFrame return address tracking is needed.
+   In AMD64, return address is always stored on the stack at a fixed offset
+   from the CFA (provided via x86_sframe_cfa_ra_offset ()).  Do not track
+   explicitly via the data words in the SFrame Frame Row Entry.  */
+#define sframe_ra_tracking_p() false
+
+/* The fixed offset from CFA for SFrame to recover the return address.
+   (useful only when SFrame RA tracking is not needed).  */
+extern offsetT x86_sframe_cfa_ra_offset (void);
+#define sframe_cfa_ra_offset x86_sframe_cfa_ra_offset
+
+/* The abi/arch identifier for SFrame.  */
+extern unsigned char x86_sframe_get_abi_arch (void);
+#define sframe_get_abi_arch x86_sframe_get_abi_arch
+
+/* Whether SFrame FDE of type SFRAME_FDE_TYPE_FLEX be generated.  */
+#define sframe_support_flex_fde_p() true
+
+#endif
 
 #ifdef TE_PE
 

@@ -1,4 +1,10 @@
-/* PERMUTE_ARGS:
+/*
+ * TEST_OUTPUT:
+---
+fail_compilation/test16188.d(101): Error: no property `name` for `Where()` of type `test16188.Where`
+fail_compilation/test16188.d(107): Error: undefined identifier `getMember`
+fail_compilation/test16188.d(101): Error: template instance `test16188.Where.opDispatch!"name"` error instantiating
+---
  */
 
 // https://issues.dlang.org/show_bug.cgi?id=16188
@@ -9,6 +15,8 @@
  * This happens because errors are gagged when opDispatch() is compiled,
  * I don't understand why.
  */
+
+#line 100
 
 void where() { Where().name; }
 
@@ -22,4 +30,3 @@ struct Where
 }
 
 struct WhereField(FieldType) {}
-

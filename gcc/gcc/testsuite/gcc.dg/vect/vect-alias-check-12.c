@@ -52,6 +52,7 @@ typedef unsigned long long ull;
   }
 
 #define DO_TEST(TYPE)					\
+  _Pragma("GCC novector")				\
   for (int j = 0; j <= M; ++j)				\
     {							\
       TYPE a1[N * M], a2[N * M], b1[N], b2[N];		\
@@ -95,3 +96,6 @@ main (void)
 /* { dg-final { scan-tree-dump {no alias between [^\n]* when [^\n]* [_a-z][^ ]* \* 8[)]* is outside \[0, 24\)} "vect" { target vect_double } } } */
 /* { dg-final { scan-tree-dump {no alias between [^\n]* when [^\n]* [_a-z][^ ]* \* 8[)]* is outside \[0, 32\)} "vect" { target vect_double } } } */
 /* { dg-final { scan-tree-dump {run-time check [^\n]* unsigned \([^*]* \* 8[)]* >= 32} "vect" { target vect_double } } } */
+
+/* { dg-final { scan-tree-dump-not "using an address-based" "vect" } } */
+/* { dg-final { scan-tree-dump-not "using an index-based" "vect" } } */

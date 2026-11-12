@@ -1,7 +1,6 @@
 /* PR middle-end/81117 - Improve buffer overflow checking in strncpy
    { dg-do compile }
-   { dg-options "-O2 -Wstringop-truncation -Wno-stringop-overflow -ftrack-macro-expansion=0" }
-   { dg-require-effective-target alloca } */
+   { dg-options "-O2 -Wstringop-truncation -Wno-stringop-overflow -ftrack-macro-expansion=0" } */
 
 
 typedef __SIZE_TYPE__ size_t;
@@ -226,19 +225,18 @@ void test_strncpy_ptr (char *d, const char* s, const char *t, int i)
   }
 
   {
-    /* The following is likely buggy but there's no apparent truncation
-       so it's not diagnosed by -Wstringop-truncation.  Instead, it is
-       diagnosed by -Wstringop-overflow (tested elsewhere).  */
+    /* The following truncates the terminating nul.  The warning should
+       say that but doesn't.  */
     int n;
     n = strlen (s) - 1;
-    CPY (d, s, n);
+    CPY (d, s, n);                  /* { dg-warning "\\\[-Wstringop-truncation" } */
   }
 
   {
     /* Same as above.  */
     size_t n;
     n = strlen (s) - 1;
-    CPY (d, s, n);
+    CPY (d, s, n);                  /* { dg-warning "\\\[-Wstringop-truncation" } */
   }
 
   {
@@ -269,7 +267,7 @@ void test_strncpy_array (Dest *pd, int i, const char* s)
   CPY (dst7, s, 7);                 /* { dg-warning "specified bound 7 equals destination size" } */
   CPY (dst7, s, sizeof dst7);       /* { dg-warning "specified bound 7 equals destination size" } */
 
-  CPY (dst2_5[0], s, sizeof dst2_5[0]); /* { dg-warning "specified bound 5 equals destination size" "bug 77293" { xfail *-*-* } } */
+  CPY (dst2_5[0], s, sizeof dst2_5[0]); /* { dg-warning "specified bound 5 equals destination size" "bug 77293" } */
   CPY (dst2_5[1], s, sizeof dst2_5[1]); /* { dg-warning "specified bound 5 equals destination size" } */
 
   /* Verify that copies that nul-terminate are not diagnosed.  */
@@ -300,8 +298,7 @@ void test_strncpy_array (Dest *pd, int i, const char* s)
   CPY (pd->a5, s, 5);               /* { dg-warning "specified bound 5 equals destination size" } */
   CPY (pd->a5, s, sizeof pd->a5);   /* { dg-warning "specified bound 5 equals destination size" } */
 
-  /* The following is not yet handled.  */
-  CPY (pd->a5 + i, s, sizeof pd->a5);   /* { dg-warning "specified bound 5 equals destination size" "member array" { xfail *-*-* } } */
+  CPY (pd->a5 + i, s, sizeof pd->a5);   /* { dg-warning "specified bound 5 equals destination size" "member array" } */
 
   /* Verify that a copy that nul-terminates is not diagnosed.  */
   CPY (pd->a5, "1234", sizeof pd->a5);
@@ -425,7 +422,7 @@ void test_strncpy_alloc (const char* s)
   size_t n = 7;
   char *d = (char *)__builtin_malloc (n);
 
-  CPY (d, s, n);                    /* { dg-warning "specified bound 7 equals destination size" "bug 79016" { xfail *-*-* } } */
+  CPY (d, s, n);                    /* { dg-warning "specified bound 7 equals destination size" } */
 
   Dest *pd = (Dest *)__builtin_malloc (sizeof *pd * n);
   CPY (pd->a5, s, 5);               /* { dg-warning "specified bound 5 equals destination size" } */

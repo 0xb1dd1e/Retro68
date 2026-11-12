@@ -28,6 +28,7 @@ main1 ()
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
       if (out[i].a !=  (int) in[i*3] + 1
@@ -49,5 +50,6 @@ int main (void)
 }
 
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect"  { target vect_unpack } } } */
-/* { dg-final { scan-tree-dump-times "vectorizing stmts using SLP" 1 "vect"  { target vect_unpack xfail { vect_variable_length && vect_load_lanes } } } } */
-  
+/* The epilogues are vectorized using partial vectors.  */
+/* { dg-final { scan-tree-dump-times "vectorizing stmts using SLP" 1 "vect"  { target { vect_unpack && { { ! vect_partial_vectors_usage_1 } || s390_vx } } } } } */
+/* { dg-final { scan-tree-dump-times "vectorizing stmts using SLP" 2 "vect"  { target { { vect_unpack && vect_partial_vectors_usage_1 } && { ! s390_vx } } } } } */

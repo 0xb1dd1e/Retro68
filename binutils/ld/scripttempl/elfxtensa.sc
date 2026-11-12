@@ -1,4 +1,4 @@
-# Copyright (C) 2014-2018 Free Software Foundation, Inc.
+# Copyright (C) 2014-2026 Free Software Foundation, Inc.
 #
 # Copying and distribution of this file, with or without modification,
 # are permitted in any medium without royalty provided the copyright
@@ -136,7 +136,7 @@ fi
 test -n "${DATA_PLT-${BSS_PLT-text}}" && TEXT_PLT=yes
 if test -z "$GOT"; then
   if test -z "$SEPARATE_GOTPLT"; then
-    GOT=".got          ${RELOCATING-0} : { *(.got.plt) *(.got) }"
+    GOT=".got          ${RELOCATING-0} : {${RELOCATING+ *(.got.plt)} *(.got) }"
   else
     GOT=".got          ${RELOCATING-0} : { *(.got) }"
     GOTPLT=".got.plt      ${RELOCATING-0} : { *(.got.plt) }"
@@ -145,11 +145,11 @@ fi
 DYNAMIC=".dynamic      ${RELOCATING-0} : { *(.dynamic) }"
 RODATA=".rodata       ${RELOCATING-0} : { *(.rodata${RELOCATING+ .rodata.* .gnu.linkonce.r.*}) }"
 DATARELRO=".data.rel.ro : { *(.data.rel.ro.local* .gnu.linkonce.d.rel.ro.local.*) *(.data.rel.ro .data.rel.ro.* .gnu.linkonce.d.rel.ro.*) }"
-DISCARDED="/DISCARD/ : { *(.note.GNU-stack) *(.gnu_debuglink)  *(.gnu.lto_*) }"
+DISCARDED="/DISCARD/ : { *(.note.GNU-stack) *(.gnu_debuglink) *(.gnu.lto_*) *(.gnu_object_only) }"
 INIT_LIT=".init.literal 0 : { *(.init.literal)	}"
-INIT=".init         0 : { *(.init)		}"
+INIT=".init         0 : { KEEP (*(SORT_NONE(.init))) }"
 FINI_LIT=".fini.literal 0 : { *(.fini.literal)	}"
-FINI=".fini         0 : { *(.fini)		}"
+FINI=".fini         0 : { KEEP (*(SORT_NONE(.fini))) }"
 if test -z "${NO_SMALL_DATA}"; then
   SBSS=".sbss         ${RELOCATING-0} :
   {
@@ -287,7 +287,7 @@ else
 fi
 
 cat <<EOF
-/* Copyright (C) 2014-2018 Free Software Foundation, Inc.
+/* Copyright (C) 2014-2026 Free Software Foundation, Inc.
 
    Copying and distribution of this script, with or without modification,
    are permitted in any medium without royalty provided the copyright
@@ -305,12 +305,16 @@ ${RELOCATING- /* For some reason, the Solaris linker makes bad executables
 
 SECTIONS
 {
+  /* PR 32100: GDB makes use of the fact that the .note.gnu.build-id
+     section is typically placed next to the ELF headers.  */
+  .note.gnu.build-id ${RELOCATING-0}: { *(.note.gnu.build-id) }
+
   /* Read-only sections, merged into text segment: */
   ${CREATE_SHLIB-${CREATE_PIE-${RELOCATING+PROVIDE (__executable_start = ${TEXT_START_ADDR}); . = ${TEXT_BASE_ADDRESS};}}}
   ${CREATE_SHLIB+${RELOCATING+. = ${SHLIB_TEXT_START_ADDR:-0} + SIZEOF_HEADERS;}}
   ${CREATE_PIE+${RELOCATING+. = ${SHLIB_TEXT_START_ADDR:-0} + SIZEOF_HEADERS;}}
   ${INITIAL_READONLY_SECTIONS}
-  .note.gnu.build-id : { *(.note.gnu.build-id) }
+  .note.gnu.build-id ${RELOCATING-0}: { *(.note.gnu.build-id) }
 EOF
 
 test -n "${RELOCATING+0}" || unset NON_ALLOC_DYN
@@ -410,7 +414,7 @@ cat <<EOF
   ${TINY_READONLY_SECTION}
   .text         ${RELOCATING-0} :
   {
-    *(.got.plt* .plt*)
+    ${RELOCATING+*(.got.plt* .plt*)}
 
     ${RELOCATING+${INIT_START}}
     ${RELOCATING+KEEP (*(.init.literal))}
@@ -419,7 +423,7 @@ cat <<EOF
 
     ${RELOCATING+${TEXT_START_SYMBOLS}}
     *(.literal .text .stub${RELOCATING+ .literal.* .text.* .gnu.linkonce.literal.* .gnu.linkonce.t.*.literal .gnu.linkonce.t.*})
-    /* .gnu.warning sections are handled specially by elf32.em.  */
+    /* .gnu.warning sections are handled specially by elf.em.  */
     *(.gnu.warning)
     ${RELOCATING+${OTHER_TEXT_SECTIONS}}
 
@@ -440,9 +444,9 @@ cat <<EOF
   ${CREATE_SHLIB-${SDATA2}}
   ${CREATE_SHLIB-${SBSS2}}
   ${OTHER_READONLY_SECTIONS}
-  .eh_frame_hdr : { *(.eh_frame_hdr) }
+  .eh_frame_hdr ${RELOCATING-0} : { *(.eh_frame_hdr) }
   .eh_frame     ${RELOCATING-0} : ONLY_IF_RO { KEEP (*(.eh_frame)) }
-  .gcc_except_table ${RELOCATING-0} : ONLY_IF_RO { *(.gcc_except_table .gcc_except_table.*) }
+  .gcc_except_table ${RELOCATING-0} : ONLY_IF_RO { *(.gcc_except_table${RELOCATING+ .gcc_except_table.*}) }
 
   /* Adjust the address for the data segment.  We want to adjust up to
      the same address within the page on the next page up.  */
@@ -452,7 +456,7 @@ cat <<EOF
 
   /* Exception handling  */
   .eh_frame     ${RELOCATING-0} : ONLY_IF_RW { KEEP (*(.eh_frame)) }
-  .gcc_except_table ${RELOCATING-0} : ONLY_IF_RW { *(.gcc_except_table .gcc_except_table.*) }
+  .gcc_except_table ${RELOCATING-0} : ONLY_IF_RW { *(.gcc_except_table${RELOCATING+ .gcc_except_table.*}) }
 
   /* Thread Local Storage sections  */
   .tdata	${RELOCATING-0} : { *(.tdata${RELOCATING+ .tdata.* .gnu.linkonce.td.*}) }
@@ -500,21 +504,22 @@ cat <<EOF
   ${SDATA}
   ${OTHER_SDATA_SECTIONS}
   ${RELOCATING+${DATA_END_SYMBOLS-${USER_LABEL_PREFIX}_edata = .; PROVIDE (${USER_LABEL_PREFIX}edata = .);}}
+  ${RELOCATING+. = ALIGN(ALIGNOF(NEXT_SECTION));}
   ${RELOCATING+__bss_start = .;}
   ${RELOCATING+${OTHER_BSS_SYMBOLS}}
   ${SBSS}
   ${BSS_PLT+${PLT}}
   .bss          ${RELOCATING-0} :
   {
-   *(.dynbss)
-   *(.bss${RELOCATING+ .bss.* .gnu.linkonce.b.*})
-   *(COMMON)
-   /* Align here to ensure that the .bss section occupies space up to
-      _end.  Align after .bss to ensure correct alignment even if the
-      .bss section disappears because there are no input sections.
-      FIXME: Why do we need it? When there is no .bss section, we don't
-      pad the .data section.  */
-   ${RELOCATING+. = ALIGN(. != 0 ? ${ALIGNMENT} : 1);}
+    ${RELOCATING+*(.dynbss)}
+    *(.bss${RELOCATING+ .bss.* .gnu.linkonce.b.*})
+    ${RELOCATING+*(COMMON)
+    /* Align here to ensure that the .bss section occupies space up to
+       _end.  Align after .bss to ensure correct alignment even if the
+       .bss section disappears because there are no input sections.
+       FIXME: Why do we need it? When there is no .bss section, we do not
+       pad the .data section.  */
+    . = ALIGN(. != 0 ? ${ALIGNMENT} : 1);}
   }
   ${OTHER_BSS_SECTIONS}
   ${RELOCATING+${OTHER_BSS_END_SYMBOLS}}
@@ -543,23 +548,12 @@ if test -n "${NON_ALLOC_DYN}"; then
   rm -f ldscripts/dyntmp.$$
 fi
 
-cat <<EOF
-  /* Stabs debugging sections.  */
-  .stab          0 : { *(.stab) }
-  .stabstr       0 : { *(.stabstr) }
-  .stab.excl     0 : { *(.stab.excl) }
-  .stab.exclstr  0 : { *(.stab.exclstr) }
-  .stab.index    0 : { *(.stab.index) }
-  .stab.indexstr 0 : { *(.stab.indexstr) }
-
-  .comment       0 : { *(.comment) }
-
-EOF
-
-. $srcdir/scripttempl/DWARF.sc
+source_sh $srcdir/scripttempl/misc-sections.sc
+source_sh $srcdir/scripttempl/DWARF.sc
 
 cat <<EOF
   ${ATTRS_SECTIONS}
+  .xtensa.info : { *(.xtensa.info) }
   ${OTHER_SECTIONS}
   ${RELOCATING+${OTHER_SYMBOLS}}
   ${RELOCATING+${DISCARDED}}

@@ -25,8 +25,9 @@
 #include "MacUtils.h"
 #include "Fonts.h"
 #include "Processes.h"
-
+#include <cctype>
 #include <algorithm>
+#include <stack>
 
 using namespace retro;
 
@@ -110,6 +111,7 @@ namespace
             GetPort(&port);
             saveFont = GetPortTextFont(port);
             saveSize = GetPortTextSize(port);
+            saveFace = GetPortTextFace(port);
 #else
             saveFont = qd.thePort->txFont;
             saveSize = qd.thePort->txSize;
@@ -131,11 +133,13 @@ namespace
 
 Console::Console()
 {
+    InitEscapeSequenceMap();
 }
 
 Console::Console(GrafPtr port, Rect r)
 {
     Init(port, r);
+    InitEscapeSequenceMap();
 }
 
 Console::~Console()
@@ -256,6 +260,7 @@ void Console::Draw(Rect r)
 
 void Console::ScrollUp(short n)
 {
+    PortSetter setport(consolePort);
     cursorY--;
     std::copy(chars.begin() + cols, chars.end(), chars.begin());
     std::fill(chars.end() - cols, chars.end(), AttributedChar(' ', currentAttr));
@@ -283,30 +288,7 @@ bool Console::ProcessEscSequence(char c)
             sequenceState=State::noSequence;   // Unrecognized sequence
         break;
     case State::waitingForControlSequence:
-        sequenceState=State::waitingForM;
-        switch(c)
-        {
-        case '0':   // Normal character
-            currentAttr.reset();
-            break;
-        case '1':   // Bold
-            currentAttr.setBold(true);
-            break;
-        case '3':   // Italic
-            currentAttr.setItalic(true);
-            break;
-        case '4':   // Underline
-            currentAttr.setUnderline(true);
-            break;
-        default:
-            sequenceState=State::noSequence;   // Unrecognized sequence
-        }
-        break;
-    case State::waitingForM:
-        if(c=='m')
-            sequenceState=State::noSequence;   // Normal end of sequence
-        else
-            sequenceState=State::noSequence;   // Unrecognized sequence (but we end it anyway!)
+        HandleControlSequence(c);
         break;
     case State::waitingForOSCStart:
         if(c=='0')
@@ -318,7 +300,7 @@ bool Console::ProcessEscSequence(char c)
         if(c==';')
         {
             sequenceState=State::inWindowName;
-            windowName="";
+            argument = "";
         }
         else
             sequenceState=State::noSequence;   // Normal end of sequence
@@ -326,13 +308,13 @@ bool Console::ProcessEscSequence(char c)
     case State::inWindowName:
         if(c==BEL)
         {
-            setWindowName(std::move(windowName));
+            setWindowName(std::move(argument));
             sequenceState=State::noSequence;   // Normal end of sequence
         }
         else
         {
-            if(windowName.size() < MAX_LEN)    // Ignore subsequent characters
-                windowName+=c;
+            if(argument.size() < MAX_LEN)    // Ignore subsequent characters
+                argument+=c;
         }
         break;
     default:
@@ -423,7 +405,7 @@ void Console::Update()
         Rect r = CellRect(cursorX, cursorY);
         if(cursorDrawn)
             DrawCell(cursorX, cursorY, true);
-        else
+        else if(cursorRequestedHidden == false)
             InvertRect(&r);
         cursorDrawn = !cursorDrawn;
     }
@@ -499,6 +481,7 @@ void Console::InvalidateCursor()
     if(cursorDrawn)
     {
         PortSetter setport(consolePort);
+        FontSetup fontSetup;
         DrawCell(cursorX, cursorY, true);
         cursorDrawn = false;
     }
@@ -520,6 +503,7 @@ void Console::Reshape(Rect newBounds)
     if(!consolePort)
         return;
 
+    PortSetter setport(consolePort);
 
     bounds = newBounds;
     InsetRect(&bounds, 2,2);
@@ -560,4 +544,474 @@ void Console::Reshape(Rect newBounds)
 char Console::WaitNextChar()
 {
     return 0;
+}
+
+// Map a letter to a function
+void Console::InitEscapeSequenceMap()
+{
+    escapeSequenceMap.insert({'A', [&](std::string args) { MoveCursorUp(args); } });
+    escapeSequenceMap.insert({'B', [&](std::string args) { MoveCursorDown(args); } });
+    escapeSequenceMap.insert({'C', [&](std::string args) { MoveCursorForward(args); } });
+    escapeSequenceMap.insert({'D', [&](std::string args) { MoveCursorBack(args); } });
+    escapeSequenceMap.insert({'E', [&](std::string args) { MoveCursorNextLine(args); } });
+    escapeSequenceMap.insert({'F', [&](std::string args) { MoveCursorPreviousLine(args); } });
+    escapeSequenceMap.insert({'G', [&](std::string args) { MoveCursorHorizonalAbsolute(args); } });
+    escapeSequenceMap.insert({'H', [&](std::string args) { SetCursorPosition(args); } });
+    escapeSequenceMap.insert({'J', [&](std::string args) { EraseInDisplay(args); } });
+    escapeSequenceMap.insert({'K', [&](std::string args) { EraseInLine(args); } });
+    escapeSequenceMap.insert({'h', [&](std::string args) { ShowCursor(args); } });
+    escapeSequenceMap.insert({'l', [&](std::string args) { HideCursor(args); } });
+    escapeSequenceMap.insert({'m', [&](std::string args) { SetDisplayAttributes(args); } });
+    escapeSequenceMap.insert({'s', [&](std::string args) { SaveCursorPosition(args); } });
+    escapeSequenceMap.insert({'u', [&](std::string args) { RestoreCursorPosition(args); } });
+}
+
+// turns an argument string into numbers
+// example: "12;13" would return a vector with numbers 12 and 13
+static std::vector<int> parseArguments(std::string str) {
+    std::vector<int> numberVector;
+    size_t start = 0;
+    while (start < str.size())
+    {
+        size_t end = str.find(';', start);
+        if (end == std::string::npos)
+            end = str.size();
+        if (end == start)
+            numberVector.push_back(1);
+        else
+            numberVector.push_back(atoi(str.substr(start, end - start).c_str()));
+        start = end + 1;
+    }
+
+    while (numberVector.size() < 2)
+       numberVector.push_back(1);
+
+    return numberVector;
+}
+
+// Bound to ANSI escape code H
+// Page: https://en.wikipedia.org/wiki/ANSI_escape_code
+// Section: Control Sequence Introducer commands
+// Name: Cursor Position
+void Console::SetCursorPosition(std::string args)
+{
+    // possible formats the arguments can be in:
+    // n          -> (1,n)
+    // n;m.     -> (m,n)
+    // n;m;     -> (m,n)
+    // n;         -> (1,n)
+    // ;m        -> (m,1)
+    //             -> (1,1)
+    
+    auto numberVector = parseArguments(args);
+    SetCursorX(numberVector.at(1));
+    SetCursorY(numberVector.at(0));
+    Update();
+}
+
+// Bound to ANSI escape code J
+// Page: https://en.wikipedia.org/wiki/ANSI_escape_code
+// Section: Control Sequence Introducer commands
+// Name: Erase in Display
+void Console::EraseInDisplay(std::string args)
+{
+    int n;
+    if (args == "")
+        n = 0;
+    else
+        n = atoi(args.c_str());
+
+    switch(n) {
+        case 0:     // clear from cursor to end of window
+            ClearFromCursorToEndOfWindow();
+            break;
+        
+        case 1:     // clear from cursor to beginning of the window
+            ClearFromTopOfWindowToCursor();
+            break;
+    
+        case 2:     // clear entire screen
+            ClearWindow();
+            break;
+            
+        case 3:     // clear entire screen and delete all lines saved in the scrollback buffer
+            ClearWindow();
+            break;
+    }
+}
+
+// Sets attributes of characters
+// Note: only a few attributes are currently implemented
+// Bound to ANSI escape code m
+// Page: https://en.wikipedia.org/wiki/ANSI_escape_code
+// Section: Select Graphic Rendition parameters
+void Console::SetDisplayAttributes(std::string args)
+{
+    char c = args.c_str()[0];
+    switch(c)
+    {
+        case '0':   // Normal character
+            currentAttr.reset();
+            break;
+        case '1':   // Bold
+            currentAttr.setBold(true);
+            break;
+        case '3':   // Italic
+            currentAttr.setItalic(true);
+            break;
+        case '4':   // Underline
+            currentAttr.setUnderline(true);
+            break;
+    }
+}
+
+// Clears the window of all text
+void Console::ClearWindow()
+{
+    PortSetter setport(consolePort);
+
+    // Fill the buffer with blank spaces
+    std::fill(chars.begin(), chars.end(), AttributedChar(' ', currentAttr));
+    std::fill(onscreen.begin(), onscreen.end(), AttributedChar(' ', currentAttr));
+    
+    // Erase the window
+    EraseRect(&bounds);
+    Update();
+    Draw(bounds);
+}
+
+// Clears the window of text from the current cursor position to the bottom of the window
+void Console::ClearFromCursorToEndOfWindow()
+{
+    PortSetter setport(consolePort);
+
+    int newPosition = (GetCursorY() - 1) * cols + GetCursorX() - 1;
+    
+    // Fill the buffer with blank spaces
+    std::fill(chars.begin() + newPosition, chars.end(), AttributedChar(' ', currentAttr));
+    std::fill(onscreen.begin() + newPosition, onscreen.end(), AttributedChar(' ', currentAttr));
+    
+    // Erase the window
+    EraseRect(&bounds);
+    Update();
+    Draw(bounds);
+}
+
+// Clears the window from the top to the current cursor position
+void Console::ClearFromTopOfWindowToCursor()
+{
+    PortSetter setport(consolePort);
+
+    int newPosition = (GetCursorY() - 1) * cols + GetCursorX();
+    
+    // Fill the buffer with blank spaces
+    std::fill(chars.begin(), chars.begin() + newPosition, AttributedChar(' ', currentAttr));
+    std::fill(onscreen.begin(), onscreen.begin() + newPosition, AttributedChar(' ', currentAttr));
+    
+    // Erase the window
+    EraseRect(&bounds);
+    Update();
+    Draw(bounds);
+}
+
+// handles the waitingForControlSequence state
+void Console::HandleControlSequence(char c)
+{
+    if (isalpha(c))
+    {
+        auto escFunc = escapeSequenceMap.at(c);
+        escFunc(argument);
+        sequenceState=State::noSequence;
+        argument = "";
+    } 
+
+    else
+    {
+        argument = argument + c;
+    }
+}
+
+// Bound to ANSI escape code A
+// Page: https://en.wikipedia.org/wiki/ANSI_escape_code
+// Section: Some ANSI control sequences
+// Name: Cursor Up
+void Console::MoveCursorUp(std::string args)
+{
+    auto numberVector = parseArguments(args);
+    int lines;
+    if (numberVector.size() == 0)
+    {
+        lines = 1;
+    }
+    else
+    {
+        lines = numberVector.at(0);
+    }
+    SetCursorY(GetCursorY() - lines);
+    Update();
+}
+
+// Bound to ANSI escape code B
+// Page: https://en.wikipedia.org/wiki/ANSI_escape_code
+// Section: Some ANSI control sequences
+// Name: Cursor Down
+void Console::MoveCursorDown(std::string args)
+{
+    auto numberVector = parseArguments(args);
+    int lines;
+    if (numberVector.size() == 0)
+    {
+        lines = 1;
+    }
+    else
+    {
+        lines = numberVector.at(0);
+    }
+    SetCursorY(GetCursorY() + lines);
+    Update();
+}
+
+// Bound to ANSI escape code C
+// Page: https://en.wikipedia.org/wiki/ANSI_escape_code
+// Section: Some ANSI control sequences
+// Name: Cursor Forward
+void Console::MoveCursorForward(std::string args)
+{
+    auto numberVector = parseArguments(args);
+    int columns;
+    if (numberVector.size() == 0)
+    {
+        columns = 1;
+    }
+    else
+    {
+        columns = numberVector.at(0);
+    }
+    SetCursorX(GetCursorX() + columns);
+    Update();
+}
+
+// Bound to ANSI escape code D
+// Page: https://en.wikipedia.org/wiki/ANSI_escape_code
+// Section: Some ANSI control sequences
+// Name: Cursor Back
+void Console::MoveCursorBack(std::string args)
+{
+    auto numberVector = parseArguments(args);
+    int columns;
+    if (numberVector.size() == 0)
+    {
+        columns = 1;
+    }
+    else
+    {
+        columns = numberVector.at(0);
+    }
+    SetCursorX(GetCursorX() - columns);
+    Update();
+}
+
+// Bound to ANSI escape code E
+// Page: https://en.wikipedia.org/wiki/ANSI_escape_code
+// Section: Some ANSI control sequences
+// Name: Cursor Next Line
+void Console::MoveCursorNextLine(std::string args)
+{
+    auto numberVector = parseArguments(args);
+    int lines;
+    if (numberVector.size() == 0)
+    {
+        lines = 1;
+    }
+    else
+    {
+        lines = numberVector.at(0);
+    }
+    SetCursorX(1);
+    SetCursorY(GetCursorY() + lines);
+    Update();
+}
+
+// Bound to ANSI escape code F
+// Page: https://en.wikipedia.org/wiki/ANSI_escape_code
+// Section: Some ANSI control sequences
+// Name: Cursor Previous Line
+void Console::MoveCursorPreviousLine(std::string args)
+{
+    auto numberVector = parseArguments(args);
+    int lines;
+    if (numberVector.size() == 0)
+    {
+        lines = 1;
+    }
+    else
+    {
+        lines = numberVector.at(0);
+    }
+    SetCursorX(1);
+    SetCursorY(GetCursorY() - lines);
+    Update();
+}
+
+// Bound to ANSI escape code G
+// Page: https://en.wikipedia.org/wiki/ANSI_escape_code
+// Section: Some ANSI control sequences
+// Name: Cursor Horizontal Absolute
+void Console::MoveCursorHorizonalAbsolute(std::string args)
+{
+    auto numberVector = parseArguments(args);
+    auto newPosition = numberVector.at(0);
+    SetCursorX(newPosition);
+    Update();
+}
+
+// Bound to ANSI escape code K
+// Page: https://en.wikipedia.org/wiki/ANSI_escape_code
+// Section: Some ANSI control sequences
+// Name: Erase in Line
+void Console::EraseInLine(std::string args)
+{
+    auto numberVector = parseArguments(args);
+    int argument = numberVector.at(0);
+    switch(argument)
+    {
+        case 0:
+            ClearFromCursorToEndOfLine();
+            break;
+        case 1:
+            ClearFromBeginningOfLineToCursor();
+            break;
+        case 2:
+            ClearEntireLine();
+            break;
+    }
+}
+
+// Erases from the current cursor position to the end of the line
+void Console::ClearFromCursorToEndOfLine()
+{
+    PortSetter setport(consolePort);
+
+    int currentPosition = (GetCursorY() - 1) * cols + GetCursorX() - 1;
+    int endOfLinePosition = GetCursorY() * cols;
+
+    // Fill part of the buffer with blank spaces
+    std::fill(chars.begin() + currentPosition, chars.begin() + endOfLinePosition, AttributedChar(' ', currentAttr));
+    std::fill(onscreen.begin() + currentPosition, onscreen.begin() + endOfLinePosition, AttributedChar(' ', currentAttr));
+
+    Update();
+
+    // Erase only on the line the cursor is on
+    Rect rect;
+    rect = CellRect(cursorX, cursorY);
+    rect.right = bounds.left + cols * cellSizeX;
+    EraseRect(&rect);
+}
+
+// Erases from the beginning of the line to the cursor's position
+void Console::ClearFromBeginningOfLineToCursor()
+{
+    PortSetter setport(consolePort);
+
+    int currentPosition = (GetCursorY() - 1) * cols + GetCursorX();
+    int beginningOfLinePosition = (GetCursorY() - 1) * cols;
+
+    // Fill part of the buffer with blank spaces
+    std::fill(chars.begin() + beginningOfLinePosition, chars.begin() + currentPosition, AttributedChar(' ', currentAttr));
+    std::fill(onscreen.begin() + beginningOfLinePosition, onscreen.begin() + currentPosition, AttributedChar(' ', currentAttr));
+
+    Update();
+    
+    // Erase only on the line the cursor is on
+    Rect rect;
+    rect = CellRect(0, cursorY);
+    rect.right = bounds.left + GetCursorX() * cellSizeX;
+    EraseRect(&rect);
+}
+
+// Erases the entire line the cursor is on
+void Console::ClearEntireLine()
+{
+    PortSetter setport(consolePort);
+
+    int beginningOfLinePosition = (GetCursorY() - 1) * cols;
+    int endOfLinePosition = GetCursorY() * cols;
+
+    // Fill part of the buffer with blank spaces
+    std::fill(chars.begin() + beginningOfLinePosition, chars.begin() + endOfLinePosition, AttributedChar(' ', currentAttr));
+    std::fill(onscreen.begin() + beginningOfLinePosition, onscreen.begin() + endOfLinePosition, AttributedChar(' ', currentAttr));
+
+    Update();
+    
+    // Erase only the line the cursor is on
+    Rect rect;
+    rect = CellRect(0, cursorY);
+    rect.right = bounds.left + cols * cellSizeX;
+    EraseRect(&rect);
+}
+
+// Bound to ANSI escape code h
+// Page: https://en.wikipedia.org/wiki/ANSI_escape_code
+// Section: Some popular private sequences
+// Description: Sets a variable to indicate the cursor should be shown
+void Console::ShowCursor(std::string args)
+{
+    cursorRequestedHidden = false;
+}
+
+// Bound to ANSI escape code l
+// Page: https://en.wikipedia.org/wiki/ANSI_escape_code
+// Section: Some popular private sequences
+// Description: Sets a variable to indicate the cursor should be hidden
+void Console::HideCursor(std::string args)
+{
+    cursorRequestedHidden = true;
+}
+
+// Bound to ANSI escape code s
+// Page: https://en.wikipedia.org/wiki/ANSI_escape_code
+// Section: Some popular private sequences
+// Description: Saves the current cursor position
+void Console::SaveCursorPosition(std::string args)
+{
+    savedCursorX = cursorX;
+    savedCursorY = cursorY;
+}
+
+// Bound to ANSI escape code u
+// Page: https://en.wikipedia.org/wiki/ANSI_escape_code
+// Section: Some popular private sequences
+// Description: Restores the cursor's position to the saved value
+void Console::RestoreCursorPosition(std::string args)
+{
+    cursorX = savedCursorX;
+    cursorY = savedCursorY;
+}
+
+/*
+These setter and getter functions fix a problem where ANSI escape codes expect
+an origin of (1,1) while the Console class expects an origin of (0,0).
+Only functions that work with ANSI escape codes should use these functions.
+*/
+
+void Console::SetCursorX(int newX)
+{
+    cursorX = newX - 1;
+    cursorX = cursorX < 0 ? 0 : cursorX;   // Terminal.app does this so we will too
+}
+
+int Console::GetCursorX()
+{
+    return cursorX + 1;
+}
+
+void Console::SetCursorY(int newY)
+{
+    cursorY = newY - 1;
+    cursorY = cursorY < 0 ? 0 : cursorY;   // Terminal.app does this so we will too
+}
+
+int Console::GetCursorY()
+{
+    return cursorY + 1;
 }

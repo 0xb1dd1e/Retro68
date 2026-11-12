@@ -1,5 +1,5 @@
 // -*- C++ -*- Helpers for calling unextected and terminate
-// Copyright (C) 2001-2019 Free Software Foundation, Inc.
+// Copyright (C) 2001-2026 Free Software Foundation, Inc.
 //
 // This file is part of GCC.
 //
@@ -36,8 +36,10 @@ using namespace __cxxabiv1;
 // terminate.
 
 extern "C" void
-__cxa_call_terminate(_Unwind_Exception* ue_header) throw ()
+__cxa_call_terminate(void* ue_header_in) throw ()
 {
+  _Unwind_Exception* ue_header
+    = reinterpret_cast<_Unwind_Exception*>(ue_header_in);
 
   if (ue_header)
     {
@@ -124,7 +126,7 @@ __cxa_call_unexpected(void* exc_obj_in)
       void* new_ptr = __get_object_from_ambiguous_exception (new_xh);
       const std::type_info* catch_type;
       int n;
-      bool bad_exception_allowed = false;
+      bool bad_exception_allowed __attribute__((unused)) = false;
       const std::type_info& bad_exc = typeid(std::bad_exception);
 
       // Check the new exception against the rtti list
@@ -138,7 +140,7 @@ __cxa_call_unexpected(void* exc_obj_in)
 
 	  if (__cxa_type_match(&new_xh->unwindHeader, catch_type, false,
 			       &new_ptr) != ctm_failed)
-	    __throw_exception_again;
+	    { __throw_exception_again; }
 
 	  // If the exception spec allows std::bad_exception, throw that.
 	  // We don't have a thrown object to compare against, but since

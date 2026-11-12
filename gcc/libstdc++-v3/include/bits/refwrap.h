@@ -1,6 +1,6 @@
 // Implementation of std::reference_wrapper -*- C++ -*-
 
-// Copyright (C) 2004-2019 Free Software Foundation, Inc.
+// Copyright (C) 2004-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -30,19 +30,25 @@
 #ifndef _GLIBCXX_REFWRAP_H
 #define _GLIBCXX_REFWRAP_H 1
 
+#ifdef _GLIBCXX_SYSHDR
 #pragma GCC system_header
+#endif
 
-#if __cplusplus < 201103L
-# include <bits/c++0x_warning.h>
-#else
+#if __cplusplus >= 201103L
 
 #include <bits/move.h>
 #include <bits/invoke.h>
 #include <bits/stl_function.h> // for unary_function and binary_function
 
+#if __glibcxx_reference_wrapper >= 202403L // >= C++26
+# include <compare>
+#endif
+
 namespace std _GLIBCXX_VISIBILITY(default)
 {
 _GLIBCXX_BEGIN_NAMESPACE_VERSION
+
+  /// @cond undocumented
 
   /**
    * Derives from @c unary_function or @c binary_function, or perhaps
@@ -51,6 +57,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
    */
   template<typename _Res, typename... _ArgTypes>
     struct _Maybe_unary_or_binary_function { };
+
+// Ignore warnings about unary_function and binary_function.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
   /// Derives from @c unary_function, as appropriate.
   template<typename _Res, typename _T1>
@@ -61,6 +71,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template<typename _Res, typename _T1, typename _T2>
     struct _Maybe_unary_or_binary_function<_Res, _T1, _T2>
     : std::binary_function<_T1, _T2, _Res> { };
+
+#pragma GCC diagnostic pop
 
   template<typename _Signature>
     struct _Mem_fn_traits;
@@ -82,7 +94,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       using __vararg = false_type;					\
     };									\
   template<typename _Res, typename _Class, typename... _ArgTypes>	\
-    struct _Mem_fn_traits<_Res (_Class::*)(_ArgTypes... ...) _CV _REF>	\
+    struct _Mem_fn_traits<_Res (_Class::*)(_ArgTypes..., ...) _CV _REF>	\
     : _Mem_fn_traits_base<_Res, _CV _Class, _ArgTypes...>		\
     {									\
       using __vararg = true_type;					\
@@ -133,7 +145,8 @@ _GLIBCXX_MEM_FN_TRAITS(&& noexcept, false_type, true_type)
 
   /// Retrieve the result type for a varargs function type.
   template<typename _Res, typename... _ArgTypes _GLIBCXX_NOEXCEPT_PARM>
-    struct _Weak_result_type_impl<_Res(_ArgTypes......) _GLIBCXX_NOEXCEPT_QUAL>
+    struct _Weak_result_type_impl<_Res(_ArgTypes...,
+				       ...) _GLIBCXX_NOEXCEPT_QUAL>
     { typedef _Res result_type; };
 
   /// Retrieve the result type for a function pointer.
@@ -144,7 +157,7 @@ _GLIBCXX_MEM_FN_TRAITS(&& noexcept, false_type, true_type)
   /// Retrieve the result type for a varargs function pointer.
   template<typename _Res, typename... _ArgTypes _GLIBCXX_NOEXCEPT_PARM>
     struct
-    _Weak_result_type_impl<_Res(*)(_ArgTypes......) _GLIBCXX_NOEXCEPT_QUAL>
+    _Weak_result_type_impl<_Res(*)(_ArgTypes..., ...) _GLIBCXX_NOEXCEPT_QUAL>
     { typedef _Res result_type; };
 
   // Let _Weak_result_type_impl perform the real work.
@@ -215,6 +228,10 @@ _GLIBCXX_MEM_FN_TRAITS(&& noexcept, false_type, true_type)
     : _Weak_result_type<_Tp>, _Refwrap_base_arg1<_Tp>, _Refwrap_base_arg2<_Tp>
     { };
 
+// Ignore warnings about unary_function and binary_function.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
   // - a function type (unary)
   template<typename _Res, typename _T1 _GLIBCXX_NOEXCEPT_PARM>
     struct _Reference_wrapper_base<_Res(_T1) _GLIBCXX_NOEXCEPT_QUAL>
@@ -280,12 +297,14 @@ _GLIBCXX_MEM_FN_TRAITS(&& noexcept, false_type, true_type)
     {
       using result_type = typename _Mem_fn_traits<_MemFunPtr>::__result_type;
     };
+#pragma GCC diagnostic pop
 #endif // ! C++20
+
+  /// @endcond
 
   /**
    *  @brief Primary class template for reference_wrapper.
    *  @ingroup functors
-   *  @{
    */
   template<typename _Tp>
     class reference_wrapper
@@ -297,7 +316,9 @@ _GLIBCXX_MEM_FN_TRAITS(&& noexcept, false_type, true_type)
     {
       _Tp* _M_data;
 
+      _GLIBCXX20_CONSTEXPR
       static _Tp* _S_fun(_Tp& __r) noexcept { return std::__addressof(__r); }
+
       static void _S_fun(_Tp&&) = delete;
 
       template<typename _Up, typename _Up2 = __remove_cvref_t<_Up>>
@@ -312,6 +333,7 @@ _GLIBCXX_MEM_FN_TRAITS(&& noexcept, false_type, true_type)
       // 3041. Unnecessary decay in reference_wrapper
       template<typename _Up, typename = __not_same<_Up>, typename
 		= decltype(reference_wrapper::_S_fun(std::declval<_Up>()))>
+	_GLIBCXX20_CONSTEXPR
 	reference_wrapper(_Up&& __uref)
 	noexcept(noexcept(reference_wrapper::_S_fun(std::declval<_Up>())))
 	: _M_data(reference_wrapper::_S_fun(std::forward<_Up>(__uref)))
@@ -322,22 +344,74 @@ _GLIBCXX_MEM_FN_TRAITS(&& noexcept, false_type, true_type)
       reference_wrapper&
       operator=(const reference_wrapper&) = default;
 
+      _GLIBCXX20_CONSTEXPR
       operator _Tp&() const noexcept
       { return this->get(); }
 
+      _GLIBCXX20_CONSTEXPR
       _Tp&
       get() const noexcept
       { return *_M_data; }
 
       template<typename... _Args>
-	typename result_of<_Tp&(_Args&&...)>::type
+	_GLIBCXX20_CONSTEXPR
+	typename __invoke_result<_Tp&, _Args...>::type
 	operator()(_Args&&... __args) const
+	noexcept(__is_nothrow_invocable<_Tp&, _Args...>::value)
 	{
 #if __cplusplus > 201703L
-	  static_assert(sizeof(type), "type must be complete");
+	  if constexpr (is_object_v<type>)
+	    static_assert(sizeof(type), "type must be complete");
 #endif
 	  return std::__invoke(get(), std::forward<_Args>(__args)...);
 	}
+
+#if __glibcxx_reference_wrapper >= 202403L // >= C++26
+      // [refwrap.comparisons], comparisons
+      [[nodiscard]]
+      friend constexpr bool
+      operator==(reference_wrapper __x, reference_wrapper __y)
+      requires requires { { __x.get() == __y.get() } -> convertible_to<bool>; }
+      { return __x.get() == __y.get(); }
+
+      [[nodiscard]]
+      friend constexpr bool
+      operator==(reference_wrapper __x, const _Tp& __y)
+      requires requires { { __x.get() == __y } -> convertible_to<bool>; }
+      { return __x.get() == __y; }
+
+      [[nodiscard]]
+      friend constexpr bool
+      operator==(reference_wrapper __x, reference_wrapper<const _Tp> __y)
+      requires (!is_const_v<_Tp>)
+	&& requires { { __x.get() == __y.get() } -> convertible_to<bool>; }
+      { return __x.get() == __y.get(); }
+
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 4071. reference_wrapper comparisons are not SFINAE-friendly
+
+      [[nodiscard]]
+      friend constexpr auto
+      operator<=>(reference_wrapper __x, reference_wrapper __y)
+      requires requires (const _Tp __t) {
+	{ __t < __t } -> __detail::__boolean_testable;
+      }
+      { return __detail::__synth3way(__x.get(), __y.get()); }
+
+      [[nodiscard]]
+      friend constexpr auto
+      operator<=>(reference_wrapper __x, const _Tp& __y)
+      requires requires { { __y < __y } -> __detail::__boolean_testable; }
+      { return __detail::__synth3way(__x.get(), __y); }
+
+      [[nodiscard]]
+      friend constexpr auto
+      operator<=>(reference_wrapper __x, reference_wrapper<const _Tp> __y)
+      requires (!is_const_v<_Tp>) && requires (const _Tp __t) {
+	{ __t < __t } -> __detail::__boolean_testable;
+      }
+      { return __detail::__synth3way(__x.get(), __y.get()); }
+#endif
     };
 
 #if __cpp_deduction_guides
@@ -345,14 +419,18 @@ _GLIBCXX_MEM_FN_TRAITS(&& noexcept, false_type, true_type)
     reference_wrapper(_Tp&) -> reference_wrapper<_Tp>;
 #endif
 
+  /// @relates reference_wrapper @{
+
   /// Denotes a reference should be taken to a variable.
   template<typename _Tp>
+    _GLIBCXX20_CONSTEXPR
     inline reference_wrapper<_Tp>
     ref(_Tp& __t) noexcept
     { return reference_wrapper<_Tp>(__t); }
 
   /// Denotes a const reference should be taken to a variable.
   template<typename _Tp>
+    _GLIBCXX20_CONSTEXPR
     inline reference_wrapper<const _Tp>
     cref(const _Tp& __t) noexcept
     { return reference_wrapper<const _Tp>(__t); }
@@ -365,17 +443,53 @@ _GLIBCXX_MEM_FN_TRAITS(&& noexcept, false_type, true_type)
 
   /// std::ref overload to prevent wrapping a reference_wrapper
   template<typename _Tp>
+    _GLIBCXX20_CONSTEXPR
     inline reference_wrapper<_Tp>
     ref(reference_wrapper<_Tp> __t) noexcept
     { return __t; }
 
   /// std::cref overload to prevent wrapping a reference_wrapper
   template<typename _Tp>
+    _GLIBCXX20_CONSTEXPR
     inline reference_wrapper<const _Tp>
     cref(reference_wrapper<_Tp> __t) noexcept
     { return { __t.get() }; }
 
-  // @} group functors
+  /// @}
+
+#if __glibcxx_common_reference_wrapper // C++ >= 20
+  namespace __detail
+  {
+    template<typename _Tp>
+      constexpr bool __is_ref_wrapper = false;
+
+    template<typename _Tp>
+      constexpr bool __is_ref_wrapper<reference_wrapper<_Tp>> = true;
+
+    template<typename _Rp, typename _Tp, typename _RQual, typename _TQual>
+      concept __ref_wrap_common_reference_exists_with = __is_ref_wrapper<_Rp>
+	&& requires { typename common_reference_t<typename _Rp::type&, _TQual>; }
+	&& convertible_to<_RQual, common_reference_t<typename _Rp::type&, _TQual>>;
+  } // namespace __detail
+
+  template<typename _Rp, typename _Tp,
+	   template<typename> class _RQual, template<typename> class _TQual>
+    requires __detail::__ref_wrap_common_reference_exists_with<_Rp, _Tp,
+							       _RQual<_Rp>, _TQual<_Tp>>
+      && (!__detail::__ref_wrap_common_reference_exists_with<_Tp, _Rp,
+							     _TQual<_Tp>, _RQual<_Rp>>)
+  struct basic_common_reference<_Rp, _Tp, _RQual, _TQual>
+  { using type = common_reference_t<typename _Rp::type&, _TQual<_Tp>>; };
+
+  template<typename _Tp, typename _Rp,
+	   template<typename> class _TQual, template<typename> class _RQual>
+    requires __detail::__ref_wrap_common_reference_exists_with<_Rp, _Tp,
+							       _RQual<_Rp>, _TQual<_Tp>>
+      && (!__detail::__ref_wrap_common_reference_exists_with<_Tp, _Rp,
+							     _TQual<_Tp>, _RQual<_Rp>>)
+  struct basic_common_reference<_Tp, _Rp, _TQual, _RQual>
+  { using type = common_reference_t<typename _Rp::type&, _TQual<_Tp>>; };
+#endif
 
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace std

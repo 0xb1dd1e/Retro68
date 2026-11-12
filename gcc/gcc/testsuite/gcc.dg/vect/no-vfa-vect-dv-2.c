@@ -1,3 +1,5 @@
+/* Disabling epilogues until we find a better way to deal with scans.  */
+/* { dg-additional-options "--param vect-epilogues-nomask=0 --param vect-max-version-for-alias-checks=0" } */
 /* { dg-require-effective-target vect_int } */
 
 #include <stdarg.h>
@@ -35,6 +37,7 @@ int main ()
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < N-20; i++)
     {
       if (A[i] != D[i+20])
@@ -48,6 +51,7 @@ int main ()
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < 16; i++)
     {
       if (B[i] != C[i] + 5)
@@ -61,6 +65,7 @@ int main ()
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < 4; i++)
     {
       if (C[i] != E[i])
@@ -73,5 +78,3 @@ int main ()
 
 /* The initialization induction loop (with aligned access) is also vectorized.  */
 /* { dg-final { scan-tree-dump-times "vectorized 3 loops" 1 "vect" } } */
-/* { dg-final { scan-tree-dump-times "accesses have the same alignment." 2 "vect" { target { { vect_aligned_arrays } && {! vect_sizes_32B_16B} } } } } */
-/* { dg-final { scan-tree-dump-times "accesses have the same alignment." 1 "vect" { target { {! vect_aligned_arrays } && {vect_sizes_32B_16B} } } } } */

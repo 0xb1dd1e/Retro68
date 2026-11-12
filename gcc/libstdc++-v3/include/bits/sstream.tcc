@@ -1,6 +1,6 @@
 // String based streams -*- C++ -*-
 
-// Copyright (C) 1997-2019 Free Software Foundation, Inc.
+// Copyright (C) 1997-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -34,7 +34,11 @@
 #ifndef _SSTREAM_TCC
 #define _SSTREAM_TCC 1
 
+#ifdef _GLIBCXX_SYSHDR
 #pragma GCC system_header
+#endif
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wc++11-extensions" // extern template
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
@@ -90,7 +94,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       const __size_type __capacity = _M_string.capacity();
 
 #if _GLIBCXX_USE_CXX11_ABI
-      if ((this->epptr() - this->pbase()) < __capacity)
+      if (size_t(this->epptr() - this->pbase()) < __capacity)
 	{
 	  // There is additional capacity in _M_string that can be used.
 	  char_type* __base = const_cast<char_type*>(_M_string.data());
@@ -304,4 +308,5 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace std
 
+#pragma GCC diagnostic pop
 #endif

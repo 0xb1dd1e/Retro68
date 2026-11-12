@@ -1,5 +1,5 @@
 /* frags.h - Header file for the frag concept.
-   Copyright (C) 1987-2018 Free Software Foundation, Inc.
+   Copyright (C) 1987-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -20,8 +20,6 @@
 
 #ifndef FRAGS_H
 #define FRAGS_H
-
-struct obstack;
 
 /* A code fragment (frag) is some known number of chars, followed by some
    unknown number of chars. Typically the unknown number of chars is an
@@ -45,9 +43,8 @@ struct frag {
   addressT last_fr_address;
 
   /* (Fixed) number of octets we know we have.  May be 0.  */
-  offsetT fr_fix;
-  /* May be used for (Variable) number of octets after above.
-     The generic frag handling code no longer makes any use of fr_var.  */
+  valueT fr_fix;
+  /* May be used for (Variable) number of octets after above.  */
   offsetT fr_var;
   /* For variable-length tail.  */
   offsetT fr_offset;
@@ -81,7 +78,7 @@ struct frag {
   unsigned int insn_addr:6;
 
   /* What state is my tail in? */
-  relax_stateT fr_type;
+  ENUM_BITFIELD (_relax_state) fr_type : 8;
   relax_substateT fr_subtype;
 
 #ifdef USING_CGEN
@@ -126,7 +123,7 @@ extern void frag_append_1_char (int);
 #define FRAG_APPEND_1_CHAR(X) frag_append_1_char (X)
 
 void frag_init (void);
-fragS *frag_alloc (struct obstack *);
+fragS *frag_alloc (struct obstack *, size_t);
 void frag_grow (size_t nchars);
 char *frag_more (size_t nchars);
 void frag_align (int alignment, int fill_character, int max);
@@ -153,9 +150,11 @@ char *frag_var (relax_stateT type,
 		offsetT offset,
 		char *opcode);
 
-bfd_boolean frag_offset_fixed_p (const fragS *, const fragS *, offsetT *);
+bool frag_offset_fixed_p (const fragS *, const fragS *, offsetT *);
+bool frag_offset_ignore_align_p (const fragS *, const fragS *, offsetT *);
+bool frag_gtoffset_p (valueT, const fragS *, valueT, const fragS *, offsetT *);
 
-int get_frag_count (void);
+unsigned int get_frag_count (void);
 void clear_frag_count (void);
 
 #endif /* FRAGS_H */

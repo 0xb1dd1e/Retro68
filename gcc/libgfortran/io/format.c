@@ -1,4 +1,4 @@
-/* Copyright (C) 2002-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2002-2026 Free Software Foundation, Inc.
    Contributed by Andy Vaught
    F2003 I/O support contributed by Jerry DeLisle
 
@@ -29,16 +29,15 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 
 #include "io.h"
 #include "format.h"
-#include <ctype.h>
 #include <string.h>
 
 
-static const fnode colon_node = { FMT_COLON, 0, NULL, NULL, {{ 0, 0, 0 }}, 0,
+static const fnode colon_node = { FMT_COLON, FMT_NONE, 0, NULL, NULL, {{ 0, 0, 0 }}, 0,
 				  NULL };
 
 /* Error messages. */
 
-static const char posint_required[] = "Positive width required in format",
+static const char posint_required[] = "Positive integer required in format",
   period_required[] = "Period required in format",
   nonneg_required[] = "Nonnegative width required in format",
   unexpected_element[] = "Unexpected element '%c' in format\n",
@@ -46,7 +45,8 @@ static const char posint_required[] = "Positive width required in format",
   bad_string[] = "Unterminated character constant in format",
   bad_hollerith[] = "Hollerith constant extends past the end of the format",
   reversion_error[] = "Exhausted data descriptors in format",
-  zero_width[] = "Zero width in format descriptor";
+  zero_width[] = "Zero width in format descriptor",
+  comma_missing[] = "Missing comma between descriptors";
 
 /* The following routines support caching format data from parsed format strings
    into a hash table.  This avoids repeatedly parsing duplicate format strings
@@ -193,7 +193,7 @@ next_char (format_data *fmt, int literal)
 	return -1;
 
       fmt->format_string_len--;
-      c = toupper (*fmt->format_string++);
+      c = safe_toupper (*fmt->format_string++);
       fmt->error_element = c;
     }
   while ((c == ' ' || c == '\t') && !literal);
@@ -226,6 +226,7 @@ get_fnode (format_data *fmt, fnode **head, fnode **tail, format_token t)
     }
   f = fmt->avail++;
   memset (f, '\0', sizeof (fnode));
+  f->pushed = FMT_NONE;
 
   if (*head == NULL)
     *head = *tail = f;
@@ -270,8 +271,7 @@ free_format_data (format_data *fmt)
        fnp->format != FMT_NONE; fnp++)
     if (fnp->format == FMT_DT)
 	{
-	  if (GFC_DESCRIPTOR_DATA(fnp->u.udf.vlist))
-	    free (GFC_DESCRIPTOR_DATA(fnp->u.udf.vlist));
+	  free (GFC_DESCRIPTOR_DATA(fnp->u.udf.vlist));
 	  free (fnp->u.udf.vlist);
 	}
 
@@ -328,7 +328,7 @@ format_lex (format_data *fmt)
 
     case '+':
       c = next_char (fmt, 0);
-      if (!isdigit (c))
+      if (!safe_isdigit (c))
 	{
 	  token = FMT_UNKNOWN;
 	  break;
@@ -339,7 +339,7 @@ format_lex (format_data *fmt)
       for (;;)
 	{
 	  c = next_char (fmt, 0);
-	  if (!isdigit (c))
+	  if (!safe_isdigit (c))
 	    break;
 
 	  fmt->value = 10 * fmt->value + c - '0';
@@ -367,7 +367,7 @@ format_lex (format_data *fmt)
       for (;;)
 	{
 	  c = next_char (fmt, 0);
-	  if (!isdigit (c))
+	  if (!safe_isdigit (c))
 	    break;
 
 	  fmt->value = 10 * fmt->value + c - '0';
@@ -617,6 +617,7 @@ parse_format_list (st_parameter_dt *dtp, bool *seen_dd)
   int repeat;
   format_data *fmt = dtp->u.p.fmt;
   bool seen_data_desc = false;
+  int standard;
 
   head = tail = NULL;
 
@@ -923,18 +924,30 @@ parse_format_list (st_parameter_dt *dtp, bool *seen_dd)
       *seen_dd = true;
       get_fnode (fmt, &head, &tail, t);
       tail->repeat = repeat;
+      tail->pushed = FMT_NONE;
 
       u = format_lex (fmt);
-      if (t == FMT_G && u == FMT_ZERO)
+      
+      /* Processing for zero width formats.  */
+      if (u == FMT_ZERO)
 	{
-	  *seen_dd = true;
-	  if (notification_std (GFC_STD_F2008) == NOTIFICATION_ERROR
+          if (t == FMT_F)
+	    standard = GFC_STD_F95;
+	  else if (t == FMT_G)
+	    standard = GFC_STD_F2008;
+	  else
+	    standard = GFC_STD_F2018;
+
+	  if (notification_std (standard) == NOTIFICATION_ERROR
 	      || dtp->u.p.mode == READING)
 	    {
 	      fmt->error = zero_width;
 	      goto finished;
 	    }
 	  tail->u.real.w = 0;
+	  tail->u.real.e = -1;
+
+	  /* Look for the dot seperator.  */
 	  u = format_lex (fmt);
 	  if (u != FMT_PERIOD)
 	    {
@@ -942,81 +955,121 @@ parse_format_list (st_parameter_dt *dtp, bool *seen_dd)
 	      break;
 	    }
 
+	  /* Look for the precision.  */
 	  u = format_lex (fmt);
-	  if (u != FMT_POSINT)
-	    {
-	      fmt->error = posint_required;
-	      goto finished;
-	    }
-	  tail->u.real.d = fmt->value;
-	  break;
-	}
-      if (t == FMT_F && dtp->u.p.mode == WRITING)
-	{
-	  *seen_dd = true;
-	  if (u != FMT_POSINT && u != FMT_ZERO)
+	  if (u != FMT_ZERO && u != FMT_POSINT)
 	    {
 	      fmt->error = nonneg_required;
 	      goto finished;
 	    }
-	}
-      else if (u != FMT_POSINT)
-	{
-	  fmt->error = posint_required;
-	  goto finished;
+	  tail->u.real.d = fmt->value;
+	  
+	  /* Look for optional exponent, not allowed for FMT_D */
+	  if (t == FMT_D)
+	    break;
+	  u = format_lex (fmt);
+	  if (u != FMT_E)
+	    fmt->saved_token = u;
+	  else
+	    {
+	      u = format_lex (fmt);
+	      if (u != FMT_POSINT)
+		{
+		  if (u == FMT_ZERO)
+		    {
+		      notify_std (&dtp->common, GFC_STD_F2018,
+				  "Positive exponent width required");
+		    }
+		  else
+		    {
+		      fmt->error = "Positive exponent width required in "
+				   "format string at %L";
+		      goto finished;
+		    }
+		}
+	      tail->u.real.e = fmt->value;
+	    }
+	  break;
 	}
 
-      tail->u.real.w = fmt->value;
-      t2 = t;
-      t = format_lex (fmt);
-      if (t != FMT_PERIOD)
+      /* Processing for positive width formats.  */
+      if (u == FMT_POSINT)
 	{
-	  /* We treat a missing decimal descriptor as 0.  Note: This is only
-	     allowed if -std=legacy, otherwise an error occurs.  */
-	  if (compile_options.warn_std != 0)
+	  tail->u.real.w = fmt->value;
+
+	  /* Look for the dot separator. Because of legacy behaviors
+	     we do some look ahead for missing things.  */
+	  t2 = t;
+	  t = format_lex (fmt);
+	  if (t != FMT_PERIOD)
 	    {
-	      fmt->error = period_required;
+	      /* We treat a missing decimal descriptor as 0.  Note: This is only
+		 allowed if -std=legacy, otherwise an error occurs.  */
+	      if (compile_options.warn_std != 0)
+		{
+		  fmt->error = period_required;
+		  goto finished;
+		}
+	      fmt->saved_token = t;
+	      tail->u.real.d = 0;
+	      tail->u.real.e = -1;
+	      break;
+	    }
+
+	  /* If we made it here, we should have the dot so look for the
+	     precision.  */
+	  t = format_lex (fmt);
+	  if (t != FMT_ZERO && t != FMT_POSINT)
+	    {
+	      fmt->error = nonneg_required;
 	      goto finished;
 	    }
-	  fmt->saved_token = t;
+	  tail->u.real.d = fmt->value;
+	  tail->u.real.e = -1;
+
+	  /* Done with D and F formats.  */
+	  if (t2 == FMT_D || t2 == FMT_F)
+	    {
+	      *seen_dd = true;
+	      break;
+	    }
+
+	  /* Look for optional exponent */
+	  u = format_lex (fmt);
+	  if (u != FMT_E)
+	    fmt->saved_token = u;
+	  else
+	    {
+	      u = format_lex (fmt);
+	      if (u != FMT_POSINT)
+		{
+		  if (u == FMT_ZERO)
+		    {
+		      notify_std (&dtp->common, GFC_STD_F2018,
+				  "Positive exponent width required");
+		    }
+		  else
+		    {
+		      fmt->error = "Positive exponent width required in "
+				   "format string at %L";
+		      goto finished;
+		    }
+		}
+	      tail->u.real.e = fmt->value;
+	    }
+	  break;
+	}
+
+      /* Old DEC codes may not have width or precision specified.  */
+      if (dtp->u.p.mode == WRITING && (dtp->common.flags & IOPARM_DT_DEC_EXT))
+	{
+	  tail->u.real.w = DEFAULT_WIDTH;
 	  tail->u.real.d = 0;
 	  tail->u.real.e = -1;
-	  break;
+	  fmt->saved_token = u;
 	}
-
-      t = format_lex (fmt);
-      if (t != FMT_ZERO && t != FMT_POSINT)
-	{
-	  fmt->error = nonneg_required;
-	  goto finished;
-	}
-
-      tail->u.real.d = fmt->value;
-      tail->u.real.e = -1;
-
-      if (t2 == FMT_D || t2 == FMT_F)
-	{
-	  *seen_dd = true;
-	  break;
-	}
-
-      /* Look for optional exponent */
-      t = format_lex (fmt);
-      if (t != FMT_E)
-	fmt->saved_token = t;
-      else
-	{
-	  t = format_lex (fmt);
-	  if (t != FMT_POSINT)
-	    {
-	      fmt->error = "Positive exponent width required in format";
-	      goto finished;
-	    }
-
-	  tail->u.real.e = fmt->value;
-	}
-
       break;
+
     case FMT_DT:
       *seen_dd = true;
       get_fnode (fmt, &head, &tail, t);
@@ -1100,6 +1153,13 @@ parse_format_list (st_parameter_dt *dtp, bool *seen_dd)
 	{
 	  if (t != FMT_POSINT)
 	    {
+	      if (dtp->common.flags & IOPARM_DT_DEC_EXT)
+		{
+		  tail->u.integer.w = DEFAULT_WIDTH;
+		  tail->u.integer.m = -1;
+		  fmt->saved_token = t;
+		  break;
+		}
 	      fmt->error = posint_required;
 	      goto finished;
 	    }
@@ -1108,6 +1168,13 @@ parse_format_list (st_parameter_dt *dtp, bool *seen_dd)
 	{
 	  if (t != FMT_ZERO && t != FMT_POSINT)
 	    {
+	      if (dtp->common.flags & IOPARM_DT_DEC_EXT)
+		{
+		  tail->u.integer.w = DEFAULT_WIDTH;
+		  tail->u.integer.m = -1;
+		  fmt->saved_token = t;
+		  break;
+		}
 	      fmt->error = nonneg_required;
 	      goto finished;
 	    }
@@ -1168,7 +1235,9 @@ parse_format_list (st_parameter_dt *dtp, bool *seen_dd)
       goto finished;
 
     default:
-      /* Assume a missing comma, this is a GNU extension */
+      /* Assume a missing comma with -std=legacy, GNU extension. */
+      if (compile_options.warn_std != 0)
+	fmt->error = comma_missing;
       goto format_item_1;
     }
 
@@ -1184,7 +1253,7 @@ parse_format_list (st_parameter_dt *dtp, bool *seen_dd)
     case FMT_RPAREN:
       goto finished;
 
-    default:			/* Assume that we have another format item */
+    default:	/* Assume that we have another format item */
       fmt->saved_token = t;
       break;
     }
@@ -1351,7 +1420,7 @@ parse_format (st_parameter_dt *dtp)
   else
     fmt->error = "Missing initial left parenthesis in format";
 
-  if (format_cache_ok)
+  if (format_cache_ok && !fmt->error)
     save_parsed_format (dtp);
   else
     dtp->u.p.format_not_saved = 1;

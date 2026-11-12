@@ -1,5 +1,5 @@
 /* tc-metag.c -- Assembler for the Imagination Technologies Meta.
-   Copyright (C) 2013-2018 Free Software Foundation, Inc.
+   Copyright (C) 2013-2026 Free Software Foundation, Inc.
    Contributed by Imagination Technologies Ltd.
 
    This file is part of GAS, the GNU Assembler.
@@ -41,7 +41,6 @@ static char mnemonic_chars[256];
 
 #define is_register_char(x) (register_chars[(unsigned char) x])
 #define is_mnemonic_char(x) (mnemonic_chars[(unsigned char) x])
-#define is_whitespace_char(x) (((x) == ' ') || ((x) == '\t'))
 #define is_space_char(x) ((x) == ' ')
 
 #define FPU_PREFIX_CHAR 'f'
@@ -81,13 +80,13 @@ static unsigned int mcpu_opt = CoreMeta12;
 static unsigned int mfpu_opt = 0;
 static unsigned int mdsp_opt = 0;
 
-const char * md_shortopts = "m:";
+const char md_shortopts[] = "m:";
 
-struct option md_longopts[] =
+const struct option md_longopts[] =
 {
   {NULL, no_argument, NULL, 0}
 };
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 /* Parser hash tables.  */
 static htab_t mnemonic_htab;
@@ -221,7 +220,7 @@ skip_whitespace (const char *line)
 {
   const char *l = line;
 
-  if (is_whitespace_char (*l))
+  if (is_whitespace (*l))
     {
       l++;
     }
@@ -268,7 +267,7 @@ parse_gp_reg (const char *name)
 
   entry.name = name;
 
-  reg = (const metag_reg *) htab_find (reg_htab, &entry);
+  reg = htab_find (reg_htab, &entry);
 
   return reg;
 }
@@ -380,7 +379,7 @@ parse_fpu_regs (const char *line, const metag_reg **regs, size_t count)
 }
 
 /* Return TRUE if REG1 and REG2 are in paired units.  */
-static bfd_boolean
+static bool
 is_unit_pair (const metag_reg *reg1, const metag_reg *reg2)
 {
   if ((reg1->unit == UNIT_A0 &&
@@ -391,22 +390,22 @@ is_unit_pair (const metag_reg *reg1, const metag_reg *reg2)
        (reg2->unit == UNIT_D1)) ||
       (reg1->unit == UNIT_D1 &&
        (reg2->unit == UNIT_D0)))
-    return TRUE;
+    return true;
 
-  return FALSE;
+  return false;
 }
 
 /* Return TRUE if REG1 and REG2 form a register pair.  */
-static bfd_boolean
+static bool
 is_reg_pair (const metag_reg *reg1, const metag_reg *reg2)
 {
   if (reg1->unit == UNIT_FX &&
       reg2->unit == UNIT_FX &&
       reg2->no == reg1->no + 1)
-    return TRUE;
+    return true;
 
   if (reg1->no != reg2->no)
-    return FALSE;
+    return false;
 
   return is_unit_pair (reg1, reg2);
 }
@@ -472,7 +471,7 @@ parse_mov_port (const char *line, metag_insn *insn,
 		const insn_template *template)
 {
   const char *l = line;
-  unsigned int is_movl = MINOR_OPCODE (template->meta_opcode) == MOVL_MINOR;
+  bool is_movl = MINOR_OPCODE (template->meta_opcode) == MOVL_MINOR;
   const metag_reg *dest_regs[2];
   const metag_reg *port_regs[1];
 
@@ -847,7 +846,7 @@ parse_addr (const char *line, metag_addr *addr, unsigned int size)
 /* Parse a GET or pipeline MOV instruction.  */
 static const char *
 parse_get (const char *line, const metag_reg **regs, metag_addr *addr,
-	   unsigned int size, bfd_boolean is_mov)
+	   unsigned int size, bool is_mov)
 {
   const char *l = line;
 
@@ -946,7 +945,7 @@ parse_set (const char *line, const metag_reg **regs, metag_addr *addr,
 
 /* Check a signed integer value can be represented in the given number
    of bits.  */
-static bfd_boolean
+static bool
 within_signed_range (int value, unsigned int bits)
 {
   int min_val = -(1 << (bits - 1));
@@ -956,14 +955,14 @@ within_signed_range (int value, unsigned int bits)
 
 /* Check an unsigned integer value can be represented in the given number
    of bits.  */
-static bfd_boolean
+static bool
 within_unsigned_range (unsigned int value, unsigned int bits)
 {
   return value < (unsigned int)(1 << bits);
 }
 
 /* Return TRUE if UNIT can be expressed using a short code.  */
-static bfd_boolean
+static bool
 is_short_unit (enum metag_unit unit)
 {
   switch (unit)
@@ -972,9 +971,9 @@ is_short_unit (enum metag_unit unit)
     case UNIT_A1:
     case UNIT_D0:
     case UNIT_D1:
-      return TRUE;
+      return true;
     default:
-      return FALSE;
+      return false;
     }
 }
 
@@ -995,7 +994,7 @@ parse_get_set (const char *line, metag_insn *insn,
   const metag_reg *regs[2];
   metag_addr addr;
   unsigned int size = metag_get_set_size_bytes (template->meta_opcode);
-  bfd_boolean is_get = MAJOR_OPCODE (template->meta_opcode) == OPC_GET;
+  bool is_get = MAJOR_OPCODE (template->meta_opcode) == OPC_GET;
   unsigned int reg_no;
 
   memset(&addr, 0, sizeof(addr));
@@ -1003,7 +1002,7 @@ parse_get_set (const char *line, metag_insn *insn,
 
   if (is_get)
     {
-      bfd_boolean is_mov = strncmp (template->name, "MOV", 3) == 0;
+      bool is_mov = startswith (template->name, "MOV");
 
       l = parse_get (l, regs, &addr, size, is_mov);
 
@@ -1139,8 +1138,8 @@ parse_get_set_ext (const char *line, metag_insn *insn,
   const metag_reg *regs[2];
   metag_addr addr;
   unsigned int size = metag_get_set_ext_size_bytes (template->meta_opcode);
-  bfd_boolean is_get = MINOR_OPCODE (template->meta_opcode) == GET_EXT_MINOR;
-  bfd_boolean is_mov = MINOR_OPCODE (template->meta_opcode) == MOV_EXT_MINOR;
+  bool is_get = MINOR_OPCODE (template->meta_opcode) == GET_EXT_MINOR;
+  bool is_mov = MINOR_OPCODE (template->meta_opcode) == MOV_EXT_MINOR;
   unsigned int reg_unit;
 
   memset(&addr, 0, sizeof(addr));
@@ -1334,9 +1333,9 @@ parse_mset (const char *line, const metag_reg **regs, metag_addr *addr,
    rmask value if possible. Return the rmask value in RMASK and the
    lowest numbered register in LOWEST_REG. Return TRUE if the conversion
    was successful.  */
-static bfd_boolean
-check_rmask (const metag_reg **regs, size_t regs_read, bfd_boolean is_fpu,
-	     bfd_boolean is_64bit, unsigned int *lowest_reg,
+static bool
+check_rmask (const metag_reg **regs, size_t regs_read, bool is_fpu,
+	     bool is_64bit, unsigned int *lowest_reg,
 	     unsigned int *rmask)
 {
   unsigned int reg_unit = regs[0]->unit;
@@ -1349,13 +1348,13 @@ check_rmask (const metag_reg **regs, size_t regs_read, bfd_boolean is_fpu,
 	  if (is_64bit && regs[i]->no % 2)
 	    {
 	      as_bad (_("register list must be even numbered"));
-	      return FALSE;
+	      return false;
 	    }
 	}
       else if (regs[i]->unit != reg_unit)
 	{
 	  as_bad (_("register list must be from the same unit"));
-	  return FALSE;
+	  return false;
 	}
 
       if (regs[i]->no < *lowest_reg)
@@ -1378,13 +1377,13 @@ check_rmask (const metag_reg **regs, size_t regs_read, bfd_boolean is_fpu,
       if (*rmask & next_bit)
 	{
 	  as_bad (_("register list must not contain duplicates"));
-	  return FALSE;
+	  return false;
 	}
 
       *rmask |= next_bit;
     }
 
-  return TRUE;
+  return true;
 }
 
 /* Parse an MGET or MSET instruction.  */
@@ -1395,9 +1394,9 @@ parse_mget_mset (const char *line, metag_insn *insn,
   const char *l = line;
   const metag_reg *regs[MGET_MSET_MAX_REGS];
   metag_addr addr;
-  bfd_boolean is_get = MAJOR_OPCODE (template->meta_opcode) == OPC_GET;
-  bfd_boolean is_fpu = (MINOR_OPCODE (template->meta_opcode) & 0x6) == 0x6;
-  bfd_boolean is_64bit = (MINOR_OPCODE (template->meta_opcode) & 0x1) == 0x1;
+  bool is_get = MAJOR_OPCODE (template->meta_opcode) == OPC_GET;
+  bool is_fpu = (MINOR_OPCODE (template->meta_opcode) & 0x6) == 0x6;
+  bool is_64bit = (MINOR_OPCODE (template->meta_opcode) & 0x1) == 0x1;
   size_t regs_read = 0;
   unsigned int rmask = 0, reg_unit = 0, lowest_reg = 0xffffffff;
 
@@ -1501,10 +1500,9 @@ parse_mmov (const char *line, metag_insn *insn,
 	    const insn_template *template)
 {
   const char *l = line;
-  unsigned int is_fpu = template->insn_type == INSN_FPU;
-  unsigned int is_prime = ((MINOR_OPCODE (template->meta_opcode) & 0x2) &&
-			   !is_fpu);
-  unsigned int is_64bit = MINOR_OPCODE (template->meta_opcode) & 0x1;
+  bool is_fpu = template->insn_type == INSN_FPU;
+  bool is_prime = (MINOR_OPCODE (template->meta_opcode) & 0x2) != 0 && !is_fpu;
+  bool is_64bit = (MINOR_OPCODE (template->meta_opcode) & 0x1) != 0;
   unsigned int rmask = 0;
 
   if (is_prime)
@@ -1835,8 +1833,8 @@ parse_imm16 (const char *line, metag_insn *insn, int *value)
   const char *l = line;
   char *save_input_line_pointer;
   expressionS *exp = &insn->reloc_exp;
-  bfd_boolean is_hi = FALSE;
-  bfd_boolean is_lo = FALSE;
+  bool is_hi = false;
+  bool is_lo = false;
 
   /* Skip #. */
   if (*l == '#')
@@ -1846,12 +1844,12 @@ parse_imm16 (const char *line, metag_insn *insn, int *value)
 
   if (strncasecmp (l, "HI", 2) == 0)
     {
-      is_hi = TRUE;
+      is_hi = true;
       l += 2;
     }
   else if (strncasecmp (l, "LO", 2) == 0)
     {
-      is_lo = TRUE;
+      is_lo = true;
       l += 2;
     }
 
@@ -1966,9 +1964,9 @@ parse_mov_ct (const char *line, metag_insn *insn,
 {
   const char *l = line;
   const metag_reg *regs[1];
-  unsigned int top = template->meta_opcode & 0x1;
-  unsigned int is_trace = (template->meta_opcode >> 2) & 0x1;
-  unsigned int sign_extend = 0;
+  bool top = (template->meta_opcode & 0x1) != 0;
+  bool is_trace = ((template->meta_opcode >> 2) & 0x1) != 0;
+  bool sign_extend = 0;
   int value = 0;
 
   l = parse_gp_regs (l, regs, 1);
@@ -2005,7 +2003,7 @@ parse_mov_ct (const char *line, metag_insn *insn,
 		(regs[0]->no << 19) |
 		((value & IMM16_MASK) << 3));
 
-  if (sign_extend == 1 && top == 0)
+  if (sign_extend && !top)
     insn->bits |= (1 << 1);
 
   insn->len = 4;
@@ -2079,7 +2077,7 @@ parse_jump (const char *line, metag_insn *insn,
   if (!is_short_unit (regs[0]->unit))
     {
       as_bad (_("register unit must be one of %s"), SHORT_UNITS);
-      return FALSE;
+      return false;
     }
 
   l = skip_comma (l);
@@ -2291,16 +2289,16 @@ parse_alu (const char *line, metag_insn *insn,
   const metag_reg *dest_regs[1];
   const metag_reg *src_regs[2];
   int value = 0;
-  unsigned int o1z = 0;
-  unsigned int imm = (template->meta_opcode >> 25) & 0x1;
-  unsigned int cond = (template->meta_opcode >> 26) & 0x1;
-  unsigned int ca = (template->meta_opcode >> 5) & 0x1;
-  unsigned int top = template->meta_opcode & 0x1;
-  unsigned int sign_extend = 0;
-  unsigned int is_addr_op = MAJOR_OPCODE (template->meta_opcode) == OPC_ADDR;
-  unsigned int is_mul = MAJOR_OPCODE (template->meta_opcode) == OPC_MUL;
+  bool o1z = 0;
+  bool imm = ((template->meta_opcode >> 25) & 0x1) != 0;
+  bool cond = ((template->meta_opcode >> 26) & 0x1) != 0;
+  bool ca = ((template->meta_opcode >> 5) & 0x1) != 0;
+  bool top = (template->meta_opcode & 0x1) != 0;
+  bool sign_extend = 0;
+  bool is_addr_op = MAJOR_OPCODE (template->meta_opcode) == OPC_ADDR;
+  bool is_mul = MAJOR_OPCODE (template->meta_opcode) == OPC_MUL;
   unsigned int unit_bit = 0;
-  bfd_boolean is_quickrot = template->arg_type & GP_ARGS_QR;
+  bool is_quickrot = (template->arg_type & GP_ARGS_QR) != 0;
 
   l = parse_gp_regs (l, dest_regs, 1);
 
@@ -2511,7 +2509,7 @@ parse_alu (const char *line, metag_insn *insn,
     }
   else
     {
-      unsigned int o2r = 0;
+      bool o2r = 0;
       int rs2;
 
       if (cond || !o1z)
@@ -2653,7 +2651,7 @@ parse_alu (const char *line, metag_insn *insn,
   if (is_quickrot)
     {
       const metag_reg *qr_regs[1];
-      bfd_boolean limit_regs = imm && cond;
+      bool limit_regs = imm && cond;
 
       l = skip_comma (l);
 
@@ -2690,7 +2688,7 @@ parse_alu (const char *line, metag_insn *insn,
 	}
     }
 
-  if (sign_extend == 1 && top == 0)
+  if (sign_extend && !top)
     insn->bits |= (1 << 1);
 
   insn->bits |= unit_bit << 24;
@@ -2787,8 +2785,8 @@ parse_shift (const char *line, metag_insn *insn,
   const metag_reg *regs[2];
   const metag_reg *src2_regs[1];
   int value = 0;
-  unsigned int cond = (template->meta_opcode >> 26) & 0x1;
-  unsigned int ca = (template->meta_opcode >> 5) & 0x1;
+  bool cond = ((template->meta_opcode >> 26) & 0x1) != 0;
+  bool ca = ((template->meta_opcode >> 5) & 0x1) != 0;
   unsigned int unit_bit = 0;
 
   l = parse_gp_regs (l, regs, 2);
@@ -2910,11 +2908,10 @@ parse_bitop (const char *line, metag_insn *insn,
 {
   const char *l = line;
   const metag_reg *regs[2];
-  unsigned int swap_inst = MAJOR_OPCODE (template->meta_opcode) == OPC_MISC;
-  unsigned int is_bexl = 0;
+  bool swap_inst = MAJOR_OPCODE (template->meta_opcode) == OPC_MISC;
+  bool is_bexl = 0;
 
-  if (swap_inst &&
-      ((template->meta_opcode >> 1) & 0xb) == 0xa)
+  if (swap_inst && ((template->meta_opcode >> 1) & 0xb) == 0xa)
     is_bexl = 1;
 
   l = parse_gp_regs (l, regs, 2);
@@ -2966,10 +2963,10 @@ parse_cmp (const char *line, metag_insn *insn,
   const metag_reg *dest_regs[1];
   const metag_reg *src_regs[1];
   int value = 0;
-  unsigned int imm = (template->meta_opcode >> 25) & 0x1;
-  unsigned int cond = (template->meta_opcode >> 26) & 0x1;
-  unsigned int top = template->meta_opcode & 0x1;
-  unsigned int sign_extend = 0;
+  bool imm = ((template->meta_opcode >> 25) & 0x1) != 0;
+  bool cond = ((template->meta_opcode >> 26) & 0x1) != 0;
+  bool top = (template->meta_opcode & 0x1) != 0;
+  bool sign_extend = 0;
   unsigned int unit_bit = 0;
 
   l = parse_gp_regs (l, dest_regs, 1);
@@ -3039,7 +3036,7 @@ parse_cmp (const char *line, metag_insn *insn,
     }
   else
     {
-      unsigned int o2r = 0;
+      bool o2r = 0;
       int rs2;
 
       l = parse_gp_regs (l, src_regs, 1);
@@ -3069,7 +3066,7 @@ parse_cmp (const char *line, metag_insn *insn,
 	insn->bits |= 1;
     }
 
-  if (sign_extend == 1 && top == 0)
+  if (sign_extend && !top)
     insn->bits |= (1 << 1);
 
   insn->bits |= unit_bit << 24;
@@ -3345,8 +3342,8 @@ parse_fmmov (const char *line, metag_insn *insn,
 	     const insn_template *template)
 {
   const char *l = line;
-  bfd_boolean to_fpu = MAJOR_OPCODE (template->meta_opcode) == OPC_GET;
-  bfd_boolean is_mmovl = MINOR_OPCODE (template->meta_opcode) & 0x1;
+  bool to_fpu = MAJOR_OPCODE (template->meta_opcode) == OPC_GET;
+  bool is_mmovl = (MINOR_OPCODE (template->meta_opcode) & 0x1) != 0;
   size_t regs_read = 0;
   const metag_reg *regs[16];
   unsigned int lowest_data_reg = 0xffffffff;
@@ -3399,7 +3396,7 @@ parse_fmmov (const char *line, metag_insn *insn,
       else
 	return NULL;
 
-      if (!check_rmask (&regs[i], regs_read / 2, TRUE, FALSE, &lowest_data_reg,
+      if (!check_rmask (&regs[i], regs_read / 2, true, false, &lowest_data_reg,
 			&rmask))
 	return NULL;
     }
@@ -3412,7 +3409,7 @@ parse_fmmov (const char *line, metag_insn *insn,
       else
 	return NULL;
 
-      if (!check_rmask (regs, regs_read / 2, TRUE, FALSE, &lowest_data_reg,
+      if (!check_rmask (regs, regs_read / 2, true, false, &lowest_data_reg,
 			&rmask))
 	return NULL;
 
@@ -3457,7 +3454,7 @@ parse_fmov_data (const char *line, metag_insn *insn,
 	    const insn_template *template)
 {
   const char *l = line;
-  unsigned int to_fpu = ((template->meta_opcode >> 7) & 0x1);
+  bool to_fpu = ((template->meta_opcode >> 7) & 0x1) != 0;
   const metag_reg *regs[2];
   unsigned int base_unit;
 
@@ -3864,11 +3861,11 @@ parse_fearith (const char *line, metag_insn *insn,
 {
   const char *l = line;
   const metag_reg *regs[3];
-  bfd_boolean is_muz = (MINOR_OPCODE (template->meta_opcode) == 0x6 &&
-			((template->meta_opcode >> 4) & 0x1));
-  unsigned int is_o3o = template->meta_opcode & 0x1;
-  unsigned int is_mac = 0;
-  unsigned int is_maw = 0;
+  bool is_muz = (MINOR_OPCODE (template->meta_opcode) == 0x6
+		 && ((template->meta_opcode >> 4) & 0x1) != 0);
+  bool is_o3o = (template->meta_opcode & 0x1) != 0;
+  bool is_mac = 0;
+  bool is_maw = 0;
 
   if (!strncasecmp (template->name, "MAW", 3))
     is_maw = 1;
@@ -4016,7 +4013,7 @@ parse_fget_set_acf (const char *line, metag_insn *insn,
   const char *l = line;
   int part;
   metag_addr addr;
-  bfd_boolean is_get = MAJOR_OPCODE (template->meta_opcode) == OPC_GET;
+  bool is_get = MAJOR_OPCODE (template->meta_opcode) == OPC_GET;
 
   memset(&addr, 0, sizeof(addr));
   addr.reloc_type = BFD_RELOC_UNUSED;
@@ -4115,7 +4112,7 @@ __parse_dsp_reg (const char *line, const metag_reg **reg, htab_t dsp_regtab)
   name[len] = '\0';
   entry.name = name;
 
-  _reg = (const metag_reg *) htab_find (dsp_regtab, &entry);
+  _reg = htab_find (dsp_regtab, &entry);
   if (!_reg)
     return NULL;
 
@@ -4140,7 +4137,7 @@ parse_dsp_insn_reg (const char *line, const metag_reg **reg)
    definition. "load" specifies which table to look at.  */
 static const char *
 parse_dsp_template_reg (const char *line, const metag_reg **reg,
-			bfd_boolean load)
+			bool load)
 {
   return __parse_dsp_reg (line, reg, dsp_tmpl_reg_htab[load]);
 }
@@ -4148,7 +4145,7 @@ parse_dsp_template_reg (const char *line, const metag_reg **reg,
 /* Parse a single DSP register from LINE.  */
 static const char *
 parse_dsp_reg (const char *line, const metag_reg **reg,
-	       bfd_boolean tmpl, bfd_boolean load)
+	       bool tmpl, bool load)
 {
   if (tmpl)
     return parse_dsp_template_reg (line, reg, load);
@@ -4157,95 +4154,95 @@ parse_dsp_reg (const char *line, const metag_reg **reg,
 }
 
 /* Return TRUE if UNIT is an address unit.  */
-static bfd_boolean
+static bool
 is_addr_unit (enum metag_unit unit)
 {
   switch (unit)
     {
     case UNIT_A0:
     case UNIT_A1:
-      return TRUE;
+      return true;
     default:
-      return FALSE;
+      return false;
     }
 }
 
 /* Return TRUE if UNIT1 and UNIT2 are equivalent units.  */
-static bfd_boolean
+static bool
 is_same_data_unit (enum metag_unit unit1, enum metag_unit unit2)
 {
   if (unit1 == unit2)
-    return TRUE;
+    return true;
 
   switch (unit1)
     {
     case UNIT_D0:
       if (unit2 == UNIT_ACC_D0 || unit2 == UNIT_RAM_D0)
-	return TRUE;
+	return true;
       break;
     case UNIT_D1:
       if (unit2 == UNIT_ACC_D1 || unit2 == UNIT_RAM_D1)
-	return TRUE;
+	return true;
       break;
     case UNIT_ACC_D0:
       if (unit2 == UNIT_D0 || unit2 == UNIT_RAM_D0)
-	return TRUE;
+	return true;
       break;
     case UNIT_ACC_D1:
       if (unit2 == UNIT_D1 || unit2 == UNIT_RAM_D1)
-	return TRUE;
+	return true;
       break;
     case UNIT_RAM_D0:
       if (unit2 == UNIT_ACC_D0 || unit2 == UNIT_D0)
-	return TRUE;
+	return true;
       break;
     case UNIT_RAM_D1:
       if (unit2 == UNIT_ACC_D1 || unit2 == UNIT_D1)
-	return TRUE;
+	return true;
       break;
     default:
-      return FALSE;
+      return false;
     }
 
-  return FALSE;
+  return false;
 }
 
 /* Return TRUE if the register NUM is a quickrot control register.  */
-static bfd_boolean
+static bool
 is_quickrot_reg (unsigned int num)
 {
   switch (num)
     {
     case 2:
     case 3:
-      return TRUE;
+      return true;
     }
 
-  return FALSE;
+  return false;
 }
 
 /* Return TRUE if REG is an accumulator register.  */
-static bfd_boolean
+static bool
 is_accumulator_reg (const metag_reg *reg)
 {
   if (reg->unit == UNIT_ACC_D0 || reg->unit == UNIT_ACC_D1)
-    return TRUE;
+    return true;
 
-  return FALSE;
+  return false;
 }
 
 /* Return TRUE if REG is a DSP RAM register.  */
-static bfd_boolean
+static bool
 is_dspram_reg (const metag_reg *reg)
 {
   if (reg->unit == UNIT_RAM_D0 || reg->unit == UNIT_RAM_D1)
-      return TRUE;
+      return true;
 
-  return FALSE;
+  return false;
 }
 
 static const char *
-__parse_gp_reg (const char *line, const metag_reg **reg, bfd_boolean load)
+__parse_gp_reg (const char *line, const metag_reg **reg, bool load)
 {
   const char *l = line;
   char reg_buf[MAX_REG_LEN];
@@ -4262,7 +4259,7 @@ __parse_gp_reg (const char *line, const metag_reg **reg, bfd_boolean load)
       if (l == NULL)
 	return NULL;
 
-      l = parse_dsp_reg (l, reg, TRUE, load);
+      l = parse_dsp_reg (l, reg, true, load);
       if (l == NULL)
 	return NULL;
 
@@ -4301,8 +4298,8 @@ __parse_gp_reg (const char *line, const metag_reg **reg, bfd_boolean load)
    a destination operand.  */
 static const char *
 parse_dsp_regs_list (const char *line, const metag_reg **regs, size_t count,
-		     size_t *regs_read, bfd_boolean try_gp, bfd_boolean tmpl,
-		     bfd_boolean load, bfd_boolean first_dst)
+		     size_t *regs_read, bool try_gp, bool tmpl,
+		     bool load, bool first_dst)
 {
   const char *l = line;
   int seen_regs = 0;
@@ -4372,7 +4369,7 @@ parse_dsp_regs_list (const char *line, const metag_reg **regs, size_t count,
      - [DSPRam-DSPRam--]  */
 static const char *
 parse_dsp_addr (const char *line, metag_addr *addr, unsigned int size,
-		bfd_boolean load)
+		bool load)
 {
   const char *l = line, *ll;
   const metag_reg *regs[1];
@@ -4381,13 +4378,12 @@ parse_dsp_addr (const char *line, metag_addr *addr, unsigned int size,
   /* Skip opening square bracket.  */
   l++;
 
-  l = parse_dsp_regs_list (l, regs, 1, &regs_read, TRUE, TRUE, load, FALSE);
+  l = parse_dsp_regs_list (l, regs, 1, &regs_read, true, true, load, false);
 
-  if (l == NULL)
+  if (l == NULL || regs_read == 0)
     return NULL;
 
-  if (!is_addr_unit (regs[0]->unit) &&
-      !is_dspram_reg (regs[0]))
+  if (!is_addr_unit (regs[0]->unit) && !is_dspram_reg (regs[0]))
     {
       as_bad (_("invalid register for memory access"));
       return NULL;
@@ -4435,9 +4431,9 @@ parse_dsp_addr (const char *line, metag_addr *addr, unsigned int size,
   if (l == NULL)
     return NULL;
 
-  l = parse_dsp_regs_list (l, regs, 1, &regs_read, TRUE, TRUE, load, FALSE);
+  l = parse_dsp_regs_list (l, regs, 1, &regs_read, true, true, load, false);
 
-  if (l == NULL)
+  if (l == NULL || regs_read == 0)
     return NULL;
 
   if (regs[0]->unit != addr->base_reg->unit)
@@ -4477,9 +4473,9 @@ parse_dget_set (const char *line, metag_insn *insn,
   metag_addr addr;
   int unit = 0;
   int rd_reg = 0;
-  bfd_boolean is_get = (template->meta_opcode & 0x100);
-  bfd_boolean is_dual = (template->meta_opcode & 0x4);
-  bfd_boolean is_template = FALSE;
+  bool is_get = (template->meta_opcode & 0x100) != 0;
+  bool is_dual = (template->meta_opcode & 0x4) != 0;
+  bool is_template = false;
   const metag_reg *regs[2];
   unsigned int size;
   size_t count, regs_read;
@@ -4496,8 +4492,8 @@ parse_dget_set (const char *line, metag_insn *insn,
       if (*l == 'T')
 	count = 1;
 
-      l = parse_dsp_regs_list (l, regs, count, &regs_read, FALSE,
-			       FALSE, FALSE, FALSE);
+      l = parse_dsp_regs_list (l, regs, count, &regs_read, false,
+			       false, false, false);
       l = skip_comma (l);
 
       if (l == NULL)
@@ -4521,16 +4517,16 @@ parse_dget_set (const char *line, metag_insn *insn,
       if (*l == 'T')
 	count = 1;
 
-      l = parse_dsp_regs_list (l, regs, count, &regs_read, FALSE, FALSE,
-			       FALSE, FALSE);
+      l = parse_dsp_regs_list (l, regs, count, &regs_read, false, false,
+			       false, false);
     }
 
-  if (l == NULL)
+  if (l == NULL || regs_read == 0)
     return NULL;
 
   /* The first register dictates the unit.  */
   if (regs[0]->unit == UNIT_DT)
-      is_template = TRUE;
+      is_template = true;
   else
     {
       if (regs[0]->unit == UNIT_D0 || regs[0]->unit == UNIT_RAM_D0 ||
@@ -4621,7 +4617,7 @@ parse_dtemplate (const char *line, metag_insn *insn,
 {
   const char *l = line;
   const metag_reg *regs[TEMPLATE_NUM_REGS];
-  bfd_boolean daop_only = FALSE;
+  bool daop_only = false;
   int regs_val[4];
   int regs_which[4] = { -1, -1, -1, -1};	/* Register or immediate?  */
   int i;
@@ -4637,7 +4633,7 @@ parse_dtemplate (const char *line, metag_insn *insn,
       /* We may only have 3 register operands.  */
       if (*l == END_OF_INSN && i == 3)
 	{
-	  daop_only = TRUE;
+	  daop_only = true;
 	  break;
 	}
 
@@ -4664,11 +4660,11 @@ parse_dtemplate (const char *line, metag_insn *insn,
 	     this is a load or store. So we have to try looking up the
 	     register name in both the load and store tables.  */
 	  const char *l2 = l;
-	  l = __parse_gp_reg (l, &regs[i], TRUE);
+	  l = __parse_gp_reg (l, &regs[i], true);
 	  if (l == NULL)
 	    {
 	      /* Try the store table too.  */
-	      l = __parse_gp_reg (l2, &regs[i], FALSE);
+	      l = __parse_gp_reg (l2, &regs[i], false);
 	      if (l == NULL)
 		{
 		  /* Then try a DSP register.  */
@@ -4722,7 +4718,7 @@ parse_dtemplate (const char *line, metag_insn *insn,
    template definition is a DSP RAM template definition.  */
 static const char *
 template_mem_ref(const char *line, metag_addr *addr,
-		 bfd_boolean *dspram, int size, bfd_boolean load)
+		 bool *dspram, int size, bool load)
 {
   const char *l = line;
 
@@ -4731,9 +4727,9 @@ template_mem_ref(const char *line, metag_addr *addr,
   if (l != NULL)
     {
       if (is_addr_unit(addr->base_reg->unit))
-	*dspram = FALSE;
+	*dspram = false;
       else
-	*dspram = TRUE;
+	*dspram = true;
     }
 
   return l;
@@ -4742,10 +4738,10 @@ template_mem_ref(const char *line, metag_addr *addr,
 /* Sets LOAD to TRUE if this is a Template load definition (otherwise
    it's a store). Fills out ADDR, TEMPLATE_REG and ADDR_UNIT.  */
 static const char *
-parse_template_regs (const char *line, bfd_boolean *load,
+parse_template_regs (const char *line, bool *load,
 		     unsigned int *addr_unit,
 		     const metag_reg **template_reg, metag_addr *addr,
-		     bfd_boolean *dspram, int size)
+		     bool *dspram, int size)
 {
   const char *l = line;
 
@@ -4755,8 +4751,8 @@ parse_template_regs (const char *line, bfd_boolean *load,
   /* DSP Template load definition (Tx, [Ax]) */
   if (*l == 'T')
     {
-      *load = TRUE;
-      l = parse_dsp_reg (l, &template_reg[0], FALSE, FALSE);
+      *load = true;
+      l = parse_dsp_reg (l, &template_reg[0], false, false);
       if (l == NULL)
 	return NULL;
 
@@ -4770,14 +4766,14 @@ parse_template_regs (const char *line, bfd_boolean *load,
     }
   else if (*l == ADDR_BEGIN_CHAR) /* DSP Template store ([Ax], Tx) */
     {
-      *load = FALSE;
+      *load = false;
       l = template_mem_ref (l, addr, dspram, size, *load);
       l = skip_comma(l);
 
       if (l == NULL)
 	return NULL;
 
-      l = parse_dsp_reg (l, &template_reg[0], FALSE, FALSE);
+      l = parse_dsp_reg (l, &template_reg[0], false, false);
       if (l == NULL)
 	return NULL;
 
@@ -4801,7 +4797,7 @@ static metag_reg _reg;
 static const char *
 interpret_template_regs(const char *line, metag_insn *insn,
 			const metag_reg **regs,
-			int *regs_shift, bfd_boolean *load, bfd_boolean *dspram,
+			int *regs_shift, bool *load, bool *dspram,
 			int size, int *ls_shift, int *au_shift,
 			unsigned int *au, int *imm, int *imm_shift,
 			unsigned int *imm_mask)
@@ -4890,16 +4886,16 @@ interpret_template_regs(const char *line, metag_insn *insn,
 }
 
 /* Does this combination of units need the O2R bit and can it be encoded?  */
-static bfd_boolean
+static bool
 units_need_o2r (enum metag_unit unit1, enum metag_unit unit2)
 {
   if (unit1 == unit2)
-    return FALSE;
+    return false;
 
   if (unit1 == UNIT_D0 || unit1 == UNIT_ACC_D0 || unit1 == UNIT_RAM_D0)
     {
       if (unit2 == UNIT_ACC_D0 || unit2 == UNIT_RAM_D0 || unit2 == UNIT_D0)
-	return FALSE;
+	return false;
 
       switch (unit2)
 	{
@@ -4907,16 +4903,16 @@ units_need_o2r (enum metag_unit unit1, enum metag_unit unit2)
 	case UNIT_D1:
 	case UNIT_RD:
 	case UNIT_A0:
-	  return TRUE;
+	  return true;
 	default:
-	  return FALSE;
+	  return false;
 	}
     }
 
   if (unit1 == UNIT_D1 || unit1 == UNIT_ACC_D1 || unit1 == UNIT_RAM_D1)
     {
       if (unit2 == UNIT_ACC_D1 || unit2 == UNIT_RAM_D1 || unit2 == UNIT_D1)
-	return FALSE;
+	return false;
 
       switch (unit2)
 	{
@@ -4924,17 +4920,17 @@ units_need_o2r (enum metag_unit unit1, enum metag_unit unit2)
 	case UNIT_D0:
 	case UNIT_RD:
 	case UNIT_A0:
-	  return TRUE;
+	  return true;
 	default:
-	  return FALSE;
+	  return false;
 	}
     }
 
-  return FALSE;
+  return false;
 }
 
 /* Return TRUE if this is a DSP data unit.  */
-static bfd_boolean
+static bool
 is_dsp_data_unit (const metag_reg *reg)
 {
   switch (reg->unit)
@@ -4945,9 +4941,9 @@ is_dsp_data_unit (const metag_reg *reg)
     case UNIT_ACC_D1:
     case UNIT_RAM_D0:
     case UNIT_RAM_D1:
-      return TRUE;
+      return true;
     default:
-      return FALSE;
+      return false;
     }
 }
 
@@ -4963,15 +4959,15 @@ parse_dalu (const char *line, metag_insn *insn,
   const metag_reg *regs[4];
   metag_addr addr;
   size_t regs_read;
-  bfd_boolean is_mov = MAJOR_OPCODE (template->meta_opcode) == OPC_ADD;
-  bfd_boolean is_cmp = ((MAJOR_OPCODE (template->meta_opcode) == OPC_CMP) &&
-			((template->meta_opcode & 0xee) == 0));
-  bfd_boolean is_dual = (insn->dsp_width == DSP_WIDTH_DUAL);
-  bfd_boolean is_quickrot64 = ((insn->dsp_action_flags & DSP_ACTION_QR64) != 0);
+  bool is_mov = MAJOR_OPCODE (template->meta_opcode) == OPC_ADD;
+  bool is_cmp = (MAJOR_OPCODE (template->meta_opcode) == OPC_CMP
+		 && (template->meta_opcode & 0xee) == 0);
+  bool is_dual = insn->dsp_width == DSP_WIDTH_DUAL;
+  bool is_quickrot64 = (insn->dsp_action_flags & DSP_ACTION_QR64) != 0;
   int l1_shift = INVALID_SHIFT;
-  bfd_boolean load = FALSE;
+  bool load = false;
   int ls_shift = INVALID_SHIFT;
-  bfd_boolean ar = FALSE;
+  bool ar = false;
   int ar_shift = INVALID_SHIFT;
   int regs_shift[3] = { INVALID_SHIFT, INVALID_SHIFT, INVALID_SHIFT };
   int imm = 0;
@@ -5004,8 +5000,8 @@ parse_dalu (const char *line, metag_insn *insn,
 		     (insn->dsp_daoppame_flags & DSP_DAOPPAME_16) != 0);
   int mx_shift = INVALID_SHIFT;
   int size = is_dual ? 8 : 4;
-  bfd_boolean dspram;
-  bfd_boolean conditional = (MINOR_OPCODE (template->meta_opcode) & 0x4);
+  bool dspram;
+  bool conditional = (MINOR_OPCODE (template->meta_opcode) & 0x4) != 0;
 
   /* XFIXME: check the flags are valid with the instruction.  */
   if (is_quickrot64 && !(template->arg_type & DSP_ARGS_QR))
@@ -5058,8 +5054,8 @@ parse_dalu (const char *line, metag_insn *insn,
 	 e.g. ACe.e,ACx.r,ACo.e */
       if (template->arg_type & DSP_ARGS_XACC)
 	{
-	  ll = parse_dsp_regs_list (l, regs, 3, &regs_read, FALSE, FALSE,
-				    FALSE, FALSE);
+	  ll = parse_dsp_regs_list (l, regs, 3, &regs_read, false, false,
+				    false, false);
 	  if (ll != NULL && regs_read == 3
 	      && is_accumulator_reg (regs[0]))
 	    {
@@ -5100,7 +5096,7 @@ parse_dalu (const char *line, metag_insn *insn,
 	  a1_shift = 2;
 	  om_shift = 3;
 
-	  ll = parse_dsp_reg (l, &regs[0], FALSE, FALSE);
+	  ll = parse_dsp_reg (l, &regs[0], false, false);
 	  if (ll != NULL)
 	    {
 	      /* Using ACe.r as the dst requires one of the P,N or Z
@@ -5115,7 +5111,7 @@ parse_dalu (const char *line, metag_insn *insn,
 	      l = ll;
 	      l = skip_comma (l);
 	      l = parse_dsp_regs_list (l, &regs[1], 2, &regs_read,
-				       TRUE, FALSE, FALSE, FALSE);
+				       true, false, false, false);
 	      if (l == NULL || regs_read != 2)
 		{
 		  as_bad (_("invalid register"));
@@ -5144,7 +5140,7 @@ parse_dalu (const char *line, metag_insn *insn,
       regs_shift[0] = 19;
 
 
-      l = parse_dsp_regs_list (l, regs, 2, &regs_read, TRUE, FALSE, FALSE, TRUE);
+      l = parse_dsp_regs_list (l, regs, 2, &regs_read, true, false, false, true);
       if (l == NULL || regs_read != 2)
 	return NULL;
 
@@ -5204,7 +5200,7 @@ parse_dalu (const char *line, metag_insn *insn,
 	  regs_shift[2] = 9;
 
 	  /* Is Rs2 an accumulator reg, e.g. De.r,Dx.r,De.r|ACe.r */
-	  ll = parse_dsp_reg (l, &regs[2], FALSE, FALSE);
+	  ll = parse_dsp_reg (l, &regs[2], false, false);
 	  if (ll != NULL)
 	    {
 	      l = ll;
@@ -5217,12 +5213,12 @@ parse_dalu (const char *line, metag_insn *insn,
 
 	      om_shift = 3;
 	      ar_shift = 7;
-	      ar = TRUE;
+	      ar = true;
 	    }
 	  else
 	    {
 	      /* De.r,Dx.r,De.r */
-	      l = __parse_gp_reg (l, &regs[2], TRUE);
+	      l = __parse_gp_reg (l, &regs[2], true);
 	      if (l == NULL)
 		return NULL;
 	    }
@@ -5249,7 +5245,7 @@ parse_dalu (const char *line, metag_insn *insn,
 		  return NULL;
 		}
 
-	      l = __parse_gp_reg (l, &regs[3], TRUE);
+	      l = __parse_gp_reg (l, &regs[3], true);
 	      if (l == NULL)
 		{
 		  as_bad (_("invalid fourth register"));
@@ -5311,10 +5307,10 @@ parse_dalu (const char *line, metag_insn *insn,
   /* Group 2.  */
   if (template->arg_type & DSP_ARGS_2)
     {
-      bfd_boolean is_xsd = ((MAJOR_OPCODE (template->meta_opcode) == OPC_MISC) &&
-			    (MINOR_OPCODE (template->meta_opcode) == 0xa));
-      bfd_boolean is_fpu_mov = template->insn_type == INSN_DSP_FPU;
-      bfd_boolean to_fpu = (template->meta_opcode >> 7) & 0x1;
+      bool is_xsd = (MAJOR_OPCODE (template->meta_opcode) == OPC_MISC
+		     && MINOR_OPCODE (template->meta_opcode) == 0xa);
+      bool is_fpu_mov = template->insn_type == INSN_DSP_FPU;
+      bool to_fpu = ((template->meta_opcode >> 7) & 0x1) != 0;
 
       if (is_xsd)
 	du_shift = 0;
@@ -5330,7 +5326,7 @@ parse_dalu (const char *line, metag_insn *insn,
 	  /* DSPe.r,Dx.r or DSPx.r,#I16 */
 	  if (template->arg_type & DSP_ARGS_DSP_SRC1)
 	    {
-	      l = parse_dsp_reg (l, regs, FALSE, FALSE);
+	      l = parse_dsp_reg (l, regs, false, false);
 	      if (l == NULL)
 		{
 		  as_bad (_("invalid register operand #1"));
@@ -5340,7 +5336,7 @@ parse_dalu (const char *line, metag_insn *insn,
 	      /* Only MOV instructions have a DSP register as a
 		 destination. Set the MOV DSPe.r opcode. The simple
 		 OR'ing is OK because the usual MOV opcode is 0x00.  */
-	      insn->bits = (0x91 << 24);
+	      insn->bits = 0x91u << 24;
 	      du_shift = 0;
 	      l1_shift = 2;
 	      regs_shift[0] = 19;
@@ -5423,12 +5419,12 @@ parse_dalu (const char *line, metag_insn *insn,
 	      l1_shift = 4;
 	    }
 
-	  ll = __parse_gp_reg (l, &regs[1], TRUE);
+	  ll = __parse_gp_reg (l, &regs[1], true);
 	  if (ll == NULL)
 	    {
 	      if (template->arg_type & DSP_ARGS_DSP_SRC2)
 		{
-		  l = parse_dsp_reg (l, &regs[1], FALSE, FALSE);
+		  l = parse_dsp_reg (l, &regs[1], false, false);
 		  if (l == NULL)
 		    {
 		      as_bad (_("invalid register operand #3"));
@@ -5455,7 +5451,7 @@ parse_dalu (const char *line, metag_insn *insn,
 			  du_shift = 0;
 			  l1_shift = 2;
 			  regs_shift[1] = 14;
-			  insn->bits = (0x92 << 24); /* Set opcode.  */
+			  insn->bits = 0x92u << 24; /* Set opcode.  */
 			}
 		    }
 		}
@@ -5524,7 +5520,7 @@ parse_dalu (const char *line, metag_insn *insn,
   du_shift = 24;
   l1_shift = 4;
 
-  l = __parse_gp_reg (l, regs, FALSE);
+  l = __parse_gp_reg (l, regs, false);
   if (l == NULL)
     {
       as_bad (_("invalid register operand"));
@@ -5535,7 +5531,7 @@ parse_dalu (const char *line, metag_insn *insn,
 
   if (*l == 'A')
     {
-      l = parse_dsp_reg (l, &regs[1], FALSE, FALSE);
+      l = parse_dsp_reg (l, &regs[1], false, false);
       if (l == NULL)
 	{
 	  as_bad (_("invalid accumulator register"));
@@ -5546,7 +5542,7 @@ parse_dalu (const char *line, metag_insn *insn,
     }
   else
     {
-      l = __parse_gp_reg (l, &regs[1], TRUE);
+      l = __parse_gp_reg (l, &regs[1], true);
       if (l == NULL)
 	{
 	  as_bad (_("invalid register operand"));
@@ -5583,7 +5579,7 @@ parse_dalu (const char *line, metag_insn *insn,
   else
     {
       regs_shift[2] = 9;
-      l = __parse_gp_reg (l, &regs[2], TRUE);
+      l = __parse_gp_reg (l, &regs[2], true);
       if (l == NULL)
 	return NULL;
     }
@@ -5821,7 +5817,7 @@ static const struct metag_core_option metag_dsps[] =
   };
 
 /* Parse a CPU command line option.  */
-static int
+static bool
 metag_parse_cpu (const char * str)
 {
   const struct metag_core_option * opt;
@@ -5847,7 +5843,7 @@ metag_parse_cpu (const char * str)
 }
 
 /* Parse an FPU command line option.  */
-static int
+static bool
 metag_parse_fpu (const char * str)
 {
   const struct metag_core_option * opt;
@@ -5873,7 +5869,7 @@ metag_parse_fpu (const char * str)
 }
 
 /* Parse a DSP command line option.  */
-static int
+static bool
 metag_parse_dsp (const char * str)
 {
   const struct metag_core_option * opt;
@@ -5900,10 +5896,10 @@ metag_parse_dsp (const char * str)
 
 struct metag_long_option
 {
-  const char * option;                /* Substring to match.  */
-  const char * help;                  /* Help information.  */
-  int (* func) (const char * subopt); /* Function to decode sub-option.  */
-  const char * deprecated;            /* If non-null, print this message.  */
+  const char *option;			/* Substring to match.  */
+  const char *help;			/* Help information.  */
+  bool (*func) (const char *subopt);	/* Function to decode sub-option.  */
+  const char *deprecated;		/* If non-null, print this message.  */
 };
 
 struct metag_long_option metag_long_opts[] =
@@ -5927,8 +5923,7 @@ md_parse_option (int c, const char * arg)
       /* These options are expected to have an argument.  */
       if (c == lopt->option[0]
 	  && arg != NULL
-	  && strncmp (arg, lopt->option + 1,
-		      strlen (lopt->option + 1)) == 0)
+	  && startswith (arg, lopt->option + 1))
 	{
 #if WARN_DEPRECATED
 	      /* If the option is deprecated, tell the user.  */
@@ -6008,7 +6003,7 @@ parse_split_condition (const char *line, metag_insn *insn)
 
   entry.name = buf;
 
-  scond = (const split_condition *) htab_find (scond_htab, &entry);
+  scond = htab_find (scond_htab, &entry);
 
   if (!scond)
     return NULL;
@@ -6055,7 +6050,7 @@ parse_prefix (const char *line, metag_insn *insn)
 	      /* Check this isn't a split condition beginning with L.  */
 	      l2 = parse_split_condition (l2, insn);
 
-	      if (l2 && is_whitespace_char (*l2))
+	      if (l2 && is_whitespace (*l2))
 		{
 		  l = l2;
 		}
@@ -6093,7 +6088,7 @@ parse_prefix (const char *line, metag_insn *insn)
 	      l++;
 	    }
 
-	  if (! is_whitespace_char (*l))
+	  if (! is_whitespace (*l))
 	    {
 	      l = parse_split_condition (l, insn);
 
@@ -6119,7 +6114,7 @@ parse_prefix (const char *line, metag_insn *insn)
 
 	  insn->dsp_width = DSP_WIDTH_SINGLE;
 
-	  while (!is_whitespace_char (*l))
+	  while (!is_whitespace (*l))
 	    {
 	      /* We have to check for split condition codes first
 		 because they are the longest strings to match,
@@ -6268,10 +6263,9 @@ find_insn_templates (const char *mnemonic)
   insn_templates *slot;
 
   entry.template = &template;
+  template.name = mnemonic;
 
-  memcpy ((void *)&entry.template->name, &mnemonic, sizeof (char *));
-
-  slot = (insn_templates *) htab_find (mnemonic_htab, &entry);
+  slot = htab_find (mnemonic_htab, &entry);
 
   if (slot)
     return slot;
@@ -6312,8 +6306,8 @@ hash_templates (const void *p)
 static int
 eq_templates (const void *a, const void *b)
 {
-  insn_templates *ta = (insn_templates *)a;
-  insn_templates *tb = (insn_templates *)b;
+  const insn_templates *ta = a;
+  const insn_templates *tb = b;
   return strcasecmp (ta->template->name, tb->template->name) == 0;
 }
 
@@ -6329,7 +6323,7 @@ create_mnemonic_htab (void)
   for (i = 0; i < num_templates; i++)
     {
       const insn_template *template = &metag_optab[i];
-      insn_templates **slot = NULL;
+      void **slot;
       insn_templates *new_entry;
 
       new_entry = XNEW (insn_templates);
@@ -6337,8 +6331,7 @@ create_mnemonic_htab (void)
       new_entry->template = template;
       new_entry->next = NULL;
 
-      slot = (insn_templates **) htab_find_slot (mnemonic_htab, new_entry,
-						 INSERT);
+      slot = htab_find_slot (mnemonic_htab, new_entry, INSERT);
 
       if (*slot)
 	{
@@ -6360,7 +6353,7 @@ create_mnemonic_htab (void)
 static hashval_t
 hash_regs (const void *p)
 {
-  metag_reg *rp = (metag_reg *)p;
+  const metag_reg *rp = p;
   char buf[MAX_REG_LEN];
 
   strupper (buf, rp->name);
@@ -6372,8 +6365,8 @@ hash_regs (const void *p)
 static int
 eq_regs (const void *a, const void *b)
 {
-  metag_reg *ra = (metag_reg *)a;
-  metag_reg *rb = (metag_reg *)b;
+  const metag_reg *ra = a;
+  const metag_reg *rb = b;
   return strcasecmp (ra->name, rb->name) == 0;
 }
 
@@ -6462,8 +6455,8 @@ hash_scond (const void *p)
 static int
 eq_scond (const void *a, const void *b)
 {
-  split_condition *ra = (split_condition *)a;
-  split_condition *rb = (split_condition *)b;
+  const split_condition *ra = a;
+  const split_condition *rb = b;
 
   return strcasecmp (ra->name, rb->name) == 0;
 }
@@ -6493,7 +6486,7 @@ create_scond_htab (void)
 }
 
 /* Entry point for instruction parsing.  */
-static bfd_boolean
+static bool
 parse_insn (const char *line, metag_insn *insn)
 {
   char mnemonic[MAX_MNEMONIC_LEN];
@@ -6512,7 +6505,7 @@ parse_insn (const char *line, metag_insn *insn)
   if (mnemonic_len >= MAX_MNEMONIC_LEN)
     {
       as_bad (_("instruction mnemonic too long: %s"), line);
-      return FALSE;
+      return false;
     }
 
   strncpy(mnemonic, line, mnemonic_len);
@@ -6568,7 +6561,7 @@ parse_insn (const char *line, metag_insn *insn)
 		  if (*end != END_OF_INSN)
 		    as_bad (_("junk at end of line: \"%s\""), line);
 		  else
-		    return TRUE;
+		    return true;
 		}
 	    }
 	}
@@ -6582,7 +6575,7 @@ parse_insn (const char *line, metag_insn *insn)
       else
 	as_bad (_("unknown mnemonic: \"%s\""), mnemonic);
     }
-  return FALSE;
+  return false;
 }
 
 static void
@@ -6705,9 +6698,6 @@ md_number_to_chars (char * buf, valueT val, int n)
    emitted is stored in *sizeP .  An error message is returned, or NULL on OK.
 */
 
-/* Equal to MAX_PRECISION in atof-ieee.c */
-#define MAX_LITTLENUMS 6
-
 const char *
 md_atof (int type, char * litP, int * sizeP)
 {
@@ -6746,8 +6736,7 @@ md_atof (int type, char * litP, int * sizeP)
 
   for (i = 0; i < prec; i++)
     {
-      md_number_to_chars (litP, (valueT) words[i],
-			  sizeof (LITTLENUM_TYPE));
+      md_number_to_chars (litP, words[i], sizeof (LITTLENUM_TYPE));
       litP += sizeof (LITTLENUM_TYPE);
     }
 
@@ -6778,7 +6767,7 @@ metag_force_relocation (fixS * fix)
   return generic_force_reloc (fix);
 }
 
-bfd_boolean
+bool
 metag_fix_adjustable (fixS * fixP)
 {
   if (fixP->fx_addsy == NULL)
@@ -6849,34 +6838,26 @@ void
 metag_handle_align (fragS * fragP)
 {
   static unsigned char const noop[4] = { 0xfe, 0xff, 0xff, 0xa0 };
-  int bytes, fix;
-  char *p;
 
   if (fragP->fr_type != rs_align_code)
     return;
 
-  bytes = fragP->fr_next->fr_address - fragP->fr_address - fragP->fr_fix;
-  p = fragP->fr_literal + fragP->fr_fix;
-  fix = 0;
-
-  if (bytes & 3)
+  int bytes = fragP->fr_next->fr_address - fragP->fr_address - fragP->fr_fix;
+  char *p = fragP->fr_literal + fragP->fr_fix;
+  int fix = bytes & 3;
+  if (fix != 0)
     {
-      fix = bytes & 3;
       memset (p, 0, fix);
       p += fix;
       bytes -= fix;
+      fragP->fr_fix += fix;
     }
 
-  while (bytes >= 4)
+  if (bytes != 0)
     {
+      fragP->fr_var = 4;
       memcpy (p, noop, 4);
-      p += 4;
-      bytes -= 4;
-      fix += 4;
     }
-
-  fragP->fr_fix += fix;
-  fragP->fr_var = 4;
 }
 
 static char *
@@ -6914,13 +6895,13 @@ metag_parse_name (char const * name, expressionS * exprP, enum expr_mode mode,
       /* If we have an absolute symbol or a
 	 reg, then we know its value now.  */
       segment = S_GET_SEGMENT (exprP->X_add_symbol);
-      if (mode != expr_defer && segment == absolute_section)
+      if (!expr_defer_p (mode) && segment == absolute_section)
 	{
 	  exprP->X_op = O_constant;
 	  exprP->X_add_number = S_GET_VALUE (exprP->X_add_symbol);
 	  exprP->X_add_symbol = NULL;
 	}
-      else if (mode != expr_defer && segment == reg_section)
+      else if (!expr_defer_p (mode) && segment == reg_section)
 	{
 	  exprP->X_op = O_register;
 	  exprP->X_add_number = S_GET_VALUE (exprP->X_add_symbol);
@@ -7007,10 +6988,10 @@ tc_gen_reloc (asection *seg ATTRIBUTE_UNUSED, fixS *fixp)
 {
   arelent *reloc;
 
-  reloc		      = XNEW (arelent);
-  reloc->sym_ptr_ptr  = XNEW (asymbol *);
+  reloc = notes_alloc (sizeof (arelent));
+  reloc->sym_ptr_ptr = notes_alloc (sizeof (asymbol *));
   *reloc->sym_ptr_ptr = symbol_get_bfdsym (fixp->fx_addsy);
-  reloc->address      = fixp->fx_frag->fr_address + fixp->fx_where;
+  reloc->address = fixp->fx_frag->fr_address + fixp->fx_where;
 
   reloc->addend = fixp->fx_offset;
   reloc->howto = bfd_reloc_type_lookup (stdoutput, fixp->fx_r_type);
@@ -7021,9 +7002,6 @@ tc_gen_reloc (asection *seg ATTRIBUTE_UNUSED, fixS *fixp)
 		    /* xgettext:c-format.  */
 		    _("reloc %d not supported by object file format"),
 		    (int) fixp->fx_r_type);
-
-      xfree (reloc);
-
       return NULL;
     }
 
@@ -7033,7 +7011,7 @@ tc_gen_reloc (asection *seg ATTRIBUTE_UNUSED, fixS *fixp)
 static unsigned int
 md_chars_to_number (char *val, int n)
 {
-  int retval;
+  unsigned int retval;
   unsigned char * where = (unsigned char *) val;
 
   for (retval = 0; n--;)
@@ -7048,7 +7026,7 @@ void
 md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
 {
   char *buf = fixP->fx_where + fixP->fx_frag->fr_literal;
-  int value = (int)*valP;
+  int value = *valP;
 
   switch (fixP->fx_r_type)
     {
@@ -7068,7 +7046,7 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
     case BFD_RELOC_METAG_LOADDR16:
     case BFD_RELOC_VTABLE_INHERIT:
     case BFD_RELOC_VTABLE_ENTRY:
-      fixP->fx_done = FALSE;
+      fixP->fx_done = false;
       break;
 
     case BFD_RELOC_METAG_REL8:
@@ -7137,5 +7115,5 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
     }
 
   if (fixP->fx_addsy == NULL)
-    fixP->fx_done = TRUE;
+    fixP->fx_done = true;
 }

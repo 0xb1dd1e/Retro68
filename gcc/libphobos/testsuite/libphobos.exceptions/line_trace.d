@@ -7,9 +7,9 @@ void main()
     }
     catch (Exception e)
     {
-        import core.stdc.stdio;
+        import core.stdc.stdio : printf;
         auto str = e.toString();
-        printf("%.*s\n", str.length, str.ptr);
+        printf("%.*s\n", cast(int)str.length, str.ptr);
     }
 }
 

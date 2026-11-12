@@ -19,6 +19,7 @@ import "unsafe"
 
 //sysnb	pipe(p *[2]_C_int) (err error)
 //pipe(p *[2]_C_int) _C_int
+
 func Pipe(p []int) (err error) {
 	if len(p) != 2 {
 		return EINVAL
@@ -32,6 +33,7 @@ func Pipe(p []int) (err error) {
 
 //sys	utimes(path string, times *[2]Timeval) (err error)
 //utimes(path *byte, times *[2]Timeval) _C_int
+
 func Utimes(path string, tv []Timeval) (err error) {
 	if len(tv) != 2 {
 		return EINVAL
@@ -240,6 +242,7 @@ func FDZero(set *FdSet) {
 
 //sysnb	gettimeofday(tv *Timeval, tz *byte) (err error)
 //gettimeofday(tv *Timeval, tz *byte) _C_int
+
 func Gettimeofday(tv *Timeval) (err error) {
 	return gettimeofday(tv, nil)
 }
@@ -292,6 +295,9 @@ func Gettimeofday(tv *Timeval) (err error) {
 //sysnb	Setgid(gid int) (err error)
 //setgid(gid Gid_t) _C_int
 
+//sysnb Setegid(uid int) (err error)
+//setegid(uid Uid_t) _C_int
+
 //sysnb Setregid(rgid int, egid int) (err error)
 //setregid(rgid Gid_t, egid Gid_t) _C_int
 
@@ -316,6 +322,9 @@ func Settimeofday(tv *Timeval) (err error) {
 
 //sysnb	Setuid(uid int) (err error)
 //setuid(uid Uid_t) _C_int
+
+//sysnb Seteuid(uid int) (err error)
+//seteuid(uid Uid_t) _C_int
 
 //sys	Symlink(oldpath string, newpath string) (err error)
 //symlink(oldpath *byte, newpath *byte) _C_int

@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1982, 1986, 1988, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -27,7 +29,7 @@
  * SUCH DAMAGE.
  *
  *	@(#)syslog.h	8.1 (Berkeley) 6/2/93
- * $FreeBSD: head/sys/sys/syslog.h 314436 2017-02-28 23:42:47Z imp $
+ * $FreeBSD$
  */
 
 #ifndef _SYS_SYSLOG_H_
@@ -35,7 +37,6 @@
 
 #define	_PATH_LOG	"/var/run/log"
 #define	_PATH_LOG_PRIV	"/var/run/logpriv"
-#define	_PATH_OLDLOG	"/dev/log"	/* backward compatibility */
 
 /*
  * priorities/facilities are encoded into a single 32-bit quantity, where the

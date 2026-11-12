@@ -4,14 +4,15 @@
  * Translated from MinGW Windows headers
  *
  * License: $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source: $(DRUNTIMESRC src/core/sys/windows/_objbase.d)
+ * Source: $(DRUNTIMESRC core/sys/windows/_objbase.d)
  */
 module core.sys.windows.objbase;
 version (Windows):
+nothrow:
 pragma(lib, "ole32");
 
 import core.sys.windows.cguid, core.sys.windows.objidl, core.sys.windows.unknwn, core.sys.windows.wtypes;
-private import core.sys.windows.basetyps, core.sys.windows.objfwd, core.sys.windows.rpcdce, core.sys.windows.winbase,
+import core.sys.windows.basetyps, core.sys.windows.objfwd, core.sys.windows.rpcdce, core.sys.windows.winbase,
   core.sys.windows.windef;
 
 // DAC: Not needed for D?
@@ -86,8 +87,8 @@ extern (Windows) BOOL IsEqualGUID(
   REFGUID rguid2
 );
 
-alias IsEqualGUID IsEqualIID;
-alias IsEqualGUID IsEqualCLSID;
+alias IsEqualIID = IsEqualGUID;
+alias IsEqualCLSID = IsEqualGUID;
 
 enum COINIT {
     COINIT_APARTMENTTHREADED = 2,
@@ -102,8 +103,8 @@ enum STDMSHLFLAGS {
 }
 
 extern(Windows) {
-    alias HRESULT function(REFCLSID, REFIID, PVOID*) LPFNGETCLASSOBJECT;
-    alias HRESULT function() LPFNCANUNLOADNOW;
+    alias LPFNGETCLASSOBJECT = HRESULT function(REFCLSID, REFIID, PVOID*);
+    alias LPFNCANUNLOADNOW = HRESULT function();
 
     DWORD CoBuildVersion();
     HRESULT CoInitialize(PVOID);

@@ -1,3 +1,6 @@
+/* { dg-skip-if "too many arguments in function call" { bpf-*-* } } */
+/* { dg-additional-options "-std=gnu89" } */
+
 struct utsname {
 	char	sysname[32 ];	 
 	char	version[32 ];	 

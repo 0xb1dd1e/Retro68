@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+# Copyright (C) 2018-2026 Free Software Foundation, Inc.
 #
 # Find missing and extra parameters in documentation compared to
 # output of: gcc --help=params.
@@ -17,21 +19,28 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with GCC; see the file COPYING3.  If not see
-# <http://www.gnu.org/licenses/>.  */
+# <http://www.gnu.org/licenses/>.
 #
 #
 #
 
-import sys
-import json
 import argparse
+import sys
 
-from itertools import *
 
 def get_param_tuple(line):
-    line = line.strip()
+    line = line.strip().replace('--param=', '')
     i = line.find(' ')
-    return (line[:i], line[i:].strip())
+    name = line[:i]
+    if '=' in name:
+        name = name[:name.find('=')]
+    description = line[i:].strip()
+    return (name, description)
+
+def target_specific(param):
+    return param.split('-')[0] in ('aarch64', 'gcn', 'x86', 'riscv', 'rs6000',
+                                   'loongarch')
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument('texi_file')
@@ -39,39 +48,57 @@ parser.add_argument('params_output')
 
 args = parser.parse_args()
 
-ignored = set(['logical-op-non-short-circuit'])
-params = {}
+ignored = {'logical-op-non-short-circuit'}
+help_params = {}
 
 for line in open(args.params_output).readlines():
-    if line.startswith('  '):
+    if line.startswith(' ' * 2) and not line.startswith(' ' * 8):
         r = get_param_tuple(line)
-        params[r[0]] = r[1]
+        help_params[r[0]] = r[1]
 
-# Find section in .texi manual with parameters
-texi = ([x.strip() for x in open(args.texi_file).readlines()])
-texi = dropwhile(lambda x: not 'item --param' in x, texi)
-texi = takewhile(lambda x: not '@node Instrumentation Options' in x, texi)
-texi = list(texi)[1:]
+# Skip target-specific params
+help_params = {x:y for x,y in help_params.items() if not target_specific(x)}
 
-token = '@item '
-texi = [x[len(token):] for x in texi if x.startswith(token)]
-sorted_texi = sorted(texi)
+texi = list([x.strip() for x in open(args.texi_file).readlines()])
 
-texi_set = set(texi) - ignored
-params_set = set(params.keys()) - ignored
+texi_params = []
+skip = False
+for line in texi:
+    # Skip @table @samp sections of manual where values of a param are usually
+    # listed
+    if skip:
+        if line.startswith('@end table'):
+            skip = False
+        continue
+    elif line.startswith('@table @samp'):
+        skip = True
+        continue
 
+    for token in ('@item ', '@itemx '):
+        if line.startswith(token):
+            texi_params.append(line[len(token):])
+            break
+
+# Skip target-specific params
+texi_params = [x for x in texi_params if not target_specific(x)]
+
+texi_set = set(texi_params) - ignored
+params_set = set(help_params.keys()) - ignored
+
+success = True
 extra = texi_set - params_set
 if len(extra):
     print('Extra:')
     print(extra)
+    success = False
 
 missing = params_set - texi_set
 if len(missing):
     print('Missing:')
     for m in missing:
         print('@item ' + m)
-        print(params[m])
+        print(help_params[m])
         print()
+    success = False
 
-if texi != sorted_texi:
-    print('WARNING: not sorted alphabetically!')
+sys.exit(0 if success else 1)

@@ -1,6 +1,6 @@
 // Locale support (codecvt) -*- C++ -*-
 
-// Copyright (C) 2000-2019 Free Software Foundation, Inc.
+// Copyright (C) 2000-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -36,7 +36,15 @@
 #ifndef _CODECVT_H
 #define _CODECVT_H 1
 
+#ifdef _GLIBCXX_SYSHDR
 #pragma GCC system_header
+#endif
+
+#include <bits/c++config.h>
+#include <bits/locale_classes.h> // locale::facet
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wc++11-extensions" // extern template
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
@@ -763,7 +771,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     {
     public:
       explicit
-      codecvt_byname(const char* __s, size_t __refs = 0)
+      codecvt_byname(const char*, size_t __refs = 0)
       : codecvt<char16_t, char8_t, mbstate_t>(__refs) { }
 
       explicit
@@ -781,7 +789,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     {
     public:
       explicit
-      codecvt_byname(const char* __s, size_t __refs = 0)
+      codecvt_byname(const char*, size_t __refs = 0)
       : codecvt<char32_t, char8_t, mbstate_t>(__refs) { }
 
       explicit
@@ -837,4 +845,5 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace std
 
+#pragma GCC diagnostic pop
 #endif // _CODECVT_H

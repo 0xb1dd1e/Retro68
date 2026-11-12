@@ -1,6 +1,6 @@
 // <future> -*- C++ -*-
 
-// Copyright (C) 2009-2019 Free Software Foundation, Inc.
+// Copyright (C) 2009-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -29,25 +29,30 @@
 #ifndef _GLIBCXX_FUTURE
 #define _GLIBCXX_FUTURE 1
 
+#ifdef _GLIBCXX_SYSHDR
 #pragma GCC system_header
+#endif
+
+#include <bits/requires_hosted.h> // concurrency
+#include <bits/functexcept.h>
 
 #if __cplusplus < 201103L
 # include <bits/c++0x_warning.h>
 #else
 
-#include <mutex>
-#include <thread>
-#include <condition_variable>
+#include <mutex>	      // call_once
+#include <condition_variable> // __at_thread_exit_elt
 #include <system_error>
-#include <atomic>
+#include <bits/atomic_base.h> // atomic_flag
+#include <bits/allocated_ptr.h>
 #include <bits/atomic_futex.h>
-#include <bits/functexcept.h>
+#include <bits/exception_defines.h>
 #include <bits/invoke.h>
 #include <bits/unique_ptr.h>
 #include <bits/shared_ptr.h>
 #include <bits/std_function.h>
+#include <bits/std_thread.h>
 #include <bits/uses_allocator.h>
-#include <bits/allocated_ptr.h>
 #include <ext/aligned_buffer.h>
 
 namespace std _GLIBCXX_VISIBILITY(default)
@@ -58,7 +63,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
    * @defgroup futures Futures
    * @ingroup concurrency
    *
-   * Classes for futures support.
+   * Futures and promises provide support for retrieving the result from
+   * an asynchronous function, e.g. one that is running in another thread.
+   * A `std::future` represents an asynchronous result that will become
+   * ready at some later time. A consumer can wait on a future until the
+   * result is ready to be accessed.
+   *
+   * @since C++11
    * @{
    */
 
@@ -71,20 +82,23 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     broken_promise
   };
 
-  /// Specialization.
+  /// Specialization that allows `future_errc` to convert to `error_code`.
   template<>
     struct is_error_code_enum<future_errc> : public true_type { };
 
   /// Points to a statically-allocated object derived from error_category.
+  [[__nodiscard__, __gnu__::__const__]]
   const error_category&
   future_category() noexcept;
 
-  /// Overload for make_error_code.
+  /// Overload of make_error_code for `future_errc`.
+  [[__nodiscard__]]
   inline error_code
   make_error_code(future_errc __errc) noexcept
   { return error_code(static_cast<int>(__errc), future_category()); }
 
-  /// Overload for make_error_condition.
+  /// Overload of make_error_condition for `future_errc`.
+  [[__nodiscard__]]
   inline error_condition
   make_error_condition(future_errc __errc) noexcept
   { return error_condition(static_cast<int>(__errc), future_category()); }
@@ -92,6 +106,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   /**
    *  @brief Exception type thrown by futures.
    *  @ingroup exceptions
+   *  @since C++11
    */
   class future_error : public logic_error
   {
@@ -140,34 +155,41 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     deferred = 2
   };
 
-  constexpr launch operator&(launch __x, launch __y)
+  [[__nodiscard__]]
+  constexpr launch operator&(launch __x, launch __y) noexcept
   {
     return static_cast<launch>(
 	static_cast<int>(__x) & static_cast<int>(__y));
   }
 
-  constexpr launch operator|(launch __x, launch __y)
+  [[__nodiscard__]]
+  constexpr launch operator|(launch __x, launch __y) noexcept
   {
     return static_cast<launch>(
 	static_cast<int>(__x) | static_cast<int>(__y));
   }
 
-  constexpr launch operator^(launch __x, launch __y)
+  [[__nodiscard__]]
+  constexpr launch operator^(launch __x, launch __y) noexcept
   {
     return static_cast<launch>(
 	static_cast<int>(__x) ^ static_cast<int>(__y));
   }
 
-  constexpr launch operator~(launch __x)
+  [[__nodiscard__]]
+  constexpr launch operator~(launch __x) noexcept
   { return static_cast<launch>(~static_cast<int>(__x)); }
 
-  inline launch& operator&=(launch& __x, launch __y)
+  _GLIBCXX14_CONSTEXPR
+  inline launch& operator&=(launch& __x, launch __y) noexcept
   { return __x = __x & __y; }
 
-  inline launch& operator|=(launch& __x, launch __y)
+  _GLIBCXX14_CONSTEXPR
+  inline launch& operator|=(launch& __x, launch __y) noexcept
   { return __x = __x | __y; }
 
-  inline launch& operator^=(launch& __x, launch __y)
+  _GLIBCXX14_CONSTEXPR
+  inline launch& operator^=(launch& __x, launch __y) noexcept
   { return __x = __x ^ __y; }
 
   /// Status code for futures
@@ -178,11 +200,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     deferred
   };
 
+  /// @cond undocumented
   // _GLIBCXX_RESOLVE_LIB_DEFECTS
   // 2021. Further incorrect usages of result_of
   template<typename _Fn, typename... _Args>
     using __async_result_of = typename __invoke_result<
       typename decay<_Fn>::type, typename decay<_Args>::type...>::type;
+  /// @endcond
 
   template<typename _Fn, typename... _Args>
     future<__async_result_of<_Fn, _Args...>>
@@ -193,6 +217,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     async(_Fn&& __fn, _Args&&... __args);
 
 #if defined(_GLIBCXX_HAS_GTHREADS)
+
+  /// @cond undocumented
 
   /// Base class and enclosing scope.
   struct __future_base
@@ -269,7 +295,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       {
 	using __allocator_type = __alloc_rebind<_Alloc, _Result_alloc>;
 
-        explicit
+	explicit
 	_Result_alloc(const _Alloc& __a) : _Result<_Res>(), _Alloc(__a)
 	{ }
 
@@ -298,7 +324,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     // Keep it simple for std::allocator.
     template<typename _Res, typename _Tp>
       static _Ptr<_Result<_Res>>
-      _S_allocate_result(const std::allocator<_Tp>& __a)
+      _S_allocate_result(const std::allocator<_Tp>&)
       {
 	return _Ptr<_Result<_Res>>(new _Result<_Res>);
       }
@@ -339,17 +365,22 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       }
 
       template<typename _Rep, typename _Period>
-        future_status
-        wait_for(const chrono::duration<_Rep, _Period>& __rel)
-        {
+	future_status
+	wait_for(const chrono::duration<_Rep, _Period>& __rel)
+	{
 	  // First, check if the future has been made ready.  Use acquire MO
 	  // to synchronize with the thread that made it ready.
 	  if (_M_status._M_load(memory_order_acquire) == _Status::__ready)
 	    return future_status::ready;
+
 	  if (_M_is_deferred_future())
 	    return future_status::deferred;
-	  if (_M_status._M_load_when_equal_for(_Status::__ready,
-	      memory_order_acquire, __rel))
+
+	  // Don't wait unless the relative time is greater than zero.
+	  if (__rel > __rel.zero()
+	      && _M_status._M_load_when_equal_for(_Status::__ready,
+						  memory_order_acquire,
+						  __rel))
 	    {
 	      // _GLIBCXX_RESOLVE_LIB_DEFECTS
 	      // 2100.  timed waiting functions must also join
@@ -368,17 +399,23 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	}
 
       template<typename _Clock, typename _Duration>
-        future_status
-        wait_until(const chrono::time_point<_Clock, _Duration>& __abs)
-        {
+	future_status
+	wait_until(const chrono::time_point<_Clock, _Duration>& __abs)
+	{
+#if __cplusplus > 201703L
+	  static_assert(chrono::is_clock_v<_Clock>);
+#endif
 	  // First, check if the future has been made ready.  Use acquire MO
 	  // to synchronize with the thread that made it ready.
 	  if (_M_status._M_load(memory_order_acquire) == _Status::__ready)
 	    return future_status::ready;
+
 	  if (_M_is_deferred_future())
 	    return future_status::deferred;
+
 	  if (_M_status._M_load_when_equal_until(_Status::__ready,
-	      memory_order_acquire, __abs))
+						 memory_order_acquire,
+						 __abs))
 	    {
 	      // _GLIBCXX_RESOLVE_LIB_DEFECTS
 	      // 2100.  timed waiting functions must also join
@@ -396,8 +433,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       _M_set_result(function<_Ptr_type()> __res, bool __ignore_failure = false)
       {
 	bool __did_set = false;
-        // all calls to this function are serialized,
-        // side-effects of invoking __res only happen once
+	// all calls to this function are serialized,
+	// side-effects of invoking __res only happen once
 	call_once(_M_once, &_State_baseV2::_M_do_set, this,
 		  std::__addressof(__res), std::__addressof(__did_set));
 	if (__did_set)
@@ -405,7 +442,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	  _M_status._M_store_notify_all(_Status::__ready,
 					memory_order_release);
 	else if (!__ignore_failure)
-          __throw_future_error(int(future_errc::promise_already_satisfied));
+	  __throw_future_error(int(future_errc::promise_already_satisfied));
       }
 
       // Provide a result to the shared state but delay making it ready
@@ -417,12 +454,12 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       {
 	bool __did_set = false;
 	unique_ptr<_Make_ready> __mr{new _Make_ready};
-        // all calls to this function are serialized,
-        // side-effects of invoking __res only happen once
+	// all calls to this function are serialized,
+	// side-effects of invoking __res only happen once
 	call_once(_M_once, &_State_baseV2::_M_do_set, this,
 		  std::__addressof(__res), std::__addressof(__did_set));
 	if (!__did_set)
-          __throw_future_error(int(future_errc::promise_already_satisfied));
+	  __throw_future_error(int(future_errc::promise_already_satisfied));
 	__mr->_M_shared_state = std::move(__self);
 	__mr->_M_set();
 	__mr.release();
@@ -456,41 +493,41 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       }
 
       template<typename _Res, typename _Arg>
-        struct _Setter;
+	struct _Setter;
 
       // set lvalues
       template<typename _Res, typename _Arg>
-        struct _Setter<_Res, _Arg&>
-        {
-          // check this is only used by promise<R>::set_value(const R&)
-          // or promise<R&>::set_value(R&)
-          static_assert(is_same<_Res, _Arg&>::value  // promise<R&>
-              || is_same<const _Res, _Arg>::value,   // promise<R>
-              "Invalid specialisation");
+	struct _Setter<_Res, _Arg&>
+	{
+	  // check this is only used by promise<R>::set_value(const R&)
+	  // or promise<R&>::set_value(R&)
+	  static_assert(is_same<_Res, _Arg&>::value              // promise<R&>
+			  || is_same<const _Res, _Arg>::value,   // promise<R>
+			"Invalid specialisation");
 
 	  // Used by std::promise to copy construct the result.
-          typename promise<_Res>::_Ptr_type operator()() const
-          {
-            _M_promise->_M_storage->_M_set(*_M_arg);
-            return std::move(_M_promise->_M_storage);
-          }
-          promise<_Res>*    _M_promise;
-          _Arg*             _M_arg;
-        };
+	  typename promise<_Res>::_Ptr_type operator()() const
+	  {
+	    _M_promise->_M_storage->_M_set(*_M_arg);
+	    return std::move(_M_promise->_M_storage);
+	  }
+	  promise<_Res>*    _M_promise;
+	  _Arg*             _M_arg;
+	};
 
       // set rvalues
       template<typename _Res>
-        struct _Setter<_Res, _Res&&>
-        {
+	struct _Setter<_Res, _Res&&>
+	{
 	  // Used by std::promise to move construct the result.
-          typename promise<_Res>::_Ptr_type operator()() const
-          {
-            _M_promise->_M_storage->_M_set(std::move(*_M_arg));
-            return std::move(_M_promise->_M_storage);
-          }
-          promise<_Res>*    _M_promise;
-          _Res*             _M_arg;
-        };
+	  typename promise<_Res>::_Ptr_type operator()() const
+	  {
+	    _M_promise->_M_storage->_M_set(std::move(*_M_arg));
+	    return std::move(_M_promise->_M_storage);
+	  }
+	  promise<_Res>*    _M_promise;
+	  _Res*             _M_arg;
+	};
 
       // set void
       template<typename _Res>
@@ -498,7 +535,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	{
 	  static_assert(is_void<_Res>::value, "Only used for promise<void>");
 
-	  typename promise<_Res>::_Ptr_type operator()() const
+	  typename promise<_Res>::_Ptr_type operator()() const noexcept
 	  { return std::move(_M_promise->_M_storage); }
 
 	  promise<_Res>*    _M_promise;
@@ -508,62 +545,63 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
       // set exceptions
       template<typename _Res>
-        struct _Setter<_Res, __exception_ptr_tag>
-        {
+	struct _Setter<_Res, __exception_ptr_tag>
+	{
 	  // Used by std::promise to store an exception as the result.
-          typename promise<_Res>::_Ptr_type operator()() const
-          {
-            _M_promise->_M_storage->_M_error = *_M_ex;
-            return std::move(_M_promise->_M_storage);
-          }
+	  typename promise<_Res>::_Ptr_type operator()() const noexcept
+	  {
+	    _M_promise->_M_storage->_M_error = *_M_ex;
+	    return std::move(_M_promise->_M_storage);
+	  }
 
-          promise<_Res>*   _M_promise;
-          exception_ptr*    _M_ex;
-        };
+	  promise<_Res>*   _M_promise;
+	  exception_ptr*    _M_ex;
+	};
 
       template<typename _Res, typename _Arg>
-        static _Setter<_Res, _Arg&&>
-        __setter(promise<_Res>* __prom, _Arg&& __arg)
-        {
-	  _S_check(__prom->_M_future);
-          return _Setter<_Res, _Arg&&>{ __prom, std::__addressof(__arg) };
-        }
-
-      template<typename _Res>
-        static _Setter<_Res, __exception_ptr_tag>
-        __setter(exception_ptr& __ex, promise<_Res>* __prom)
-        {
-	  _S_check(__prom->_M_future);
-          return _Setter<_Res, __exception_ptr_tag>{ __prom, &__ex };
-        }
-
-      template<typename _Res>
-	static _Setter<_Res, void>
-	__setter(promise<_Res>* __prom)
+	__attribute__((__always_inline__))
+	static _Setter<_Res, _Arg&&>
+	__setter(promise<_Res>* __prom, _Arg&& __arg) noexcept
 	{
-	  _S_check(__prom->_M_future);
+	  return _Setter<_Res, _Arg&&>{ __prom, std::__addressof(__arg) };
+	}
+
+      template<typename _Res>
+	__attribute__((__always_inline__))
+	static _Setter<_Res, __exception_ptr_tag>
+	__setter(exception_ptr& __ex, promise<_Res>* __prom) noexcept
+	{
+	  __glibcxx_assert(__ex != nullptr); // LWG 2276
+	  return _Setter<_Res, __exception_ptr_tag>{ __prom, &__ex };
+	}
+
+      template<typename _Res>
+	__attribute__((__always_inline__))
+	static _Setter<_Res, void>
+	__setter(promise<_Res>* __prom) noexcept
+	{
 	  return _Setter<_Res, void>{ __prom };
 	}
 
       template<typename _Tp>
-        static void
-        _S_check(const shared_ptr<_Tp>& __p)
-        {
-          if (!static_cast<bool>(__p))
-            __throw_future_error((int)future_errc::no_state);
-        }
+	static void
+	_S_check(const shared_ptr<_Tp>& __p)
+	{
+	  if (!static_cast<bool>(__p))
+	    __throw_future_error((int)future_errc::no_state);
+	}
 
     private:
       // The function invoked with std::call_once(_M_once, ...).
       void
       _M_do_set(function<_Ptr_type()>* __f, bool* __did_set)
       {
-        _Ptr_type __res = (*__f)();
-        // Notify the caller that we did try to set; if we do not throw an
-        // exception, the caller will be aware that it did set (e.g., see
-        // _M_set_result).
+	_Ptr_type __res = (*__f)();
+	// Notify the caller that we did try to set; if we do not throw an
+	// exception, the caller will be aware that it did set (e.g., see
+	// _M_set_result).
 	*__did_set = true;
-        _M_result.swap(__res); // nothrow
+	_M_result.swap(__res); // nothrow
       }
 
       // Wait for completion of async function.
@@ -597,18 +635,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       class _Async_state_impl;
 
     template<typename _Signature>
-      class _Task_state_base;
+      struct _Task_state_base;
 
     template<typename _Fn, typename _Alloc, typename _Signature>
-      class _Task_state;
-
-    template<typename _BoundFn>
-      static std::shared_ptr<_State_base>
-      _S_make_deferred_state(_BoundFn&& __fn);
-
-    template<typename _BoundFn>
-      static std::shared_ptr<_State_base>
-      _S_make_async_state(_BoundFn&& __fn);
+      struct _Task_state;
 
     template<typename _Res_ptr, typename _Fn,
 	     typename _Res = typename _Res_ptr::element_type::result_type>
@@ -652,8 +682,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       void _M_destroy() { delete this; }
     };
 
+  /// @endcond
+
 #ifndef _GLIBCXX_ASYNC_ABI_COMPAT
 
+  /// @cond undocumented
   // Allow _Setter objects to be stored locally in std::function
   template<typename _Res, typename _Arg>
     struct __is_location_invariant
@@ -665,6 +698,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     struct __is_location_invariant
     <__future_base::_Task_setter<_Res_ptr, _Fn, _Res>>
     : true_type { };
+  /// @endcond
 
   /// Common implementation for future and shared_future.
   template<typename _Res>
@@ -688,49 +722,49 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       void
       wait() const
       {
-        _State_base::_S_check(_M_state);
-        _M_state->wait();
+	_State_base::_S_check(_M_state);
+	_M_state->wait();
       }
 
       template<typename _Rep, typename _Period>
-        future_status
-        wait_for(const chrono::duration<_Rep, _Period>& __rel) const
-        {
-          _State_base::_S_check(_M_state);
-          return _M_state->wait_for(__rel);
-        }
+	future_status
+	wait_for(const chrono::duration<_Rep, _Period>& __rel) const
+	{
+	  _State_base::_S_check(_M_state);
+	  return _M_state->wait_for(__rel);
+	}
 
       template<typename _Clock, typename _Duration>
-        future_status
-        wait_until(const chrono::time_point<_Clock, _Duration>& __abs) const
-        {
-          _State_base::_S_check(_M_state);
-          return _M_state->wait_until(__abs);
-        }
+	future_status
+	wait_until(const chrono::time_point<_Clock, _Duration>& __abs) const
+	{
+	  _State_base::_S_check(_M_state);
+	  return _M_state->wait_until(__abs);
+	}
 
     protected:
       /// Wait for the state to be ready and rethrow any stored exception
       __result_type
       _M_get_result() const
       {
-        _State_base::_S_check(_M_state);
-        _Result_base& __res = _M_state->wait();
-        if (!(__res._M_error == 0))
-          rethrow_exception(__res._M_error);
-        return static_cast<__result_type>(__res);
+	_State_base::_S_check(_M_state);
+	_Result_base& __res = _M_state->wait();
+	if (!(__res._M_error == nullptr))
+	  rethrow_exception(__res._M_error);
+	return static_cast<__result_type>(__res);
       }
 
       void _M_swap(__basic_future& __that) noexcept
       {
-        _M_state.swap(__that._M_state);
+	_M_state.swap(__that._M_state);
       }
 
       // Construction of a future by promise::get_future()
       explicit
       __basic_future(const __state_type& __state) : _M_state(__state)
       {
-        _State_base::_S_check(_M_state);
-        _M_state->_M_set_retrieved_flag();
+	_State_base::_S_check(_M_state);
+	_M_state->_M_set_retrieved_flag();
       }
 
       // Copy construction from a shared_future
@@ -749,9 +783,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
       struct _Reset
       {
-        explicit _Reset(__basic_future& __fut) noexcept : _M_fut(__fut) { }
-        ~_Reset() { _M_fut._M_state.reset(); }
-        __basic_future& _M_fut;
+	explicit _Reset(__basic_future& __fut) noexcept : _M_fut(__fut) { }
+	~_Reset() { _M_fut._M_state.reset(); }
+	__basic_future& _M_fut;
       };
     };
 
@@ -760,11 +794,18 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template<typename _Res>
     class future : public __basic_future<_Res>
     {
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 3458. Is shared_future intended to work with arrays or function types?
+      static_assert(!is_array<_Res>{}, "result type must not be an array");
+      static_assert(!is_function<_Res>{}, "result type must not be a function");
+      static_assert(is_destructible<_Res>{},
+		    "result type must be destructible");
+
       friend class promise<_Res>;
       template<typename> friend class packaged_task;
       template<typename _Fn, typename... _Args>
-        friend future<__async_result_of<_Fn, _Args...>>
-        async(launch, _Fn&&, _Args&&...);
+	friend future<__async_result_of<_Fn, _Args...>>
+	async(launch, _Fn&&, _Args&&...);
 
       typedef __basic_future<_Res> _Base_type;
       typedef typename _Base_type::__state_type __state_type;
@@ -784,16 +825,16 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
       future& operator=(future&& __fut) noexcept
       {
-        future(std::move(__fut))._M_swap(*this);
-        return *this;
+	future(std::move(__fut))._M_swap(*this);
+	return *this;
       }
 
       /// Retrieving the value
       _Res
       get()
       {
-        typename _Base_type::_Reset __reset(*this);
-        return std::move(this->_M_get_result()._M_value());
+	typename _Base_type::_Reset __reset(*this);
+	return std::move(this->_M_get_result()._M_value());
       }
 
       shared_future<_Res> share() noexcept;
@@ -806,8 +847,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       friend class promise<_Res&>;
       template<typename> friend class packaged_task;
       template<typename _Fn, typename... _Args>
-        friend future<__async_result_of<_Fn, _Args...>>
-        async(launch, _Fn&&, _Args&&...);
+	friend future<__async_result_of<_Fn, _Args...>>
+	async(launch, _Fn&&, _Args&&...);
 
       typedef __basic_future<_Res&> _Base_type;
       typedef typename _Base_type::__state_type __state_type;
@@ -827,16 +868,16 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
       future& operator=(future&& __fut) noexcept
       {
-        future(std::move(__fut))._M_swap(*this);
-        return *this;
+	future(std::move(__fut))._M_swap(*this);
+	return *this;
       }
 
       /// Retrieving the value
       _Res&
       get()
       {
-        typename _Base_type::_Reset __reset(*this);
-        return this->_M_get_result()._M_get();
+	typename _Base_type::_Reset __reset(*this);
+	return this->_M_get_result()._M_get();
       }
 
       shared_future<_Res&> share() noexcept;
@@ -849,8 +890,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       friend class promise<void>;
       template<typename> friend class packaged_task;
       template<typename _Fn, typename... _Args>
-        friend future<__async_result_of<_Fn, _Args...>>
-        async(launch, _Fn&&, _Args&&...);
+	friend future<__async_result_of<_Fn, _Args...>>
+	async(launch, _Fn&&, _Args&&...);
 
       typedef __basic_future<void> _Base_type;
       typedef typename _Base_type::__state_type __state_type;
@@ -870,16 +911,16 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
       future& operator=(future&& __fut) noexcept
       {
-        future(std::move(__fut))._M_swap(*this);
-        return *this;
+	future(std::move(__fut))._M_swap(*this);
+	return *this;
       }
 
       /// Retrieving the value
       void
       get()
       {
-        typename _Base_type::_Reset __reset(*this);
-        this->_M_get_result();
+	typename _Base_type::_Reset __reset(*this);
+	this->_M_get_result();
       }
 
       shared_future<void> share() noexcept;
@@ -890,6 +931,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template<typename _Res>
     class shared_future : public __basic_future<_Res>
     {
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 3458. Is shared_future intended to work with arrays or function types?
+      static_assert(!is_array<_Res>{}, "result type must not be an array");
+      static_assert(!is_function<_Res>{}, "result type must not be a function");
+      static_assert(is_destructible<_Res>{},
+		    "result type must be destructible");
+
       typedef __basic_future<_Res> _Base_type;
 
     public:
@@ -910,14 +958,14 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
       shared_future& operator=(const shared_future& __sf) noexcept
       {
-        shared_future(__sf)._M_swap(*this);
-        return *this;
+	shared_future(__sf)._M_swap(*this);
+	return *this;
       }
 
       shared_future& operator=(shared_future&& __sf) noexcept
       {
-        shared_future(std::move(__sf))._M_swap(*this);
-        return *this;
+	shared_future(std::move(__sf))._M_swap(*this);
+	return *this;
       }
 
       /// Retrieving the value
@@ -949,14 +997,14 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
       shared_future& operator=(const shared_future& __sf)
       {
-        shared_future(__sf)._M_swap(*this);
-        return *this;
+	shared_future(__sf)._M_swap(*this);
+	return *this;
       }
 
       shared_future& operator=(shared_future&& __sf) noexcept
       {
-        shared_future(std::move(__sf))._M_swap(*this);
-        return *this;
+	shared_future(std::move(__sf))._M_swap(*this);
+	return *this;
       }
 
       /// Retrieving the value
@@ -988,14 +1036,14 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
       shared_future& operator=(const shared_future& __sf)
       {
-        shared_future(__sf)._M_swap(*this);
-        return *this;
+	shared_future(__sf)._M_swap(*this);
+	return *this;
       }
 
       shared_future& operator=(shared_future&& __sf) noexcept
       {
-        shared_future(std::move(__sf))._M_swap(*this);
-        return *this;
+	shared_future(std::move(__sf))._M_swap(*this);
+	return *this;
       }
 
       // Retrieving the value
@@ -1042,10 +1090,17 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template<typename _Res>
     class promise
     {
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 3466: Specify the requirements for promise/future/[...] consistently
+      static_assert(!is_array<_Res>{}, "result type must not be an array");
+      static_assert(!is_function<_Res>{}, "result type must not be a function");
+      static_assert(is_destructible<_Res>{},
+		    "result type must be destructible");
+
       typedef __future_base::_State_base 	_State;
       typedef __future_base::_Result<_Res>	_Res_type;
       typedef __future_base::_Ptr<_Res_type>	_Ptr_type;
-      template<typename, typename> friend class _State::_Setter;
+      template<typename, typename> friend struct _State::_Setter;
       friend _State;
 
       shared_ptr<_State>                        _M_future;
@@ -1063,31 +1118,31 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       { }
 
       template<typename _Allocator>
-        promise(allocator_arg_t, const _Allocator& __a)
-        : _M_future(std::allocate_shared<_State>(__a)),
+	promise(allocator_arg_t, const _Allocator& __a)
+	: _M_future(std::allocate_shared<_State>(__a)),
 	  _M_storage(__future_base::_S_allocate_result<_Res>(__a))
-        { }
+	{ }
 
       template<typename _Allocator>
-        promise(allocator_arg_t, const _Allocator&, promise&& __rhs)
-        : _M_future(std::move(__rhs._M_future)),
+	promise(allocator_arg_t, const _Allocator&, promise&& __rhs)
+	: _M_future(std::move(__rhs._M_future)),
 	  _M_storage(std::move(__rhs._M_storage))
-        { }
+	{ }
 
       promise(const promise&) = delete;
 
       ~promise()
       {
-        if (static_cast<bool>(_M_future) && !_M_future.unique())
-          _M_future->_M_break_promise(std::move(_M_storage));
+	if (static_cast<bool>(_M_future) && !_M_future.unique())
+	  _M_future->_M_break_promise(std::move(_M_storage));
       }
 
       // Assignment
       promise&
       operator=(promise&& __rhs) noexcept
       {
-        promise(std::move(__rhs)).swap(*this);
-        return *this;
+	promise(std::move(__rhs)).swap(*this);
+	return *this;
       }
 
       promise& operator=(const promise&) = delete;
@@ -1095,8 +1150,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       void
       swap(promise& __rhs) noexcept
       {
-        _M_future.swap(__rhs._M_future);
-        _M_storage.swap(__rhs._M_storage);
+	_M_future.swap(__rhs._M_future);
+	_M_storage.swap(__rhs._M_storage);
       }
 
       // Retrieving the result
@@ -1107,35 +1162,43 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       // Setting the result
       void
       set_value(const _Res& __r)
-      { _M_future->_M_set_result(_State::__setter(this, __r)); }
+      { _M_state()._M_set_result(_State::__setter(this, __r)); }
 
       void
       set_value(_Res&& __r)
-      { _M_future->_M_set_result(_State::__setter(this, std::move(__r))); }
+      { _M_state()._M_set_result(_State::__setter(this, std::move(__r))); }
 
       void
       set_exception(exception_ptr __p)
-      { _M_future->_M_set_result(_State::__setter(__p, this)); }
+      { _M_state()._M_set_result(_State::__setter(__p, this)); }
 
       void
       set_value_at_thread_exit(const _Res& __r)
       {
-	_M_future->_M_set_delayed_result(_State::__setter(this, __r),
+	_M_state()._M_set_delayed_result(_State::__setter(this, __r),
 					 _M_future);
       }
 
       void
       set_value_at_thread_exit(_Res&& __r)
       {
-	_M_future->_M_set_delayed_result(
+	_M_state()._M_set_delayed_result(
 	    _State::__setter(this, std::move(__r)), _M_future);
       }
 
       void
       set_exception_at_thread_exit(exception_ptr __p)
       {
-	_M_future->_M_set_delayed_result(_State::__setter(__p, this),
+	_M_state()._M_set_delayed_result(_State::__setter(__p, this),
 					 _M_future);
+      }
+
+    private:
+      _State&
+      _M_state()
+      {
+	__future_base::_State_base::_S_check(_M_future);
+	return *_M_future;
       }
     };
 
@@ -1156,7 +1219,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       typedef __future_base::_State_base	_State;
       typedef __future_base::_Result<_Res&>	_Res_type;
       typedef __future_base::_Ptr<_Res_type> 	_Ptr_type;
-      template<typename, typename> friend class _State::_Setter;
+      template<typename, typename> friend struct _State::_Setter;
       friend _State;
 
       shared_ptr<_State>                        _M_future;
@@ -1174,31 +1237,31 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       { }
 
       template<typename _Allocator>
-        promise(allocator_arg_t, const _Allocator& __a)
-        : _M_future(std::allocate_shared<_State>(__a)),
+	promise(allocator_arg_t, const _Allocator& __a)
+	: _M_future(std::allocate_shared<_State>(__a)),
 	  _M_storage(__future_base::_S_allocate_result<_Res&>(__a))
-        { }
+	{ }
 
       template<typename _Allocator>
-        promise(allocator_arg_t, const _Allocator&, promise&& __rhs)
-        : _M_future(std::move(__rhs._M_future)),
+	promise(allocator_arg_t, const _Allocator&, promise&& __rhs)
+	: _M_future(std::move(__rhs._M_future)),
 	  _M_storage(std::move(__rhs._M_storage))
-        { }
+	{ }
 
       promise(const promise&) = delete;
 
       ~promise()
       {
-        if (static_cast<bool>(_M_future) && !_M_future.unique())
-          _M_future->_M_break_promise(std::move(_M_storage));
+	if (static_cast<bool>(_M_future) && !_M_future.unique())
+	  _M_future->_M_break_promise(std::move(_M_storage));
       }
 
       // Assignment
       promise&
       operator=(promise&& __rhs) noexcept
       {
-        promise(std::move(__rhs)).swap(*this);
-        return *this;
+	promise(std::move(__rhs)).swap(*this);
+	return *this;
       }
 
       promise& operator=(const promise&) = delete;
@@ -1206,8 +1269,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       void
       swap(promise& __rhs) noexcept
       {
-        _M_future.swap(__rhs._M_future);
-        _M_storage.swap(__rhs._M_storage);
+	_M_future.swap(__rhs._M_future);
+	_M_storage.swap(__rhs._M_storage);
       }
 
       // Retrieving the result
@@ -1218,24 +1281,32 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       // Setting the result
       void
       set_value(_Res& __r)
-      { _M_future->_M_set_result(_State::__setter(this, __r)); }
+      { _M_state()._M_set_result(_State::__setter(this, __r)); }
 
       void
       set_exception(exception_ptr __p)
-      { _M_future->_M_set_result(_State::__setter(__p, this)); }
+      { _M_state()._M_set_result(_State::__setter(__p, this)); }
 
       void
       set_value_at_thread_exit(_Res& __r)
       {
-	_M_future->_M_set_delayed_result(_State::__setter(this, __r),
+	_M_state()._M_set_delayed_result(_State::__setter(this, __r),
 					 _M_future);
       }
 
       void
       set_exception_at_thread_exit(exception_ptr __p)
       {
-	_M_future->_M_set_delayed_result(_State::__setter(__p, this),
+	_M_state()._M_set_delayed_result(_State::__setter(__p, this),
 					 _M_future);
+      }
+
+    private:
+      _State&
+      _M_state()
+      {
+	__future_base::_State_base::_S_check(_M_future);
+	return *_M_future;
       }
     };
 
@@ -1246,7 +1317,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       typedef __future_base::_State_base	_State;
       typedef __future_base::_Result<void>	_Res_type;
       typedef __future_base::_Ptr<_Res_type> 	_Ptr_type;
-      template<typename, typename> friend class _State::_Setter;
+      template<typename, typename> friend struct _State::_Setter;
       friend _State;
 
       shared_ptr<_State>                        _M_future;
@@ -1264,33 +1335,33 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       { }
 
       template<typename _Allocator>
-        promise(allocator_arg_t, const _Allocator& __a)
-        : _M_future(std::allocate_shared<_State>(__a)),
+	promise(allocator_arg_t, const _Allocator& __a)
+	: _M_future(std::allocate_shared<_State>(__a)),
 	  _M_storage(__future_base::_S_allocate_result<void>(__a))
-        { }
+	{ }
 
       // _GLIBCXX_RESOLVE_LIB_DEFECTS
       // 2095.  missing constructors needed for uses-allocator construction
       template<typename _Allocator>
-        promise(allocator_arg_t, const _Allocator&, promise&& __rhs)
-        : _M_future(std::move(__rhs._M_future)),
+	promise(allocator_arg_t, const _Allocator&, promise&& __rhs)
+	: _M_future(std::move(__rhs._M_future)),
 	  _M_storage(std::move(__rhs._M_storage))
-        { }
+	{ }
 
       promise(const promise&) = delete;
 
       ~promise()
       {
-        if (static_cast<bool>(_M_future) && !_M_future.unique())
-          _M_future->_M_break_promise(std::move(_M_storage));
+	if (static_cast<bool>(_M_future) && !_M_future.unique())
+	  _M_future->_M_break_promise(std::move(_M_storage));
       }
 
       // Assignment
       promise&
       operator=(promise&& __rhs) noexcept
       {
-        promise(std::move(__rhs)).swap(*this);
-        return *this;
+	promise(std::move(__rhs)).swap(*this);
+	return *this;
       }
 
       promise& operator=(const promise&) = delete;
@@ -1298,8 +1369,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       void
       swap(promise& __rhs) noexcept
       {
-        _M_future.swap(__rhs._M_future);
-        _M_storage.swap(__rhs._M_storage);
+	_M_future.swap(__rhs._M_future);
+	_M_storage.swap(__rhs._M_storage);
       }
 
       // Retrieving the result
@@ -1310,24 +1381,33 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       // Setting the result
       void
       set_value()
-      { _M_future->_M_set_result(_State::__setter(this)); }
+      { _M_state()._M_set_result(_State::__setter(this)); }
 
       void
       set_exception(exception_ptr __p)
-      { _M_future->_M_set_result(_State::__setter(__p, this)); }
+      { _M_state()._M_set_result(_State::__setter(__p, this)); }
 
       void
       set_value_at_thread_exit()
-      { _M_future->_M_set_delayed_result(_State::__setter(this), _M_future); }
+      { _M_state()._M_set_delayed_result(_State::__setter(this), _M_future); }
 
       void
       set_exception_at_thread_exit(exception_ptr __p)
       {
-	_M_future->_M_set_delayed_result(_State::__setter(__p, this),
+	_M_state()._M_set_delayed_result(_State::__setter(__p, this),
 					 _M_future);
+      }
+
+    private:
+      _State&
+      _M_state()
+      {
+	__future_base::_State_base::_S_check(_M_future);
+	return *_M_future;
       }
     };
 
+  /// @cond undocumented
   template<typename _Ptr_type, typename _Fn, typename _Res>
     struct __future_base::_Task_setter
     {
@@ -1407,18 +1487,35 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     struct __future_base::_Task_state<_Fn, _Alloc, _Res(_Args...)> final
     : __future_base::_Task_state_base<_Res(_Args...)>
     {
+#ifdef __cpp_lib_is_invocable // C++ >= 17
+      static_assert(is_invocable_r_v<_Res, _Fn&, _Args...>);
+#else
+      static_assert(__is_invocable<_Fn&, _Args...>::value,
+		    "_Fn& is invocable with _Args...");
+#endif
+
       template<typename _Fn2>
 	_Task_state(_Fn2&& __fn, const _Alloc& __a)
 	: _Task_state_base<_Res(_Args...)>(__a),
 	  _M_impl(std::forward<_Fn2>(__fn), __a)
 	{ }
 
+      template<typename _Fn2>
+	static shared_ptr<_Task_state_base<_Res(_Args...)>>
+	_S_create(_Fn2&& __fn, const _Alloc& __a)
+	{
+	  return std::allocate_shared<_Task_state>(__a,
+						   std::forward<_Fn2>(__fn),
+						   __a);
+	}
+
     private:
       virtual void
       _M_run(_Args&&... __args)
       {
-	auto __boundfn = [&] () -> typename result_of<_Fn&(_Args&&...)>::type {
-	    return std::__invoke(_M_impl._M_fn, std::forward<_Args>(__args)...);
+	auto __boundfn = [&] () -> _Res {
+	    return std::__invoke_r<_Res>(_M_impl._M_fn,
+					 std::forward<_Args>(__args)...);
 	};
 	this->_M_set_result(_S_task_setter(this->_M_result, __boundfn));
       }
@@ -1426,15 +1523,17 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       virtual void
       _M_run_delayed(_Args&&... __args, weak_ptr<_State_base> __self)
       {
-	auto __boundfn = [&] () -> typename result_of<_Fn&(_Args&&...)>::type {
-	    return std::__invoke(_M_impl._M_fn, std::forward<_Args>(__args)...);
+	auto __boundfn = [&] () -> _Res {
+	    return std::__invoke_r<_Res>(_M_impl._M_fn,
+					 std::forward<_Args>(__args)...);
 	};
 	this->_M_set_delayed_result(_S_task_setter(this->_M_result, __boundfn),
 				    std::move(__self));
       }
 
       virtual shared_ptr<_Task_state_base<_Res(_Args...)>>
-      _M_reset();
+      _M_reset()
+      { return _S_create(std::move(_M_impl._M_fn), _M_impl); }
 
       struct _Impl : _Alloc
       {
@@ -1444,66 +1543,68 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	_Fn _M_fn;
       } _M_impl;
     };
-
-  template<typename _Signature, typename _Fn, typename _Alloc>
-    static shared_ptr<__future_base::_Task_state_base<_Signature>>
-    __create_task_state(_Fn&& __fn, const _Alloc& __a)
-    {
-      typedef typename decay<_Fn>::type _Fn2;
-      typedef __future_base::_Task_state<_Fn2, _Alloc, _Signature> _State;
-      return std::allocate_shared<_State>(__a, std::forward<_Fn>(__fn), __a);
-    }
-
-  template<typename _Fn, typename _Alloc, typename _Res, typename... _Args>
-    shared_ptr<__future_base::_Task_state_base<_Res(_Args...)>>
-    __future_base::_Task_state<_Fn, _Alloc, _Res(_Args...)>::_M_reset()
-    {
-      return __create_task_state<_Res(_Args...)>(std::move(_M_impl._M_fn),
-						 static_cast<_Alloc&>(_M_impl));
-    }
+  /// @endcond
 
   /// packaged_task
   template<typename _Res, typename... _ArgTypes>
     class packaged_task<_Res(_ArgTypes...)>
     {
-      typedef __future_base::_Task_state_base<_Res(_ArgTypes...)> _State_type;
+      using _State_type = __future_base::_Task_state_base<_Res(_ArgTypes...)>;
       shared_ptr<_State_type>                   _M_state;
 
       // _GLIBCXX_RESOLVE_LIB_DEFECTS
       // 3039. Unnecessary decay in thread and packaged_task
       template<typename _Fn, typename _Fn2 = __remove_cvref_t<_Fn>>
-	using __not_same
-	  = typename enable_if<!is_same<packaged_task, _Fn2>::value>::type;
+	using __not_same = __enable_if_t<!is_same<packaged_task, _Fn2>::value>;
+
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 4154. The Mandates for std::packaged_task's constructor
+      // from a callable entity should consider decaying.
+      template<typename _Fn, typename _Alloc = std::allocator<int>>
+	using _Task_state
+	  = __future_base::_Task_state<__decay_t<_Fn>, _Alloc,
+				       _Res(_ArgTypes...)>;
 
     public:
       // Construction and destruction
       packaged_task() noexcept { }
 
-      // _GLIBCXX_RESOLVE_LIB_DEFECTS
-      // 2095.  missing constructors needed for uses-allocator construction
-      template<typename _Allocator>
-	packaged_task(allocator_arg_t, const _Allocator& __a) noexcept
-	{ }
-
       template<typename _Fn, typename = __not_same<_Fn>>
 	explicit
 	packaged_task(_Fn&& __fn)
-	: packaged_task(allocator_arg, std::allocator<int>(),
-			std::forward<_Fn>(__fn))
+	: _M_state(_Task_state<_Fn>::_S_create(std::forward<_Fn>(__fn), {}))
+	{ }
+
+#if __cplusplus < 201703L
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 2097. packaged_task constructors should be constrained
+      // 2407. [this constructor should not be] explicit
+      // 2921. packaged_task and type-erased allocators
+      template<typename _Fn, typename _Alloc, typename = __not_same<_Fn>>
+	packaged_task(allocator_arg_t, const _Alloc& __a, _Fn&& __fn)
+	: _M_state(_Task_state<_Fn, _Alloc>::_S_create(std::forward<_Fn>(__fn),
+						       __a))
 	{ }
 
       // _GLIBCXX_RESOLVE_LIB_DEFECTS
-      // 2097.  packaged_task constructors should be constrained
-      // 2407. [this constructor should not be] explicit
-      template<typename _Fn, typename _Alloc, typename = __not_same<_Fn>>
-	packaged_task(allocator_arg_t, const _Alloc& __a, _Fn&& __fn)
-	: _M_state(__create_task_state<_Res(_ArgTypes...)>(
-		   std::forward<_Fn>(__fn), __a))
+      // 2095.  missing constructors needed for uses-allocator construction
+      template<typename _Allocator>
+	packaged_task(allocator_arg_t, const _Allocator&) noexcept
 	{ }
+
+      template<typename _Allocator>
+	packaged_task(allocator_arg_t, const _Allocator&,
+		      const packaged_task&) = delete;
+
+      template<typename _Allocator>
+	packaged_task(allocator_arg_t, const _Allocator&,
+		      packaged_task&& __other) noexcept
+	{ this->swap(__other); }
+#endif
 
       ~packaged_task()
       {
-        if (static_cast<bool>(_M_state) && !_M_state.unique())
+	if (static_cast<bool>(_M_state) && !_M_state.unique())
 	  _M_state->_M_break_promise(std::move(_M_state->_M_result));
       }
 
@@ -1511,18 +1612,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       packaged_task(const packaged_task&) = delete;
       packaged_task& operator=(const packaged_task&) = delete;
 
-      template<typename _Allocator>
-	packaged_task(allocator_arg_t, const _Allocator&,
-		      const packaged_task&) = delete;
-
       // Move support
       packaged_task(packaged_task&& __other) noexcept
       { this->swap(__other); }
-
-      template<typename _Allocator>
-	packaged_task(allocator_arg_t, const _Allocator&,
-		      packaged_task&& __other) noexcept
-	{ this->swap(__other); }
 
       packaged_task& operator=(packaged_task&& __other) noexcept
       {
@@ -1568,6 +1660,17 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       }
     };
 
+  // _GLIBCXX_RESOLVE_LIB_DEFECTS
+  // 3117. Missing packaged_task deduction guides
+#if __cpp_deduction_guides >= 201606
+  template<typename _Res, typename... _ArgTypes>
+    packaged_task(_Res(*)(_ArgTypes...)) -> packaged_task<_Res(_ArgTypes...)>;
+
+  template<typename _Fun, typename _Signature
+	     = __function_guide_t<_Fun, decltype(&_Fun::operator())>>
+    packaged_task(_Fun) -> packaged_task<_Signature>;
+#endif
+
   /// swap
   template<typename _Res, typename... _ArgTypes>
     inline void
@@ -1575,10 +1678,15 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	 packaged_task<_Res(_ArgTypes...)>& __y) noexcept
     { __x.swap(__y); }
 
+#if __cplusplus < 201703L
+  // _GLIBCXX_RESOLVE_LIB_DEFECTS
+  // 2976. Dangling uses_allocator specialization for packaged_task
   template<typename _Res, typename _Alloc>
     struct uses_allocator<packaged_task<_Res>, _Alloc>
     : public true_type { };
+#endif
 
+  /// @cond undocumented
 
   // Shared state created by std::async().
   // Holds a deferred function and storage for its result.
@@ -1587,10 +1695,12 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     : public __future_base::_State_base
     {
     public:
-      explicit
-      _Deferred_state(_BoundFn&& __fn)
-      : _M_result(new _Result<_Res>()), _M_fn(std::move(__fn))
-      { }
+      template<typename... _Args>
+	explicit
+	_Deferred_state(_Args&&... __args)
+	: _M_result(new _Result<_Res>()),
+	  _M_fn(std::forward<_Args>(__args)...)
+	{ }
 
     private:
       typedef __future_base::_Ptr<_Result<_Res>> _Ptr_type;
@@ -1607,7 +1717,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	// result in _M_result, swaps that with the base _M_result and makes
 	// the state ready. Tell _M_set_result to ignore failure so all later
 	// calls do nothing.
-        _M_set_result(_S_task_setter(_M_result, _M_fn), true);
+	_M_set_result(_S_task_setter(_M_result, _M_fn), true);
       }
 
       // Caller should check whether the state is ready first, because this
@@ -1652,69 +1762,63 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     : public __future_base::_Async_state_commonV2
     {
     public:
-      explicit
-      _Async_state_impl(_BoundFn&& __fn)
-      : _M_result(new _Result<_Res>()), _M_fn(std::move(__fn))
-      {
-	_M_thread = std::thread{ [this] {
-	    __try
-	      {
-		_M_set_result(_S_task_setter(_M_result, _M_fn));
-	      }
-	    __catch (const __cxxabiv1::__forced_unwind&)
-	      {
-		// make the shared state ready on thread cancellation
-		if (static_cast<bool>(_M_result))
-		  this->_M_break_promise(std::move(_M_result));
-		__throw_exception_again;
-	      }
-        } };
-      }
+      template<typename... _Args>
+	explicit
+	_Async_state_impl(_Args&&... __args)
+	: _M_result(new _Result<_Res>()),
+	  _M_fn(std::forward<_Args>(__args)...)
+	{
+	  _M_thread = std::thread{&_Async_state_impl::_M_run, this};
+	}
 
       // Must not destroy _M_result and _M_fn until the thread finishes.
       // Call join() directly rather than through _M_join() because no other
       // thread can be referring to this state if it is being destroyed.
-      ~_Async_state_impl() { if (_M_thread.joinable()) _M_thread.join(); }
+      ~_Async_state_impl()
+      {
+	if (_M_thread.joinable())
+	  _M_thread.join();
+      }
 
     private:
+      void
+      _M_run()
+      {
+	__try
+	  {
+	    _M_set_result(_S_task_setter(_M_result, _M_fn));
+	  }
+	__catch (const __cxxabiv1::__forced_unwind&)
+	  {
+	    // make the shared state ready on thread cancellation
+	    if (static_cast<bool>(_M_result))
+	      this->_M_break_promise(std::move(_M_result));
+	    __throw_exception_again;
+	  }
+      }
+
       typedef __future_base::_Ptr<_Result<_Res>> _Ptr_type;
       _Ptr_type _M_result;
       _BoundFn _M_fn;
     };
-
-  template<typename _BoundFn>
-    inline std::shared_ptr<__future_base::_State_base>
-    __future_base::_S_make_deferred_state(_BoundFn&& __fn)
-    {
-      typedef typename remove_reference<_BoundFn>::type __fn_type;
-      typedef _Deferred_state<__fn_type> __state_type;
-      return std::make_shared<__state_type>(std::move(__fn));
-    }
-
-  template<typename _BoundFn>
-    inline std::shared_ptr<__future_base::_State_base>
-    __future_base::_S_make_async_state(_BoundFn&& __fn)
-    {
-      typedef typename remove_reference<_BoundFn>::type __fn_type;
-      typedef _Async_state_impl<__fn_type> __state_type;
-      return std::make_shared<__state_type>(std::move(__fn));
-    }
-
+  /// @endcond
 
   /// async
   template<typename _Fn, typename... _Args>
     _GLIBCXX_NODISCARD future<__async_result_of<_Fn, _Args...>>
     async(launch __policy, _Fn&& __fn, _Args&&... __args)
     {
+      using _Wr = std::thread::_Call_wrapper<_Fn, _Args...>;
+      using _As = __future_base::_Async_state_impl<_Wr>;
+      using _Ds = __future_base::_Deferred_state<_Wr>;
+
       std::shared_ptr<__future_base::_State_base> __state;
       if ((__policy & launch::async) == launch::async)
 	{
 	  __try
 	    {
-	      __state = __future_base::_S_make_async_state(
-		  std::thread::__make_invoker(std::forward<_Fn>(__fn),
-					      std::forward<_Args>(__args)...)
-		  );
+	      __state = std::make_shared<_As>(std::forward<_Fn>(__fn),
+					      std::forward<_Args>(__args)...);
 	    }
 #if __cpp_exceptions
 	  catch(const system_error& __e)
@@ -1727,11 +1831,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	}
       if (!__state)
 	{
-	  __state = __future_base::_S_make_deferred_state(
-	      std::thread::__make_invoker(std::forward<_Fn>(__fn),
-					  std::forward<_Args>(__args)...));
+	  __state = std::make_shared<_Ds>(std::forward<_Fn>(__fn),
+					  std::forward<_Args>(__args)...);
 	}
-      return future<__async_result_of<_Fn, _Args...>>(__state);
+      return future<__async_result_of<_Fn, _Args...>>(std::move(__state));
     }
 
   /// async, potential overload
@@ -1747,7 +1850,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 #endif // _GLIBCXX_ASYNC_ABI_COMPAT
 #endif // _GLIBCXX_HAS_GTHREADS
 
-  // @} group futures
+  /// @} group futures
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace
 

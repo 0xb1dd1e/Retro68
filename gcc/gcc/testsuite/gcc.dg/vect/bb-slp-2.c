@@ -28,6 +28,7 @@ main1 (int dummy)
     }
 
   /* check results:  */ 
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
       if (out[i*8] !=  in[i*8]
@@ -53,5 +54,5 @@ int main (void)
   return 0;
 }
 
-/* { dg-final { scan-tree-dump-times "basic block vectorized" 1 "slp1" } } */
+/* { dg-final { scan-tree-dump-times "optimized: basic block" 1 "slp1" } } */
   

@@ -19,6 +19,7 @@ foo ()
     {
       sum = 1;
       for (j = 0; j < K; j++) 
+#pragma GCC unroll 0
         for (i = 0; i < K; i++)
           sum *= in[i+k][j];
       out[k] = sum;
@@ -37,6 +38,7 @@ int main ()
 
   foo();
 
+#pragma GCC novector
   for (k = 0; k < K; k++)
     if (out[k] != check_result[k])
       abort ();

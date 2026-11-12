@@ -1,4 +1,5 @@
 // { dg-do assemble  }
+// Explicit { dg-require-effective-target exceptions_enabled } to avoid verify compiler messages FAILs for '-fno-exceptions'.
 
 // Copyright (C) 1999, 2000 Free Software Foundation, Inc.
 // Contributed by Nathan Sidwell 11 Apr 1999 <nathan@acm.org>
@@ -22,8 +23,8 @@ void fn(int i)
   (i ? throw X() : throw X());  // ok, void
   
   (i ? i : j) = 1; // ok, int &
-  (i ? throw X() : j) = 1; // { dg-error "" } non-lvalue
-  (i ? j : throw X()) = 1; // { dg-error "" } non-lvalue
+  (i ? throw X() : j) = 1; // ok, int &
+  (i ? j : throw X()) = 1; // ok, int &
   (i ? throw X() : throw X()) = 1;  // { dg-error "" } void
   
   (i ? (void)1 : i++); // { dg-error "" } ANSI forbids

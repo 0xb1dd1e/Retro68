@@ -1,3 +1,18 @@
+/*
+TEST_OUTPUT:
+---
+instantiating...
+instantiating...
+last instantiation!!!
+---
+
+RUN_OUTPUT:
+---
+1
+3
+Success
+---
+*/
 
 import core.stdc.stdio;
 
@@ -225,6 +240,16 @@ void test8()
 
 /*********************************************************/
 
+// https://github.com/dlang/dmd/issues/20907
+struct Bar { enum bar = 1; }
+void foo(A)(A[], A[1 << A.bar]) {}
+void test20907()
+{
+    foo((Bar[]).init, (Bar[2]).init);
+}
+
+/*********************************************************/
+
 int main()
 {
     test1();
@@ -235,6 +260,7 @@ int main()
     test6();
     test7();
     test8();
+    test20907();
 
     printf("Success\n");
     return 0;

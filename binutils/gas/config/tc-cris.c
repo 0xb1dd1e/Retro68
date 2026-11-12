@@ -1,5 +1,5 @@
 /* tc-cris.c -- Assembler code for the CRIS CPU core.
-   Copyright (C) 2000-2018 Free Software Foundation, Inc.
+   Copyright (C) 2000-2026 Free Software Foundation, Inc.
 
    Contributed by Axis Communications AB, Lund, Sweden.
    Originally written for GAS 1.38.1 by Mikael Asker.
@@ -160,29 +160,29 @@ static void cris_sym_no_leading_underscore (void);
 static char *cris_insn_first_word_frag (void);
 
 /* Handle to the opcode hash table.  */
-static struct hash_control *op_hash = NULL;
+static htab_t op_hash = NULL;
 
 /* If we target cris-axis-linux-gnu (as opposed to generic cris-axis-elf),
    we default to no underscore and required register-prefixes.  The
    difference is in the default values.  */
 #ifdef TE_LINUX
-#define DEFAULT_CRIS_AXIS_LINUX_GNU TRUE
+#define DEFAULT_CRIS_AXIS_LINUX_GNU true
 #else
-#define DEFAULT_CRIS_AXIS_LINUX_GNU FALSE
+#define DEFAULT_CRIS_AXIS_LINUX_GNU false
 #endif
 
 /* Whether we demand that registers have a `$' prefix.  Default here.  */
-static bfd_boolean demand_register_prefix = DEFAULT_CRIS_AXIS_LINUX_GNU;
+static bool demand_register_prefix = DEFAULT_CRIS_AXIS_LINUX_GNU;
 
 /* Whether global user symbols have a leading underscore.  Default here.  */
-static bfd_boolean symbols_have_leading_underscore
+static bool symbols_have_leading_underscore
   = !DEFAULT_CRIS_AXIS_LINUX_GNU;
 
 /* Whether or not we allow PIC, and expand to PIC-friendly constructs.  */
-static bfd_boolean pic = FALSE;
+static bool pic = false;
 
 /* Whether or not we allow TLS suffixes.  For the moment, we always do.  */
-static const bfd_boolean tls = TRUE;
+static const bool tls = true;
 
 /* If we're configured for "cris", default to allow all v0..v10
    instructions and register names.  */
@@ -211,7 +211,7 @@ static int warn_for_branch_expansion = 0;
 static int err_for_dangerous_mul_placement
  = (XCONCAT2 (arch_,DEFAULT_CRIS_ARCH) != arch_crisv32);
 
-const char cris_comment_chars[] = ";";
+const char comment_chars[] = ";";
 
 /* This array holds the chars that only start a comment at the beginning of
    a line.  If the line seems to have the form '# 123 filename'
@@ -414,7 +414,7 @@ const relax_typeS md_cris_relax_table[] =
 #undef BDAP_WB
 
 /* Target-specific multicharacter options, not const-declared.  */
-struct option md_longopts[] =
+const struct option md_longopts[] =
 {
 #define OPTION_NO_US (OPTION_MD_BASE + 0)
   {"no-underscore", no_argument, NULL, OPTION_NO_US},
@@ -432,8 +432,8 @@ struct option md_longopts[] =
 };
 
 /* Not const-declared.  */
-size_t md_longopts_size = sizeof (md_longopts);
-const char *md_shortopts = "hHN";
+const size_t md_longopts_size = sizeof (md_longopts);
+const char md_shortopts[] = "hHN";
 
 /* At first glance, this may seems wrong and should be 4 (ba + nop); but
    since a short_jump must skip a *number* of long jumps, it must also be
@@ -548,11 +548,11 @@ cris_relax_frag (segT seg ATTRIBUTE_UNUSED, fragS *fragP,
       if (fragP->fr_symbol == NULL
 	  || S_GET_SEGMENT (fragP->fr_symbol) != absolute_section)
 	as_fatal (_("internal inconsistency problem in %s: fr_symbol %lx"),
-		  __FUNCTION__, (long) fragP->fr_symbol);
+		  __func__, (long) fragP->fr_symbol);
       symbolP = fragP->fr_symbol;
       if (symbol_resolved_p (symbolP))
 	as_fatal (_("internal inconsistency problem in %s: resolved symbol"),
-		  __FUNCTION__);
+		  __func__);
       aim = S_GET_VALUE (symbolP);
       break;
 
@@ -562,7 +562,7 @@ cris_relax_frag (segT seg ATTRIBUTE_UNUSED, fragS *fragP,
 
     default:
       as_fatal (_("internal inconsistency problem in %s: fr_subtype %d"),
-		  __FUNCTION__, fragP->fr_subtype);
+		  __func__, fragP->fr_subtype);
     }
 
   /* The rest is stolen from relax_frag.  There's no obvious way to
@@ -877,7 +877,7 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED, segT sec ATTRIBUTE_UNUSED,
 
     case ENCODE_RELAX (STATE_COND_BRANCH, STATE_DWORD):
       gen_cond_branch_32 (fragP->fr_opcode, var_partp, fragP,
-			  fragP->fr_symbol, (symbolS *) NULL,
+			  fragP->fr_symbol, NULL,
 			  fragP->fr_offset);
       /* Ten bytes added: a branch, nop and a jump.  */
       var_part_size = 2 + 2 + 4 + 2;
@@ -885,7 +885,7 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED, segT sec ATTRIBUTE_UNUSED,
 
     case ENCODE_RELAX (STATE_COND_BRANCH_PIC, STATE_DWORD):
       gen_cond_branch_32 (fragP->fr_opcode, var_partp, fragP,
-			  fragP->fr_symbol, (symbolS *) NULL,
+			  fragP->fr_symbol, NULL,
 			  fragP->fr_offset);
       /* Twelve bytes added: a branch, nop and a pic-branch-32.  */
       var_part_size = 2 + 2 + 4 + 2 + 2;
@@ -893,7 +893,7 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED, segT sec ATTRIBUTE_UNUSED,
 
     case ENCODE_RELAX (STATE_COND_BRANCH_V32, STATE_DWORD):
       gen_cond_branch_32 (fragP->fr_opcode, var_partp, fragP,
-			  fragP->fr_symbol, (symbolS *) NULL,
+			  fragP->fr_symbol, NULL,
 			  fragP->fr_offset);
       /* Twelve bytes added: a branch, nop and another branch and nop.  */
       var_part_size = 2 + 2 + 2 + 4 + 2;
@@ -962,7 +962,7 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED, segT sec ATTRIBUTE_UNUSED,
     case ENCODE_RELAX (STATE_BASE_PLUS_DISP_PREFIX, STATE_BYTE):
       if (symbolP == NULL)
 	as_fatal (_("internal inconsistency in %s: bdapq no symbol"),
-		    __FUNCTION__);
+		    __func__);
       opcodep[0] = S_GET_VALUE (symbolP);
       var_part_size = 0;
       break;
@@ -975,7 +975,7 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED, segT sec ATTRIBUTE_UNUSED,
       opcodep[1] |= BDAP_INCR_HIGH;
       if (symbolP == NULL)
 	as_fatal (_("internal inconsistency in %s: bdap.w with no symbol"),
-		  __FUNCTION__);
+		  __func__);
       md_number_to_chars (var_partp, S_GET_VALUE (symbolP), 2);
       var_part_size = 2;
       break;
@@ -1186,30 +1186,27 @@ cris_insn_first_word_frag (void)
 void
 md_begin (void)
 {
-  const char *hashret = NULL;
   int i = 0;
 
   /* Set up a hash table for the instructions.  */
-  op_hash = hash_new ();
-  if (op_hash == NULL)
-    as_fatal (_("Virtual memory exhausted"));
+  op_hash = str_htab_create ();
 
   /* Enable use of ".if ..asm.arch.cris.v32"
      and ".if ..asm.arch.cris.common_v10_v32" and a few others.  */
   symbol_table_insert (symbol_new ("..asm.arch.cris.v32", absolute_section,
-				   (cris_arch == arch_crisv32),
-				   &zero_address_frag));
+				   &zero_address_frag,
+				   cris_arch == arch_crisv32));
   symbol_table_insert (symbol_new ("..asm.arch.cris.v10", absolute_section,
-				   (cris_arch == arch_crisv10),
-				   &zero_address_frag));
+				   &zero_address_frag,
+				   cris_arch == arch_crisv10));
   symbol_table_insert (symbol_new ("..asm.arch.cris.common_v10_v32",
 				   absolute_section,
-				   (cris_arch == arch_cris_common_v10_v32),
-				   &zero_address_frag));
+				   &zero_address_frag,
+				   cris_arch == arch_cris_common_v10_v32));
   symbol_table_insert (symbol_new ("..asm.arch.cris.any_v0_v10",
 				   absolute_section,
-				   (cris_arch == arch_cris_any_v0_v10),
-				   &zero_address_frag));
+				   &zero_address_frag,
+				   cris_arch == arch_cris_any_v0_v10));
 
   while (cris_opcodes[i].name != NULL)
     {
@@ -1222,12 +1219,9 @@ md_begin (void)
 	  continue;
 	}
 
-      /* Need to cast to get rid of "const".  FIXME: Fix hash_insert instead.  */
-      hashret = hash_insert (op_hash, name, (void *) &cris_opcodes[i]);
+      if (str_hash_insert (op_hash, name, &cris_opcodes[i], 0) != NULL)
+	as_fatal (_("duplicate %s"), name);
 
-      if (hashret != NULL && *hashret != '\0')
-	as_fatal (_("Can't hash `%s': %s\n"), cris_opcodes[i].name,
-		  *hashret == 0 ? _("(unknown reason)") : hashret);
       do
 	{
 	  if (cris_opcodes[i].match & cris_opcodes[i].lose)
@@ -1280,7 +1274,7 @@ md_assemble (char *str)
       opcodep = cris_insn_first_word_frag ();
 
       /* Output the prefix opcode.  */
-      md_number_to_chars (opcodep, (long) prefix.opcode, 2);
+      md_number_to_chars (opcodep, prefix.opcode, 2);
 
       /* Having a specified reloc only happens for DIP and for BDAP with
 	 PIC or TLS operands, but it is ok to drop through here for the other
@@ -1330,7 +1324,7 @@ md_assemble (char *str)
     opcodep = frag_more (2);
 
   /* Output the instruction opcode.  */
-  md_number_to_chars (opcodep, (long) (output_instruction.opcode), 2);
+  md_number_to_chars (opcodep, output_instruction.opcode, 2);
 
   /* Output the symbol-dependent instruction stuff.  */
   if (output_instruction.insn_type == CRIS_INSN_BRANCH)
@@ -1398,8 +1392,7 @@ md_assemble (char *str)
 			 ? 12 : 10);
 
 	  gen_cond_branch_32 (opcodep, cond_jump, frag_now,
-			      output_instruction.expr.X_add_symbol,
-			      (symbolS *) NULL,
+			      output_instruction.expr.X_add_symbol, NULL,
 			      output_instruction.expr.X_add_number);
 	}
     }
@@ -1558,7 +1551,7 @@ cris_process_instruction (char *insn_text, struct cris_instruction *out_insnp,
     }
 
   /* Find the instruction.  */
-  instruction = (struct cris_opcode *) hash_find (op_hash, insn_text);
+  instruction = str_hash_find (op_hash, insn_text);
   if (instruction == NULL)
     {
       as_bad (_("Unknown opcode: `%s'"), insn_text);
@@ -1688,7 +1681,7 @@ cris_process_instruction (char *insn_text, struct cris_instruction *out_insnp,
 	      if (modified_char == '.' && *s == '.')
 		{
 		  if ((s[1] != 'd' && s[1] == 'D')
-		      || ! ISSPACE (s[2]))
+		      || ! is_whitespace (s[2]))
 		    break;
 		  s += 2;
 		  continue;
@@ -2100,7 +2093,7 @@ cris_process_instruction (char *insn_text, struct cris_instruction *out_insnp,
 
 	      /* As discard_rest_of_line, but without continuing to the
 		 next line.  */
-	      while (!is_end_of_line[(unsigned char) *input_line_pointer])
+	      while (!is_end_of_stmt (*input_line_pointer))
 		input_line_pointer++;
 	      return;
 	    }
@@ -3237,7 +3230,7 @@ get_flags (char **cPP, int *flagsp)
 	     whitespace.  Anything else, and we consider it a failure.  */
 	  if (**cPP != ','
 	      && **cPP != 0
-	      && ! ISSPACE (**cPP))
+	      && ! is_whitespace (**cPP))
 	    return 0;
 	  else
 	    return 1;
@@ -3497,14 +3490,14 @@ cris_get_reloc_suffix (char **cPP, bfd_reloc_code_real_type *relocp,
     const char *const suffix;
     unsigned int len;
     bfd_reloc_code_real_type reloc;
-    bfd_boolean pic_p;
-    bfd_boolean tls_p;
+    bool pic_p;
+    bool tls_p;
   } pic_suffixes[] =
     {
 #undef PICMAP
-#define PICMAP(s, r) {s, sizeof (s) - 1, r, TRUE, FALSE}
-#define PICTLSMAP(s, r) {s, sizeof (s) - 1, r, TRUE, TRUE}
-#define TLSMAP(s, r) {s, sizeof (s) - 1, r, FALSE, TRUE}
+#define PICMAP(s, r) {s, sizeof (s) - 1, r, true, false}
+#define PICTLSMAP(s, r) {s, sizeof (s) - 1, r, true, true}
+#define TLSMAP(s, r) {s, sizeof (s) - 1, r, false, true}
       /* Keep this in order with longest unambiguous prefix first.  */
       PICMAP ("GOTPLT16", BFD_RELOC_CRIS_16_GOTPLT),
       PICMAP ("GOTPLT", BFD_RELOC_CRIS_32_GOTPLT),
@@ -3817,23 +3810,23 @@ md_parse_option (int arg, const char *argp ATTRIBUTE_UNUSED)
       break;
 
     case OPTION_NO_US:
-      demand_register_prefix = TRUE;
+      demand_register_prefix = true;
 
       if (OUTPUT_FLAVOR == bfd_target_aout_flavour)
 	as_bad (_("--no-underscore is invalid with a.out format"));
       else
-	symbols_have_leading_underscore = FALSE;
+	symbols_have_leading_underscore = false;
       break;
 
     case OPTION_US:
-      demand_register_prefix = FALSE;
-      symbols_have_leading_underscore = TRUE;
+      demand_register_prefix = false;
+      symbols_have_leading_underscore = true;
       break;
 
     case OPTION_PIC:
       if (OUTPUT_FLAVOR != bfd_target_elf_flavour)
 	as_bad (_("--pic is invalid for this object format"));
-      pic = TRUE;
+      pic = true;
       if (cris_arch != arch_crisv32)
 	md_long_jump_size = cris_any_v0_v10_long_jump_size_pic;
       else
@@ -3959,9 +3952,8 @@ tc_gen_reloc (asection *section ATTRIBUTE_UNUSED, fixS *fixP)
       return 0;
     }
 
-  relP = XNEW (arelent);
-  gas_assert (relP != 0);
-  relP->sym_ptr_ptr = XNEW (asymbol *);
+  relP = notes_alloc (sizeof (arelent));
+  relP->sym_ptr_ptr = notes_alloc (sizeof (asymbol *));
   *relP->sym_ptr_ptr = symbol_get_bfdsym (fixP->fx_addsy);
   relP->address = fixP->fx_frag->fr_address + fixP->fx_where;
 
@@ -4046,31 +4038,21 @@ void
 md_apply_fix (fixS *fixP, valueT *valP, segT seg)
 {
   /* This assignment truncates upper bits if valueT is 64 bits (as with
-     --enable-64-bit-bfd), which is fine here, though we cast to avoid
-     any compiler warnings.  */
-  long val = (long) *valP;
+     --enable-64-bit-bfd), which is fine here.  */
+  long val = *valP;
   char *buf = fixP->fx_where + fixP->fx_frag->fr_literal;
 
   if (fixP->fx_addsy == 0 && !fixP->fx_pcrel)
     fixP->fx_done = 1;
 
-  if (fixP->fx_bit_fixP || fixP->fx_im_disp != 0)
-    {
-      as_bad_where (fixP->fx_file, fixP->fx_line, _("Invalid relocation"));
-      fixP->fx_done = 1;
-    }
-  else
-    {
-      /* We can't actually support subtracting a symbol.  */
-      if (fixP->fx_subsy != (symbolS *) NULL)
-	as_bad_where (fixP->fx_file, fixP->fx_line,
-		      _("expression too complex"));
+  /* We can't actually support subtracting a symbol.  */
+  if (fixP->fx_subsy != NULL)
+    as_bad_subtract (fixP);
 
-      /* This operand-type is scaled.  */
-      if (fixP->fx_r_type == BFD_RELOC_CRIS_LAPCQ_OFFSET)
-	val /= 2;
-      cris_number_to_imm (buf, val, fixP->fx_size, fixP, seg);
-    }
+  /* This operand-type is scaled.  */
+  if (fixP->fx_r_type == BFD_RELOC_CRIS_LAPCQ_OFFSET)
+    val /= 2;
+  cris_number_to_imm (buf, val, fixP->fx_size, fixP, seg);
 }
 
 /* All relocations are relative to the location just after the fixup;
@@ -4147,7 +4129,7 @@ tc_cris_check_adjusted_broken_word (offsetT new_offset, struct broken_word *brok
 static void
 cris_force_reg_prefix (void)
 {
-  demand_register_prefix = TRUE;
+  demand_register_prefix = true;
 }
 
 /* Do not demand a leading REGISTER_PREFIX_CHAR for all registers.  */
@@ -4155,7 +4137,7 @@ cris_force_reg_prefix (void)
 static void
 cris_relax_reg_prefix (void)
 {
-  demand_register_prefix = FALSE;
+  demand_register_prefix = false;
 }
 
 /* Adjust for having a leading '_' on all user symbols.  */
@@ -4252,13 +4234,13 @@ s_cris_dtpoff (int bytes)
 
   if (bytes != 4)
     as_fatal (_("internal inconsistency problem: %s called for %d bytes"),
-	      __FUNCTION__, bytes);
+	      __func__, bytes);
 
   expression (&ex);
 
   p = frag_more (bytes);
   md_number_to_chars (p, 0, bytes);
-  fix_new_exp (frag_now, p - frag_now->fr_literal, bytes, &ex, FALSE,
+  fix_new_exp (frag_now, p - frag_now->fr_literal, bytes, &ex, false,
 	       BFD_RELOC_CRIS_32_DTPREL);
 
   demand_empty_rest_of_line ();
@@ -4294,7 +4276,7 @@ cris_arch_from_string (const char **str)
       int len = strlen (ap->name);
 
       if (strncmp (*str, ap->name, len) == 0
-	  && (str[0][len] == 0 || ISSPACE (str[0][len])))
+	  && (is_end_of_stmt (str[0][len]) || is_whitespace (str[0][len])))
 	{
 	  *str += strlen (ap->name);
 	  return ap->arch;

@@ -1,4 +1,4 @@
-// Copyright (C) 2018-2019 Free Software Foundation, Inc.
+// Copyright (C) 2018-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -15,7 +15,6 @@
 // with this library; see the file COPYING3.  If not see
 // <http://www.gnu.org/licenses/>.
 
-// { dg-options "-std=gnu++17" }
 // { dg-do run { target c++17 } }
 
 #include <variant>
@@ -40,9 +39,9 @@ test02()
 void
 test03()
 {
-  std::variant<double, int> v1{1}, v2{2.3};
+  std::variant<double, int> v1{1}, v2{0.5};
   std::swap(v1, v2);
-  VERIFY( std::get<double>(v1) == 2.3 );
+  VERIFY( std::get<double>(v1) == 0.5 );
   VERIFY( std::get<int>(v2) == 1 );
 }
 

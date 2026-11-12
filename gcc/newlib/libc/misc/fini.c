@@ -13,11 +13,13 @@
 /* Handle ELF .{pre_init,init,fini}_array sections.  */
 #include <sys/types.h>
 
-#ifdef HAVE_INITFINI_ARRAY
+#ifdef _HAVE_INITFINI_ARRAY
 extern void (*__fini_array_start []) (void) __attribute__((weak));
 extern void (*__fini_array_end []) (void) __attribute__((weak));
 
+#ifdef _HAVE_INIT_FINI
 extern void _fini (void);
+#endif
 
 /* Run all the cleanup routines.  */
 void
@@ -30,6 +32,8 @@ __libc_fini_array (void)
   for (i = count; i > 0; i--)
     __fini_array_start[i-1] ();
 
+#ifdef _HAVE_INIT_FINI
   _fini ();
+#endif
 }
 #endif

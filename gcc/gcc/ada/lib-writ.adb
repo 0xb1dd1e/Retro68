@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -23,35 +23,42 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with ALI;      use ALI;
-with Atree;    use Atree;
-with Casing;   use Casing;
-with Debug;    use Debug;
-with Einfo;    use Einfo;
-with Errout;   use Errout;
-with Fname;    use Fname;
-with Fname.UF; use Fname.UF;
-with Lib.Util; use Lib.Util;
-with Lib.Xref; use Lib.Xref;
-with Nlists;   use Nlists;
-with Gnatvsn;  use Gnatvsn;
-with Opt;      use Opt;
-with Osint;    use Osint;
-with Osint.C;  use Osint.C;
-with Output;   use Output;
+with ALI;            use ALI;
+with Atree;          use Atree;
+with Casing;         use Casing;
+with Debug;          use Debug;
+with Einfo;          use Einfo;
+with Einfo.Entities; use Einfo.Entities;
+with Einfo.Utils;    use Einfo.Utils;
+with Elists;         use Elists;
+with Errout;         use Errout;
+with Fname;          use Fname;
+with Fname.UF;       use Fname.UF;
+with Lib.Util;       use Lib.Util;
+with Lib.Xref;       use Lib.Xref;
+with Nlists;         use Nlists;
+with Gnatvsn;        use Gnatvsn;
+with GNAT_CUDA;      use GNAT_CUDA;
+with Opt;            use Opt;
+with Osint;          use Osint;
+with Osint.C;        use Osint.C;
+with Output;         use Output;
 with Par;
-with Par_SCO;  use Par_SCO;
-with Restrict; use Restrict;
-with Rident;   use Rident;
-with Stand;    use Stand;
-with Scn;      use Scn;
-with Sem_Eval; use Sem_Eval;
-with Sinfo;    use Sinfo;
-with Sinput;   use Sinput;
-with Snames;   use Snames;
-with Stringt;  use Stringt;
-with Tbuild;   use Tbuild;
-with Uname;    use Uname;
+with Par_SCO;        use Par_SCO;
+with Restrict;       use Restrict;
+with Rident;         use Rident;
+with Stand;          use Stand;
+with Scn;            use Scn;
+with Sem_Eval;       use Sem_Eval;
+with Sem_Util;       use Sem_Util;
+with Sinfo;          use Sinfo;
+with Sinfo.Nodes;    use Sinfo.Nodes;
+with Sinfo.Utils;    use Sinfo.Utils;
+with Sinput;         use Sinput;
+with Snames;         use Snames;
+with Stringt;        use Stringt;
+with Tbuild;         use Tbuild;
+with Uname;          use Uname;
 
 with System.Case_Util; use System.Case_Util;
 with System.WCh_Con;   use System.WCh_Con;
@@ -59,8 +66,32 @@ with System.WCh_Con;   use System.WCh_Con;
 package body Lib.Writ is
 
    -----------------------
-   -- Local Subprograms --
+   -- Local subprograms --
    -----------------------
+
+   function Present (N_Id : Name_Id) return Boolean;
+   pragma Inline (Present);
+   --  Determine whether a name with id N_Id exists
+
+   procedure Write_Invocation_Construct (IC_Id : Invocation_Construct_Id);
+   pragma Inline (Write_Invocation_Construct);
+   --  Write invocation construct IC_Id to the ALI file
+
+   procedure Write_Invocation_Graph;
+   pragma Inline (Write_Invocation_Graph);
+   --  Write out the invocation graph
+
+   procedure Write_Invocation_Graph_Attributes;
+   pragma Inline (Write_Invocation_Graph_Attributes);
+   --  Write out the attributes of the invocation graph
+
+   procedure Write_Invocation_Relation (IR_Id : Invocation_Relation_Id);
+   pragma Inline (Write_Invocation_Relation);
+   --  Write invocation relation IR_Id to the ALI file
+
+   procedure Write_Invocation_Signature (IS_Id : Invocation_Signature_Id);
+   pragma Inline (Write_Invocation_Signature);
+   --  Write invocation signature IS_Id to the ALI file
 
    procedure Write_Unit_Name (N : Node_Id);
    --  Used to write out the unit name for R (pragma Restriction) lines
@@ -85,12 +116,10 @@ package body Lib.Writ is
          Fatal_Error            => None,
          Generate_Code          => False,
          Has_RACW               => False,
-         Filler                 => False,
          Ident_String           => Empty,
          Is_Predefined_Renaming => False,
          Is_Internal_Unit       => False,
          Is_Predefined_Unit     => False,
-         Filler2                => False,
          Loading                => False,
          Main_Priority          => -1,
          Main_CPU               => -1,
@@ -109,7 +138,8 @@ package body Lib.Writ is
    ------------------------------
 
    procedure Ensure_System_Dependency is
-      System_Uname : Unit_Name_Type;
+      System_Uname : constant Unit_Name_Type :=
+        Name_To_Unit_Name (Name_System);
       --  Unit name for system spec if needed for dummy entry
 
       System_Fname : File_Name_Type;
@@ -118,11 +148,9 @@ package body Lib.Writ is
    begin
       --  Nothing to do if we already compiled System
 
-      for Unum in Units.First .. Last_Unit loop
-         if Units.Table (Unum).Source_Index = System_Source_File_Index then
-            return;
-         end if;
-      end loop;
+      if Is_Loaded (System_Uname) then
+         return;
+      end if;
 
       --  If no entry for system.ads in the units table, then add a entry
       --  to the units table for system.ads, which will be referenced when
@@ -130,9 +158,6 @@ package body Lib.Writ is
       --  on system as a result of Targparm scanning the system.ads file to
       --  determine the target dependent parameters for the compilation.
 
-      Name_Len := 6;
-      Name_Buffer (1 .. 6) := "system";
-      System_Uname := Name_To_Unit_Name (Name_Enter);
       System_Fname := File_Name (System_Source_File_Index);
 
       Units.Increment_Last;
@@ -148,12 +173,10 @@ package body Lib.Writ is
          Fatal_Error            => None,
          Generate_Code          => False,
          Has_RACW               => False,
-         Filler                 => False,
          Ident_String           => Empty,
          Is_Predefined_Renaming => False,
          Is_Internal_Unit       => True,
          Is_Predefined_Unit     => True,
-         Filler2                => False,
          Loading                => False,
          Main_Priority          => -1,
          Main_CPU               => -1,
@@ -165,6 +188,7 @@ package body Lib.Writ is
          Version                => 0,
          Error_Location         => No_Location,
          OA_Setting             => 'O');
+      Init_Unit_Name (Units.Last, System_Uname);
 
       --  Parse system.ads so that the checksum is set right. Style checks are
       --  not applied. The Ekind is set to ensure that this reference is always
@@ -178,12 +202,21 @@ package body Lib.Writ is
          Style_Check := False;
          Initialize_Scanner (Units.Last, System_Source_File_Index);
          Discard_List (Par (Configuration_Pragmas => False));
-         Set_Ekind (Cunit_Entity (Units.Last), E_Package);
+         Mutate_Ekind (Cunit_Entity (Units.Last), E_Package);
          Set_Scope (Cunit_Entity (Units.Last), Standard_Standard);
          Style_Check := Save_Style;
          Multiple_Unit_Index := Save_Mindex;
       end;
    end Ensure_System_Dependency;
+
+   -------------
+   -- Present --
+   -------------
+
+   function Present (N_Id : Name_Id) return Boolean is
+   begin
+      return N_Id /= No_Name;
+   end Present;
 
    ---------------
    -- Write_ALI --
@@ -234,16 +267,9 @@ package body Lib.Writ is
       --  Collect with lines for entries in the context clause of the given
       --  compilation unit, Cunit.
 
-      procedure Update_Tables_From_ALI_File;
-      --  Given an up to date ALI file (see Up_To_Date_ALI_file_Exists
-      --  function), update tables from the ALI information, including
-      --  specifically the Compilation_Switches table.
-
-      function Up_To_Date_ALI_File_Exists return Boolean;
-      --  If there exists an ALI file that is up to date, then this function
-      --  initializes the tables in the ALI spec to contain information on
-      --  this file (using Scan_ALI) and returns True. If no file exists,
-      --  or the file is not up to date, then False is returned.
+      procedure Output_CUDA_Symbols (Unit_Num : Unit_Number_Type);
+      --  Output CUDA symbols, so that the rest of the toolchain may know what
+      --  symbols need registering with the CUDA runtime.
 
       procedure Write_Unit_Information (Unit_Num : Unit_Number_Type);
       --  Write out the library information for one unit for which code is
@@ -268,8 +294,7 @@ package body Lib.Writ is
          function Is_Implicit_With_Clause (Clause : Node_Id) return Boolean is
          begin
             --  With clauses created for ancestor units are marked as internal,
-            --  however, they emulate the semantics in Ada RM 10.1.2 (6/2),
-            --  where
+            --  however, they emulate the semantics in RM 10.1.2 (6/2), where
             --
             --    with A.B;
             --
@@ -287,7 +312,7 @@ package body Lib.Writ is
                return False;
 
             else
-               return Implicit_With (Clause);
+               return Is_Implicit_With (Clause);
             end if;
          end Is_Implicit_With_Clause;
 
@@ -310,7 +335,7 @@ package body Lib.Writ is
             --  the unit anywhere else.
 
             if Nkind (Item) = N_With_Clause then
-               Unum := Get_Cunit_Unit_Number (Library_Unit (Item));
+               Unum := Get_Cunit_Unit_Number (Withed_Lib_Unit (Item));
                With_Flags (Unum) := True;
 
                if not Limited_Present (Item) then
@@ -363,75 +388,42 @@ package body Lib.Writ is
          end loop;
       end Collect_Withs;
 
-      --------------------------------
-      -- Up_To_Date_ALI_File_Exists --
-      --------------------------------
+      -------------------------
+      -- Output_CUDA_Symbols --
+      -------------------------
 
-      function Up_To_Date_ALI_File_Exists return Boolean is
-         Name : File_Name_Type;
-         Text : Text_Buffer_Ptr;
-         Id   : Sdep_Id;
-         Sind : Source_File_Index;
-
+      procedure Output_CUDA_Symbols (Unit_Num : Unit_Number_Type) is
+         Unit_Id     : constant Node_Id := Unit (Cunit (Unit_Num));
+         Spec_Id     : Node_Id;
+         Kernels     : Elist_Id;
+         Kernel_Elm  : Elmt_Id;
+         Kernel      : Entity_Id;
       begin
-         Opt.Check_Object_Consistency := True;
-         Read_Library_Info (Name, Text);
-
-         --  Return if we could not find an ALI file
-
-         if Text = null then
-            return False;
+         if not Enable_CUDA_Expansion
+           or else Nkind (Unit_Id) = N_Null_Statement
+         then
+            return;
+         end if;
+         Spec_Id := (if Nkind (Unit_Id) = N_Package_Body
+           then Corresponding_Spec (Unit_Id)
+           else Defining_Unit_Name (Specification (Unit_Id)));
+         Kernels := Get_CUDA_Kernels (Spec_Id);
+         if No (Kernels) then
+            return;
          end if;
 
-         --  Return if ALI file has bad format
+         Kernel_Elm := First_Elmt (Kernels);
+         while Present (Kernel_Elm) loop
+            Kernel := Node (Kernel_Elm);
 
-         Initialize_ALI;
-
-         if Scan_ALI (Name, Text, False, Err => True) = No_ALI_Id then
-            return False;
-         end if;
-
-         --  If we have an OK ALI file, check if it is up to date
-         --  Note that we assume that the ALI read has all the entries
-         --  we have in our table, plus some additional ones (that can
-         --  come from expansion).
-
-         Id := First_Sdep_Entry;
-         for J in 1 .. Num_Sdep loop
-            Sind := Units.Table (Sdep_Table (J)).Source_Index;
-
-            while Sdep.Table (Id).Sfile /= File_Name (Sind) loop
-               if Id = Sdep.Last then
-                  return False;
-               else
-                  Id := Id + 1;
-               end if;
-            end loop;
-
-            if Sdep.Table (Id).Stamp /= Time_Stamp (Sind) then
-               return False;
-            end if;
+            Write_Info_Initiate ('K');
+            Write_Info_Char (' ');
+            Write_Info_Name (Chars (Kernel));
+            Write_Info_Terminate;
+            Next_Elmt (Kernel_Elm);
          end loop;
 
-         return True;
-      end Up_To_Date_ALI_File_Exists;
-
-      ---------------------------------
-      -- Update_Tables_From_ALI_File --
-      ---------------------------------
-
-      procedure Update_Tables_From_ALI_File is
-      begin
-         --  Build Compilation_Switches table
-
-         Compilation_Switches.Init;
-
-         for J in First_Arg_Entry .. Args.Last loop
-            Compilation_Switches.Increment_Last;
-            Compilation_Switches.Table (Compilation_Switches.Last) :=
-              Args.Table (J);
-         end loop;
-      end Update_Tables_From_ALI_File;
+      end Output_CUDA_Symbols;
 
       ----------------------------
       -- Write_Unit_Information --
@@ -528,10 +520,20 @@ package body Lib.Writ is
          Write_Info_Str (" O");
          Write_Info_Char (OA_Setting (Unit_Num));
 
-         if Ekind_In (Uent, E_Package, E_Package_Body)
-           and then Present (Finalizer (Uent))
-         then
-            Write_Info_Str (" PF");
+         --  For a package instance with a body that is a library unit, the two
+         --  compilation units share Cunit_Entity so we cannot rely on Uent.
+
+         if Ukind in N_Package_Declaration | N_Package_Body then
+            declare
+               E : constant Entity_Id := Defining_Entity (Unit (Unode));
+
+            begin
+               if Ekind (E) in E_Package | E_Package_Body
+                 and then Present (Finalizer (E))
+               then
+                  Write_Info_Str (" PF");
+               end if;
+            end;
          end if;
 
          if Is_Preelaborated (Uent) then
@@ -588,9 +590,10 @@ package body Lib.Writ is
 
          if Ukind in N_Generic_Declaration
            or else
-             (Present (Library_Unit (Unode))
-                and then
-                  Nkind (Unit (Library_Unit (Unode))) in N_Generic_Declaration)
+             (Ukind in N_Lib_Unit_Body
+                and then Present (Spec_Lib_Unit (Unode))
+                and then Nkind (Unit (Spec_Lib_Unit (Unode)))
+                  in N_Generic_Declaration)
          then
             Write_Info_Str (" GE");
          end if;
@@ -632,7 +635,7 @@ package body Lib.Writ is
          --  it and which have context clauses of their own, since these
          --  with'ed units are part of its own elaboration dependencies.
 
-         if Nkind (Unit (Unode)) in N_Unit_Body then
+         if Nkind (Unit (Unode)) in N_Lib_Unit_Body then
             for S in Units.First .. Last_Unit loop
 
                --  We are only interested in subunits. For preproc. data and
@@ -641,7 +644,7 @@ package body Lib.Writ is
                if Cunit (S) /= Empty
                  and then Nkind (Unit (Cunit (S))) = N_Subunit
                then
-                  Pnode := Library_Unit (Cunit (S));
+                  Pnode := Subunit_Parent (Cunit (S));
 
                   --  In gnatc mode, the errors in the subunits will not have
                   --  been recorded, but the analysis of the subunit may have
@@ -655,7 +658,7 @@ package body Lib.Writ is
                   --  Find ultimate parent of the subunit
 
                   while Nkind (Unit (Pnode)) = N_Subunit loop
-                     Pnode := Library_Unit (Pnode);
+                     Pnode := Subunit_Parent (Pnode);
                   end loop;
 
                   --  See if it belongs to current unit, and if so, include
@@ -752,7 +755,7 @@ package body Lib.Writ is
                   Write_Info_Char (' ');
 
                   case Pragma_Name (N) is
-                     when Name_Annotate =>
+                     when Name_Annotate | Name_GNAT_Annotate =>
                         C := 'A';
                      when Name_Comment =>
                         C := 'C';
@@ -884,7 +887,7 @@ package body Lib.Writ is
             --  preprocessing data and definition files, there is no Unit_Name,
             --  check for that first.
 
-            if Unit_Name (J) /= No_Unit_Name
+            if Present (Unit_Name (J))
               and then (With_Flags (J) or else Unit_Name (J) = Pname)
             then
                Num_Withs := Num_Withs + 1;
@@ -902,7 +905,7 @@ package body Lib.Writ is
             --  Do not generate a with line for an ignored Ghost unit because
             --  the unit does not have an ALI file.
 
-            if Is_Ignored_Ghost_Entity (Cunit_Entity (Unum)) then
+            if Is_Ignored_Ghost_Entity_In_Codegen (Cunit_Entity (Unum)) then
                goto Next_With_Line;
             end if;
 
@@ -1048,7 +1051,7 @@ package body Lib.Writ is
 
    begin
       --  We never write an ALI file if the original operating mode was
-      --  syntax-only (-gnats switch used in compiler invocation line)
+      --  syntax-only (-gnats switch used in compiler invocation line).
 
       if Original_Operating_Mode = Check_Syntax then
          return;
@@ -1061,8 +1064,7 @@ package body Lib.Writ is
          return;
       end if;
 
-      --  Build sorted source dependency table. We do this right away, because
-      --  it is referenced by Up_To_Date_ALI_File_Exists.
+      --  Build sorted source dependency table
 
       for Unum in Units.First .. Last_Unit loop
          if Cunit_Entity (Unum) = Empty
@@ -1096,20 +1098,8 @@ package body Lib.Writ is
 
       Lib.Sort (Sdep_Table (1 .. Num_Sdep));
 
-      --  If we are not generating code, and there is an up to date ALI file
-      --  file accessible, read it, and acquire the compilation arguments from
-      --  this file. In GNATprove mode, always generate the ALI file, which
-      --  contains a special section for formal verification.
-
-      if Operating_Mode /= Generate_Code and then not GNATprove_Mode then
-         if Up_To_Date_ALI_File_Exists then
-            Update_Tables_From_ALI_File;
-            return;
-         end if;
-      end if;
-
-      --  Otherwise acquire compilation arguments and prepare to write out a
-      --  new ali file.
+      --  Acquire compilation arguments and prepare to write out a new ali
+      --  file.
 
       Create_Output_Library_Info;
 
@@ -1176,7 +1166,7 @@ package body Lib.Writ is
             if Nkind (U) = N_Package_Body then
                U := Parent (Parent (
                    Alias (Related_Instance (Defining_Unit_Name
-                     (Specification (Unit (Library_Unit (Parent (U)))))))));
+                     (Specification (Unit (Spec_Lib_Unit (Parent (U)))))))));
             end if;
 
             S := Specification (U);
@@ -1185,9 +1175,7 @@ package body Lib.Writ is
 
             if Nkind (U) = N_Subprogram_Body
               and then Present (Corresponding_Spec (U))
-              and then
-                Ekind_In (Corresponding_Spec (U), E_Generic_Procedure,
-                                                  E_Generic_Function)
+              and then Is_Generic_Subprogram (Corresponding_Spec (U))
             then
                null;
 
@@ -1228,6 +1216,14 @@ package body Lib.Writ is
          Write_Info_Terminate;
       end loop;
 
+      --  Output CUDA Kernel lines
+
+      for Unit in Units.First .. Last_Unit loop
+         if Present (Cunit (Unit)) then
+            Output_CUDA_Symbols (Unit);
+         end if;
+      end loop;
+
       --  Output parameters ('P') line
 
       Write_Info_Initiate ('P');
@@ -1240,22 +1236,19 @@ package body Lib.Writ is
          Write_Info_Str (" DB");
       end if;
 
-      if Tasking_Used and then not Is_Predefined_Unit (Main_Unit) then
-         if Locking_Policy /= ' ' then
-            Write_Info_Str  (" L");
-            Write_Info_Char (Locking_Policy);
-         end if;
+      if Locking_Policy /= ' ' then
+         Write_Info_Str  (" L");
+         Write_Info_Char (Locking_Policy);
+      end if;
 
-         if Queuing_Policy /= ' ' then
-            Write_Info_Str  (" Q");
-            Write_Info_Char (Queuing_Policy);
-         end if;
+      if Queuing_Policy /= ' ' then
+         Write_Info_Str  (" Q");
+         Write_Info_Char (Queuing_Policy);
+      end if;
 
-         if Task_Dispatching_Policy /= ' ' then
-            Write_Info_Str  (" T");
-            Write_Info_Char (Task_Dispatching_Policy);
-            Write_Info_Char (' ');
-         end if;
+      if Task_Dispatching_Policy /= ' ' then
+         Write_Info_Str  (" T");
+         Write_Info_Char (Task_Dispatching_Policy);
       end if;
 
       if GNATprove_Mode then
@@ -1265,6 +1258,10 @@ package body Lib.Writ is
       if Partition_Elaboration_Policy /= ' ' then
          Write_Info_Str  (" E");
          Write_Info_Char (Partition_Elaboration_Policy);
+      end if;
+
+      if Opt.Interrupts_System_By_Default then
+         Write_Info_Str (" ID");
       end if;
 
       if No_Component_Reordering_Config then
@@ -1296,10 +1293,6 @@ package body Lib.Writ is
          Write_Info_Str (" UA");
       end if;
 
-      if Front_End_Exceptions then
-         Write_Info_Str (" FX");
-      end if;
-
       if ZCX_Exceptions then
          Write_Info_Str (" ZX");
       end if;
@@ -1313,9 +1306,10 @@ package body Lib.Writ is
       --  for which we have generated code
 
       for Unit in Units.First .. Last_Unit loop
-         if Units.Table (Unit).Generate_Code or else Unit = Main_Unit then
+         if Units.Table (Unit).Generate_Code then
             if not Has_No_Elaboration_Code (Cunit (Unit)) then
                Main_Restrictions.Violated (No_Elaboration_Code) := True;
+               exit;
             end if;
          end if;
       end loop;
@@ -1530,7 +1524,7 @@ package body Lib.Writ is
          for J in 1 .. Num_Sdep loop
             Unum := Sdep_Table (J);
             Units.Table (Unum).Dependency_Num := J;
-            Sind := Units.Table (Unum).Source_Index;
+            Sind := Source_Index (Unum);
 
             Write_Info_Initiate ('D');
             Write_Info_Char (' ');
@@ -1538,11 +1532,8 @@ package body Lib.Writ is
             --  Normal case of a unit entry with a source index
 
             if Sind > No_Source_File then
-               --  We never want directory information in ALI files
-               --  ???But back out this change temporarily until
-               --  gprbuild is fixed.
 
-               if False then
+               if Config_Files_Store_Basename then
                   Fname := Strip_Directory (File_Name (Sind));
                else
                   Fname := File_Name (Sind);
@@ -1618,6 +1609,10 @@ package body Lib.Writ is
          end loop;
       end;
 
+      --  Output the invocation graph
+
+      Write_Invocation_Graph;
+
       --  Output cross-references
 
       if Opt.Xref_Active then
@@ -1637,6 +1632,179 @@ package body Lib.Writ is
       Write_Info_Terminate;
       Close_Output_Library_Info;
    end Write_ALI;
+
+   --------------------------------
+   -- Write_Invocation_Construct --
+   --------------------------------
+
+   procedure Write_Invocation_Construct (IC_Id : Invocation_Construct_Id) is
+   begin
+      --  G header
+
+      Write_Info_Initiate ('G');
+      Write_Info_Char     (' ');
+
+      --  line-kind
+
+      Write_Info_Char
+        (Invocation_Graph_Line_Kind_To_Code (Invocation_Construct_Line));
+      Write_Info_Char (' ');
+
+      --  construct-kind
+
+      Write_Info_Char (Invocation_Construct_Kind_To_Code (Kind (IC_Id)));
+      Write_Info_Char (' ');
+
+      --  construct-spec-placement
+
+      Write_Info_Char
+        (Declaration_Placement_Kind_To_Code (Spec_Placement (IC_Id)));
+      Write_Info_Char (' ');
+
+      --  construct-body-placement
+
+      Write_Info_Char
+        (Declaration_Placement_Kind_To_Code (Body_Placement (IC_Id)));
+      Write_Info_Char (' ');
+
+      --  construct-signature
+
+      Write_Invocation_Signature (Signature (IC_Id));
+      Write_Info_EOL;
+   end Write_Invocation_Construct;
+
+   ---------------------------------------
+   -- Write_Invocation_Graph_Attributes --
+   ---------------------------------------
+
+   procedure Write_Invocation_Graph_Attributes is
+   begin
+      --  G header
+
+      Write_Info_Initiate ('G');
+      Write_Info_Char     (' ');
+
+      --  line-kind
+
+      Write_Info_Char
+        (Invocation_Graph_Line_Kind_To_Code
+          (Invocation_Graph_Attributes_Line));
+      Write_Info_Char (' ');
+
+      --  encoding-kind
+
+      Write_Info_Char
+        (Invocation_Graph_Encoding_Kind_To_Code (Invocation_Graph_Encoding));
+      Write_Info_EOL;
+   end Write_Invocation_Graph_Attributes;
+
+   ----------------------------
+   -- Write_Invocation_Graph --
+   ----------------------------
+
+   procedure Write_Invocation_Graph is
+   begin
+      Write_Invocation_Graph_Attributes;
+
+      --  First write out all invocation constructs declared within the current
+      --  unit. This ensures that when this invocation is read, the invocation
+      --  constructs are materialized before they are referenced by invocation
+      --  relations.
+
+      For_Each_Invocation_Construct (Write_Invocation_Construct'Access);
+
+      --  Write out all invocation relations that originate from invocation
+      --  constructs delared in the current unit.
+
+      For_Each_Invocation_Relation (Write_Invocation_Relation'Access);
+   end Write_Invocation_Graph;
+
+   -------------------------------
+   -- Write_Invocation_Relation --
+   -------------------------------
+
+   procedure Write_Invocation_Relation (IR_Id : Invocation_Relation_Id) is
+   begin
+      --  G header
+
+      Write_Info_Initiate ('G');
+      Write_Info_Char     (' ');
+
+      --  line-kind
+
+      Write_Info_Char
+        (Invocation_Graph_Line_Kind_To_Code (Invocation_Relation_Line));
+      Write_Info_Char (' ');
+
+      --  relation-kind
+
+      Write_Info_Char (Invocation_Kind_To_Code (Kind (IR_Id)));
+      Write_Info_Char (' ');
+
+      --  (extra-name | "none")
+
+      if Present (Extra (IR_Id)) then
+         Write_Info_Name (Extra (IR_Id));
+      else
+         Write_Info_Str ("none");
+      end if;
+
+      Write_Info_Char (' ');
+
+      --  invoker-signature
+
+      Write_Invocation_Signature (Invoker (IR_Id));
+      Write_Info_Char (' ');
+
+      --  target-signature
+
+      Write_Invocation_Signature (Target (IR_Id));
+
+      Write_Info_EOL;
+   end Write_Invocation_Relation;
+
+   --------------------------------
+   -- Write_Invocation_Signature --
+   --------------------------------
+
+   procedure Write_Invocation_Signature (IS_Id : Invocation_Signature_Id) is
+   begin
+      --  [
+
+      Write_Info_Char ('[');
+
+      --  name
+
+      Write_Info_Name (Name (IS_Id));
+      Write_Info_Char (' ');
+
+      --  scope
+
+      Write_Info_Name (IS_Scope (IS_Id));
+      Write_Info_Char (' ');
+
+      --  line
+
+      Write_Info_Nat  (Line (IS_Id));
+      Write_Info_Char (' ');
+
+      --  column
+
+      Write_Info_Nat  (Column (IS_Id));
+      Write_Info_Char (' ');
+
+      --  (locations | "none")
+
+      if Present (Locations (IS_Id)) then
+         Write_Info_Name (Locations (IS_Id));
+      else
+         Write_Info_Str ("none");
+      end if;
+
+      --  ]
+
+      Write_Info_Char (']');
+   end Write_Invocation_Signature;
 
    ---------------------
    -- Write_Unit_Name --

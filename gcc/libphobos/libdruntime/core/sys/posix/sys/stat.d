@@ -14,9 +14,9 @@
  */
 module core.sys.posix.sys.stat;
 
-private import core.sys.posix.config;
-private import core.stdc.stdint;
-private import core.sys.posix.time;     // for timespec
+import core.sys.posix.config;
+import core.stdc.stdint;
+import core.sys.posix.time;     // for timespec
 public import core.sys.posix.sys.types; // for off_t, mode_t
 
 version (OSX)
@@ -30,6 +30,13 @@ else version (WatchOS)
 
 version (RISCV32) version = RISCV_Any;
 version (RISCV64) version = RISCV_Any;
+version (SPARC)   version = SPARC_Any;
+version (SPARC64) version = SPARC_Any;
+
+// Android uses 64-bit offsets for stat, but 32-bit offsets for most
+// other types on 32-bit architectures.
+version (CRuntime_Bionic)
+    private enum __USE_FILE_OFFSET64 = true;
 
 version (Posix):
 extern (C) nothrow @nogc:
@@ -52,98 +59,116 @@ struct stat
     time_t  st_ctime;
 }
 
-S_IRWXU
-    S_IRUSR
-    S_IWUSR
-    S_IXUSR
-S_IRWXG
-    S_IRGRP
-    S_IWGRP
-    S_IXGRP
-S_IRWXO
-    S_IROTH
-    S_IWOTH
-    S_IXOTH
 S_ISUID
 S_ISGID
 S_ISVTX
 
-S_ISBLK(m)
-S_ISCHR(m)
-S_ISDIR(m)
-S_ISFIFO(m)
-S_ISREG(m)
-S_ISLNK(m)
-S_ISSOCK(m)
-
 S_TYPEISMQ(buf)
 S_TYPEISSEM(buf)
 S_TYPEISSHM(buf)
-
-int    chmod(in char*, mode_t);
-int    fchmod(int, mode_t);
-int    fstat(int, stat*);
-int    lstat(in char*, stat*);
-int    mkdir(in char*, mode_t);
-int    mkfifo(in char*, mode_t);
-int    stat(in char*, stat*);
-mode_t umask(mode_t);
  */
 
-version (CRuntime_Glibc)
+version (linux)
 {
     version (X86)
     {
-        struct stat_t
+        version (CRuntime_Musl)
         {
-            dev_t       st_dev;
-            ushort      __pad1;
-            static if (!__USE_FILE_OFFSET64)
+            struct stat_t
             {
+                dev_t       st_dev;
+                ushort      __pad1;
+                static if (!__USE_FILE_OFFSET64)
+                {
+                    ino_t       st_ino;
+                }
+                else
+                {
+                    uint        __st_ino;
+                }
+                mode_t      st_mode;
+                nlink_t     st_nlink;
+                uid_t       st_uid;
+                gid_t       st_gid;
+                dev_t       st_rdev;
+                ushort      __pad2;
+                off_t       st_size;
+                blksize_t   st_blksize;
+                blkcnt_t    st_blocks;
+                private struct __timespec32
+                {
+                    c_long tv_sec;
+                    c_long tv_nsec;
+                }
+                __timespec32 __st_atim32;
+                __timespec32 __st_mtim32;
+                __timespec32 __st_ctim32;
                 ino_t       st_ino;
-            }
-            else
-            {
-                uint        __st_ino;
-            }
-            mode_t      st_mode;
-            nlink_t     st_nlink;
-            uid_t       st_uid;
-            gid_t       st_gid;
-            dev_t       st_rdev;
-            ushort      __pad2;
-            off_t       st_size;
-            blksize_t   st_blksize;
-            blkcnt_t    st_blocks;
-            static if (__USE_MISC || __USE_XOPEN2K8)
-            {
                 timespec    st_atim;
                 timespec    st_mtim;
                 timespec    st_ctim;
-                extern(D)
+                extern(D) @safe @property inout pure nothrow
                 {
-                    @property ref time_t st_atime() { return st_atim.tv_sec; }
-                    @property ref time_t st_mtime() { return st_mtim.tv_sec; }
-                    @property ref time_t st_ctime() { return st_ctim.tv_sec; }
+                    ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                    ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                    ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
                 }
             }
-            else
+            static assert(stat_t.sizeof == 144);
+        }
+        else
+        {
+            struct stat_t
             {
-                time_t      st_atime;
-                ulong_t     st_atimensec;
-                time_t      st_mtime;
-                ulong_t     st_mtimensec;
-                time_t      st_ctime;
-                ulong_t     st_ctimensec;
-            }
-            static if (__USE_FILE_OFFSET64)
-            {
-                ino_t       st_ino;
-            }
-            else
-            {
-                c_ulong     __unused4;
-                c_ulong     __unused5;
+                dev_t       st_dev;
+                ushort      __pad1;
+                static if (!__USE_FILE_OFFSET64)
+                {
+                    ino_t       st_ino;
+                }
+                else
+                {
+                    uint        __st_ino;
+                }
+                mode_t      st_mode;
+                nlink_t     st_nlink;
+                uid_t       st_uid;
+                gid_t       st_gid;
+                dev_t       st_rdev;
+                ushort      __pad2;
+                off_t       st_size;
+                blksize_t   st_blksize;
+                blkcnt_t    st_blocks;
+                static if (_DEFAULT_SOURCE || _XOPEN_SOURCE >= 700)
+                {
+                    timespec    st_atim;
+                    timespec    st_mtim;
+                    timespec    st_ctim;
+                    extern(D) @safe @property inout pure nothrow
+                    {
+                        ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                        ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                        ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
+                    }
+                }
+                else
+                {
+                    time_t      st_atime;
+                    ulong_t     st_atimensec;
+                    time_t      st_mtime;
+                    ulong_t     st_mtimensec;
+                    time_t      st_ctime;
+                    ulong_t     st_ctimensec;
+                }
+                static if (__USE_FILE_OFFSET64)
+                {
+                    ino_t       st_ino;
+                }
+                else
+                {
+                    c_ulong     __unused4;
+                    c_ulong     __unused5;
+                }
             }
         }
     }
@@ -162,16 +187,16 @@ version (CRuntime_Glibc)
             off_t       st_size;
             blksize_t   st_blksize;
             blkcnt_t    st_blocks;
-            static if (__USE_MISC || __USE_XOPEN2K8)
+            static if (_DEFAULT_SOURCE || _XOPEN_SOURCE >= 700)
             {
                 timespec    st_atim;
                 timespec    st_mtim;
                 timespec    st_ctim;
-                extern(D)
+                extern(D) @safe @property inout pure nothrow
                 {
-                    @property ref time_t st_atime() { return st_atim.tv_sec; }
-                    @property ref time_t st_mtime() { return st_mtim.tv_sec; }
-                    @property ref time_t st_ctime() { return st_ctim.tv_sec; }
+                    ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                    ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                    ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
                 }
             }
             else
@@ -244,16 +269,16 @@ version (CRuntime_Glibc)
                 __blkcnt64_t st_blocks;
             }
 
-            static if ( __USE_MISC || __USE_XOPEN2K8)
+            static if ( _DEFAULT_SOURCE || _XOPEN_SOURCE >= 700)
             {
                 __timespec st_atim;
                 __timespec st_mtim;
                 __timespec st_ctim;
-                extern(D)
+                extern(D) @safe @property inout pure nothrow
                 {
-                    @property ref time_t st_atime() { return st_atim.tv_sec; }
-                    @property ref time_t st_mtime() { return st_mtim.tv_sec; }
-                    @property ref time_t st_ctime() { return st_ctim.tv_sec; }
+                    ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                    ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                    ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
                 }
             }
             else
@@ -283,80 +308,117 @@ version (CRuntime_Glibc)
     }
     else version (MIPS_O32)
     {
-        struct stat_t
+        version (CRuntime_Musl)
         {
-            c_ulong     st_dev;
-            c_long[3]   st_pad1;
-            ino_t       st_ino;
-            mode_t      st_mode;
-            nlink_t     st_nlink;
-            uid_t       st_uid;
-            gid_t       st_gid;
-            c_ulong     st_rdev;
-            static if (!__USE_FILE_OFFSET64)
+            struct stat_t
             {
-                c_long[2]   st_pad2;
+                dev_t       st_dev;
+                c_long[2]   __pad1;
+                ino_t       st_ino;
+                mode_t      st_mode;
+                nlink_t     st_nlink;
+                uid_t       st_uid;
+                gid_t       st_gid;
+                dev_t       st_rdev;
+                c_long[2]   __pad2;
                 off_t       st_size;
-                c_long      st_pad3;
-            }
-            else
-            {
-                c_long[3]   st_pad2;
-                off_t       st_size;
-            }
-            static if (__USE_MISC || __USE_XOPEN2K8)
-            {
+                private struct __timespec32
+                {
+                    c_long tv_sec;
+                    c_long tv_nsec;
+                }
+                __timespec32 __st_atim32;
+                __timespec32 __st_mtim32;
+                __timespec32 __st_ctim32;
+                blksize_t   st_blksize;
+                c_long      __pad3;
+                blkcnt_t    st_blocks;
                 timespec    st_atim;
                 timespec    st_mtim;
                 timespec    st_ctim;
-                extern(D)
+                extern(D) @safe @property inout pure nothrow
                 {
-                    @property ref time_t st_atime() { return st_atim.tv_sec; }
-                    @property ref time_t st_mtime() { return st_mtim.tv_sec; }
-                    @property ref time_t st_ctime() { return st_ctim.tv_sec; }
+                    ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                    ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                    ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
                 }
+                c_long[2]   __pad4;
             }
-            else
-            {
-                time_t      st_atime;
-                c_ulong     st_atimensec;
-                time_t      st_mtime;
-                c_ulong     st_mtimensec;
-                time_t      st_ctime;
-                c_ulong     st_ctimensec;
-            }
-            blksize_t   st_blksize;
-            static if (!__USE_FILE_OFFSET64)
-            {
-                blkcnt_t    st_blocks;
-            }
-            else
-            {
-                c_long      st_pad4;
-                blkcnt_t    st_blocks;
-            }
-            c_long[14]  st_pad5;
         }
+        else
+        {
+            struct stat_t
+            {
+                c_ulong     st_dev;
+                c_long[3]   st_pad1;
+                ino_t       st_ino;
+                mode_t      st_mode;
+                nlink_t     st_nlink;
+                uid_t       st_uid;
+                gid_t       st_gid;
+                c_ulong     st_rdev;
+                static if (!__USE_FILE_OFFSET64)
+                {
+                    c_long[2]   st_pad2;
+                    off_t       st_size;
+                    c_long      st_pad3;
+                }
+                else
+                {
+                    c_long[3]   st_pad2;
+                    off_t       st_size;
+                }
+                static if (_DEFAULT_SOURCE || _XOPEN_SOURCE >= 700)
+                {
+                    timespec    st_atim;
+                    timespec    st_mtim;
+                    timespec    st_ctim;
+                    extern(D) @safe @property inout pure nothrow
+                    {
+                        ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                        ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                        ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
+                    }
+                }
+                else
+                {
+                    time_t      st_atime;
+                    c_ulong     st_atimensec;
+                    time_t      st_mtime;
+                    c_ulong     st_mtimensec;
+                    time_t      st_ctime;
+                    c_ulong     st_ctimensec;
+                }
+                blksize_t   st_blksize;
+                static if (!__USE_FILE_OFFSET64)
+                {
+                    blkcnt_t    st_blocks;
+                }
+                else
+                {
+                    c_long      st_pad4;
+                    blkcnt_t    st_blocks;
+                }
+                c_long[14]  st_pad6;
+            }
+        }
+        static if (!__USE_FILE_OFFSET64)
+            static assert(stat_t.sizeof == 144);
+        else
+            static assert(stat_t.sizeof == 160);
     }
     else version (MIPS64)
     {
         struct stat_t
         {
-            c_ulong     st_dev;
+            dev_t       st_dev;
             int[3]      st_pad1;
-            static if (!__USE_FILE_OFFSET64)
-            {
-                ino_t       st_ino;
-            }
-            else
-            {
-                c_ulong     st_ino;
-            }
+            ino_t       st_ino;
             mode_t      st_mode;
             nlink_t     st_nlink;
             uid_t       st_uid;
             gid_t       st_gid;
-            c_ulong     st_rdev;
+            dev_t       st_rdev;
             static if (!__USE_FILE_OFFSET64)
             {
                 uint[2]     st_pad2;
@@ -365,19 +427,19 @@ version (CRuntime_Glibc)
             }
             else
             {
-                c_long[3]   st_pad2;
-                c_long      st_size;
+                uint[3]     st_pad2;
+                off_t       st_size;
             }
-            static if (__USE_MISC || __USE_XOPEN2K8)
+            static if (_DEFAULT_SOURCE || _XOPEN_SOURCE >= 700)
             {
                 timespec    st_atim;
                 timespec    st_mtim;
                 timespec    st_ctim;
-                extern(D)
+                extern(D) @safe @property inout pure nothrow
                 {
-                    @property ref time_t st_atime() { return st_atim.tv_sec; }
-                    @property ref time_t st_mtime() { return st_mtim.tv_sec; }
-                    @property ref time_t st_ctime() { return st_ctim.tv_sec; }
+                    ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                    ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                    ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
                 }
             }
             else
@@ -391,65 +453,119 @@ version (CRuntime_Glibc)
             }
             blksize_t   st_blksize;
             uint        st_pad4;
+            blkcnt_t    st_blocks;
+            int[14]     st_pad5;
+        }
+        version (MIPS_N32)
+        {
             static if (!__USE_FILE_OFFSET64)
-            {
-                blkcnt_t    st_blocks;
-            }
+                static assert(stat_t.sizeof == 160);
             else
-            {
-                c_long  st_blocks;
-            }
-            c_long[14]  st_pad5;
+                static assert(stat_t.sizeof == 176);
+        }
+        else version (MIPS_O64)
+        {
+            static if (!__USE_FILE_OFFSET64)
+                static assert(stat_t.sizeof == 160);
+            else
+                static assert(stat_t.sizeof == 176);
+        }
+        else
+        {
+            static assert(stat_t.sizeof == 216);
         }
     }
     else version (PPC)
     {
         struct stat_t
         {
-            c_ulong     st_dev;
-            ino_t       st_ino;
+            dev_t       st_dev;
+            static if (!__USE_FILE_OFFSET64)
+            {
+                ushort  __pad1;
+                ino_t   st_ino;
+            }
+            else
+                ino_t   st_ino;
             mode_t      st_mode;
             nlink_t     st_nlink;
             uid_t       st_uid;
             gid_t       st_gid;
-            c_ulong     st_rdev;
+            dev_t       st_rdev;
+            ushort      __pad2;
             off_t       st_size;
-            c_ulong     st_blksize;
-            c_ulong     st_blocks;
-            c_ulong     st_atime;
-            c_ulong     st_atime_nsec;
-            c_ulong     st_mtime;
-            c_ulong     st_mtime_nsec;
-            c_ulong     st_ctime;
-            c_ulong     st_ctime_nsec;
+            blksize_t   st_blksize;
+            blkcnt_t    st_blocks;
+            static if (_DEFAULT_SOURCE || _XOPEN_SOURCE >= 700)
+            {
+                timespec    st_atim;
+                timespec    st_mtim;
+                timespec    st_ctim;
+                extern(D) @safe @property inout pure nothrow
+                {
+                    ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                    ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                    ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
+                }
+            }
+            else
+            {
+                time_t      st_atime;
+                c_ulong     st_atimensec;
+                time_t      st_mtime;
+                c_ulong     st_mtimensec;
+                time_t      st_ctime;
+                c_ulong     st_ctimensec;
+            }
             c_ulong     __unused4;
             c_ulong     __unused5;
         }
+        static if (__USE_FILE_OFFSET64)
+            static assert(stat_t.sizeof == 104);
+        else
+            static assert(stat_t.sizeof == 88);
     }
     else version (PPC64)
     {
         struct stat_t
         {
-            c_ulong     st_dev;
+            dev_t       st_dev;
             ino_t       st_ino;
             nlink_t     st_nlink;
             mode_t      st_mode;
             uid_t       st_uid;
             gid_t       st_gid;
-            c_ulong     st_rdev;
+            int         __pad2;
+            dev_t       st_rdev;
             off_t       st_size;
-            c_ulong     st_blksize;
-            c_ulong     st_blocks;
-            c_ulong     st_atime;
-            c_ulong     st_atime_nsec;
-            c_ulong     st_mtime;
-            c_ulong     st_mtime_nsec;
-            c_ulong     st_ctime;
-            c_ulong     st_ctime_nsec;
+            blksize_t   st_blksize;
+            blkcnt_t    st_blocks;
+            static if (_DEFAULT_SOURCE || _XOPEN_SOURCE >= 700)
+            {
+                timespec    st_atim;
+                timespec    st_mtim;
+                timespec    st_ctim;
+                extern(D) @safe @property inout pure nothrow
+                {
+                    ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                    ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                    ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
+                }
+            }
+            else
+            {
+                time_t      st_atime;
+                c_ulong     st_atimensec;
+                time_t      st_mtime;
+                c_ulong     st_mtimensec;
+                time_t      st_ctime;
+                c_ulong     st_ctimensec;
+            }
             c_ulong     __unused4;
             c_ulong     __unused5;
             c_ulong     __unused6;
         }
+        static assert(stat_t.sizeof == 144);
     }
     else version (RISCV_Any)
     {
@@ -509,16 +625,16 @@ version (CRuntime_Glibc)
                 __blkcnt_t st_blocks;
             }
 
-            static if (__USE_MISC)
+            static if (_DEFAULT_SOURCE)
             {
                 __timespec st_atim;
                 __timespec st_mtim;
                 __timespec st_ctim;
-                extern(D)
+                extern(D) @safe @property inout pure nothrow
                 {
-                    @property ref time_t st_atime() { return st_atim.tv_sec; }
-                    @property ref time_t st_mtime() { return st_mtim.tv_sec; }
-                    @property ref time_t st_ctime() { return st_ctim.tv_sec; }
+                    ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                    ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                    ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
                 }
             }
             else
@@ -535,98 +651,140 @@ version (CRuntime_Glibc)
     }
     else version (ARM)
     {
-        private
+        version (CRuntime_Musl)
         {
-            alias __dev_t = ulong;
-            alias __ino_t = c_ulong;
-            alias __ino64_t = ulong;
-            alias __mode_t = uint;
-            alias __nlink_t = size_t;
-            alias __uid_t = uint;
-            alias __gid_t = uint;
-            alias __off_t = c_long;
-            alias __off64_t = long;
-            alias __blksize_t = c_long;
-            alias __blkcnt_t = c_long;
-            alias __blkcnt64_t = long;
-            alias __timespec = timespec;
-            alias __time_t = time_t;
-        }
-        struct stat_t
-        {
-            __dev_t st_dev;
-            ushort __pad1;
-
-            static if (!__USE_FILE_OFFSET64)
+            // Matches struct stat from musl arch/arm/bits/stat.h
+            // See: https://git.musl-libc.org/cgit/musl/tree/arch/arm/bits/stat.h?h=v1.2.3
+            struct stat_t
             {
-                __ino_t st_ino;
-            }
-            else
-            {
-                __ino_t __st_ino;
-            }
-            __mode_t st_mode;
-            __nlink_t st_nlink;
-            __uid_t st_uid;
-            __gid_t st_gid;
-            __dev_t st_rdev;
-            ushort __pad2;
-
-            static if (!__USE_FILE_OFFSET64)
-            {
-                __off_t st_size;
-            }
-            else
-            {
-                __off64_t st_size;
-            }
-            __blksize_t st_blksize;
-
-            static if (!__USE_FILE_OFFSET64)
-            {
-                __blkcnt_t st_blocks;
-            }
-            else
-            {
-                __blkcnt64_t st_blocks;
-            }
-
-            static if ( __USE_MISC || __USE_XOPEN2K8)
-            {
-                __timespec st_atim;
-                __timespec st_mtim;
-                __timespec st_ctim;
-                extern(D)
+                dev_t st_dev;
+                int __st_dev_padding;
+                c_long __st_ino_truncated;
+                mode_t st_mode;
+                nlink_t st_nlink;
+                uid_t st_uid;
+                gid_t st_gid;
+                dev_t st_rdev;
+                int __st_rdev_padding;
+                off_t st_size;
+                blksize_t st_blksize;
+                blkcnt_t st_blocks;
+                private struct __timespec32
                 {
-                    @property ref time_t st_atime() { return st_atim.tv_sec; }
-                    @property ref time_t st_mtime() { return st_mtim.tv_sec; }
-                    @property ref time_t st_ctime() { return st_ctim.tv_sec; }
+                    c_long tv_sec;
+                    c_long tv_nsec;
+                }
+                __timespec32 __st_atim32;
+                __timespec32 __st_mtim32;
+                __timespec32 __st_ctim32;
+                ino_t st_ino;
+                timespec st_atim;
+                timespec st_mtim;
+                timespec st_ctim;
+                extern(D) @safe @property inout pure nothrow
+                {
+                    ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                    ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                    ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
                 }
             }
-            else
-            {
-                __time_t st_atime;
-                c_ulong st_atimensec;
-                __time_t st_mtime;
-                c_ulong st_mtimensec;
-                __time_t st_ctime;
-                c_ulong st_ctimensec;
-            }
-
-            static if (!__USE_FILE_OFFSET64)
-            {
-                c_ulong __unused4;
-                c_ulong __unused5;
-            }
-            else
-            {
-                __ino64_t st_ino;
-            }
+            static assert(stat_t.sizeof == 152);
         }
-        static if (__USE_FILE_OFFSET64)
-            static assert(stat_t.sizeof == 104);
         else
-            static assert(stat_t.sizeof == 88);
+        {
+            private
+            {
+                alias __dev_t = ulong;
+                alias __ino_t = c_ulong;
+                alias __ino64_t = ulong;
+                alias __mode_t = uint;
+                alias __nlink_t = size_t;
+                alias __uid_t = uint;
+                alias __gid_t = uint;
+                alias __off_t = c_long;
+                alias __off64_t = long;
+                alias __blksize_t = c_long;
+                alias __blkcnt_t = c_long;
+                alias __blkcnt64_t = long;
+                alias __timespec = timespec;
+                alias __time_t = time_t;
+            }
+            struct stat_t
+            {
+                __dev_t st_dev;
+                ushort __pad1;
+
+                static if (!__USE_FILE_OFFSET64)
+                {
+                    __ino_t st_ino;
+                }
+                else
+                {
+                    __ino_t __st_ino;
+                }
+                __mode_t st_mode;
+                __nlink_t st_nlink;
+                __uid_t st_uid;
+                __gid_t st_gid;
+                __dev_t st_rdev;
+                ushort __pad2;
+
+                static if (!__USE_FILE_OFFSET64)
+                {
+                    __off_t st_size;
+                }
+                else
+                {
+                    __off64_t st_size;
+                }
+                __blksize_t st_blksize;
+
+                static if (!__USE_FILE_OFFSET64)
+                {
+                    __blkcnt_t st_blocks;
+                }
+                else
+                {
+                    __blkcnt64_t st_blocks;
+                }
+
+                static if ( _DEFAULT_SOURCE || _XOPEN_SOURCE >= 700)
+                {
+                    __timespec st_atim;
+                    __timespec st_mtim;
+                    __timespec st_ctim;
+                    extern(D) @safe @property inout pure nothrow
+                    {
+                        ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                        ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                        ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
+                    }
+                }
+                else
+                {
+                    __time_t st_atime;
+                    c_ulong st_atimensec;
+                    __time_t st_mtime;
+                    c_ulong st_mtimensec;
+                    __time_t st_ctime;
+                    c_ulong st_ctimensec;
+                }
+
+                static if (!__USE_FILE_OFFSET64)
+                {
+                    c_ulong __unused4;
+                    c_ulong __unused5;
+                }
+                else
+                {
+                    __ino64_t st_ino;
+                }
+            }
+	          static if (__USE_FILE_OFFSET64)
+	              static assert(stat_t.sizeof == 104);
+	          else
+	              static assert(stat_t.sizeof == 88);
+        }
     }
     else version (AArch64)
     {
@@ -686,16 +844,16 @@ version (CRuntime_Glibc)
                 __blkcnt64_t st_blocks;
             }
 
-            static if (__USE_MISC)
+            static if (_DEFAULT_SOURCE)
             {
                 __timespec st_atim;
                 __timespec st_mtim;
                 __timespec st_ctim;
-                extern(D)
+                extern(D) @safe @property inout pure nothrow
                 {
-                    @property ref time_t st_atime() { return st_atim.tv_sec; }
-                    @property ref time_t st_mtime() { return st_mtim.tv_sec; }
-                    @property ref time_t st_ctime() { return st_ctim.tv_sec; }
+                    ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                    ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                    ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
                 }
             }
             else
@@ -714,7 +872,7 @@ version (CRuntime_Glibc)
         else
             static assert(stat_t.sizeof == 104);
     }
-    else version (SPARC64)
+    else version (SPARC_Any)
     {
         private
         {
@@ -736,8 +894,15 @@ version (CRuntime_Glibc)
         struct stat_t
         {
             __dev_t st_dev;
-            ushort __pad1;
-            __ino_t st_ino;
+            static if (__WORDSIZE == 64 || !__USE_FILE_OFFSET64)
+            {
+                ushort __pad1;
+                __ino_t st_ino;
+            }
+            else
+            {
+                __ino64_t st_ino;
+            }
             __mode_t st_mode;
             __nlink_t st_nlink;
             __uid_t st_uid;
@@ -764,16 +929,16 @@ version (CRuntime_Glibc)
                 __blkcnt64_t st_blocks;
             }
 
-            static if (__USE_XOPEN2K8)
+            static if (_XOPEN_SOURCE >= 700)
             {
                 __timespec st_atim;
                 __timespec st_mtim;
                 __timespec st_ctim;
-                extern(D)
+                extern(D) @safe @property inout pure nothrow
                 {
-                    @property ref time_t st_atime() { return st_atim.tv_sec; }
-                    @property ref time_t st_mtime() { return st_mtim.tv_sec; }
-                    @property ref time_t st_ctime() { return st_ctim.tv_sec; }
+                    ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                    ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                    ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
                 }
             }
             else
@@ -789,7 +954,15 @@ version (CRuntime_Glibc)
             c_ulong __unused4;
             c_ulong __unused5;
         }
-        static assert(stat_t.sizeof == 144);
+        static if (__USE_LARGEFILE64) alias stat64_t = stat_t;
+
+        static if (__WORDSIZE == 64)
+            static assert(stat_t.sizeof == 144);
+        else static if (__USE_FILE_OFFSET64)
+            static assert(stat_t.sizeof == 104);
+        else
+            static assert(stat_t.sizeof == 88);
+
     }
     else version (S390)
     {
@@ -833,16 +1006,16 @@ version (CRuntime_Glibc)
                 __blkcnt_t st_blocks;
             else
                 __blkcnt64_t st_blocks;
-            static if (__USE_XOPEN2K8)
+            static if (_XOPEN_SOURCE >= 700)
             {
                 __timespec st_atim;
                 __timespec st_mtim;
                 __timespec st_ctim;
-                extern(D)
+                extern(D) @safe @property inout pure nothrow
                 {
-                    @property ref time_t st_atime() { return st_atim.tv_sec; }
-                    @property ref time_t st_mtime() { return st_mtim.tv_sec; }
-                    @property ref time_t st_ctime() { return st_ctim.tv_sec; }
+                    ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                    ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                    ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
                 }
             }
             else
@@ -897,16 +1070,16 @@ version (CRuntime_Glibc)
             int __glibc_reserved0;
             __dev_t st_rdev;
             __off_t st_size;
-            static if (__USE_XOPEN2K8)
+            static if (_XOPEN_SOURCE >= 700)
             {
                 __timespec st_atim;
                 __timespec st_mtim;
                 __timespec st_ctim;
-                extern(D)
+                extern(D) @safe @property inout pure nothrow
                 {
-                    @property ref time_t st_atime() { return st_atim.tv_sec; }
-                    @property ref time_t st_mtime() { return st_mtim.tv_sec; }
-                    @property ref time_t st_ctime() { return st_ctim.tv_sec; }
+                    ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                    ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                    ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
                 }
             }
             else
@@ -922,48 +1095,77 @@ version (CRuntime_Glibc)
             __blkcnt_t st_blocks;
             c_long[3] __glibc_reserved;
         }
-        static if (__USE_XOPEN2K8)
+        static if (_XOPEN_SOURCE >= 700)
             static assert(stat_t.sizeof == 144);
         else
             static assert(stat_t.sizeof == 144);
     }
+    else version (LoongArch64)
+    {
+        private
+        {
+            alias __dev_t = ulong;
+            alias __ino_t = c_ulong;
+            alias __ino64_t = ulong;
+            alias __mode_t = uint;
+            alias __nlink_t = uint;
+            alias __uid_t = uint;
+            alias __gid_t = uint;
+            alias __off_t = c_long;
+            alias __off64_t = long;
+            alias __blksize_t = int;
+            alias __blkcnt_t = c_long;
+            alias __blkcnt64_t = long;
+            alias __timespec = timespec;
+            alias __time_t = time_t;
+        }
+        struct stat_t
+        {
+            __dev_t st_dev;
+            __ino_t st_ino;
+            __mode_t st_mode;
+            __nlink_t st_nlink;
+            __uid_t st_uid;
+            __gid_t st_gid;
+            __dev_t st_rdev;
+            __dev_t __pad1;
+            // la64 always uses 64-bit file offsets
+            __off64_t st_size;
+            __blksize_t st_blksize;
+            int __pad2;
+            // la64 always uses 64-bit block counts
+            __blkcnt64_t st_blocks;
+            static if (_XOPEN_SOURCE >= 700)
+            {
+                __timespec st_atim;
+                __timespec st_mtim;
+                __timespec st_ctim;
+                extern(D) @safe @property inout pure nothrow
+                {
+                    ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                    ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                    ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
+                }
+            }
+            else
+            {
+                __time_t st_atime;
+                c_ulong st_atimensec;
+                __time_t st_mtime;
+                c_ulong st_mtimensec;
+                __time_t st_ctime;
+                c_ulong st_ctimensec;
+            }
+            int[2] __glibc_reserved;
+        }
+        static assert(stat_t.sizeof == 128);
+    }
     else
         static assert(0, "unimplemented");
-
-    enum S_IRUSR    = 0x100; // octal 0400
-    enum S_IWUSR    = 0x080; // octal 0200
-    enum S_IXUSR    = 0x040; // octal 0100
-    enum S_IRWXU    = S_IRUSR | S_IWUSR | S_IXUSR;
-
-    enum S_IRGRP    = S_IRUSR >> 3;
-    enum S_IWGRP    = S_IWUSR >> 3;
-    enum S_IXGRP    = S_IXUSR >> 3;
-    enum S_IRWXG    = S_IRWXU >> 3;
-
-    enum S_IROTH    = S_IRGRP >> 3;
-    enum S_IWOTH    = S_IWGRP >> 3;
-    enum S_IXOTH    = S_IXGRP >> 3;
-    enum S_IRWXO    = S_IRWXG >> 3;
 
     enum S_ISUID    = 0x800; // octal 04000
     enum S_ISGID    = 0x400; // octal 02000
     enum S_ISVTX    = 0x200; // octal 01000
-
-    private
-    {
-        extern (D) bool S_ISTYPE( mode_t mode, uint mask )
-        {
-            return ( mode & S_IFMT ) == mask;
-        }
-    }
-
-    extern (D) bool S_ISBLK( mode_t mode )  { return S_ISTYPE( mode, S_IFBLK );  }
-    extern (D) bool S_ISCHR( mode_t mode )  { return S_ISTYPE( mode, S_IFCHR );  }
-    extern (D) bool S_ISDIR( mode_t mode )  { return S_ISTYPE( mode, S_IFDIR );  }
-    extern (D) bool S_ISFIFO( mode_t mode ) { return S_ISTYPE( mode, S_IFIFO );  }
-    extern (D) bool S_ISREG( mode_t mode )  { return S_ISTYPE( mode, S_IFREG );  }
-    extern (D) bool S_ISLNK( mode_t mode )  { return S_ISTYPE( mode, S_IFLNK );  }
-    extern (D) bool S_ISSOCK( mode_t mode ) { return S_ISTYPE( mode, S_IFSOCK ); }
 
     static if ( true /*__USE_POSIX199309*/ )
     {
@@ -971,13 +1173,6 @@ version (CRuntime_Glibc)
         extern bool S_TYPEISSEM( stat_t* buf ) { return false; }
         extern bool S_TYPEISSHM( stat_t* buf ) { return false; }
     }
-
-    enum UTIME_NOW = 0x3fffffff;
-    enum UTIME_OMIT = 0x3ffffffe;
-
-    int utimensat(int dirfd, const char *pathname,
-        ref const(timespec)[2] times, int flags);
-    int futimens(int fd, ref const(timespec)[2] times);
 }
 else version (Darwin)
 {
@@ -1023,120 +1218,93 @@ else version (Darwin)
         long[2]     st_qspare;
     }
 
-    enum S_IRUSR    = 0x100;  // octal 0400
-    enum S_IWUSR    = 0x080;  // octal 0200
-    enum S_IXUSR    = 0x040;  // octal 0100
-    enum S_IRWXU    = S_IRUSR | S_IWUSR | S_IXUSR;
-
-    enum S_IRGRP    = S_IRUSR >> 3;
-    enum S_IWGRP    = S_IWUSR >> 3;
-    enum S_IXGRP    = S_IXUSR >> 3;
-    enum S_IRWXG    = S_IRWXU >> 3;
-
-    enum S_IROTH    = S_IRGRP >> 3;
-    enum S_IWOTH    = S_IWGRP >> 3;
-    enum S_IXOTH    = S_IXGRP >> 3;
-    enum S_IRWXO    = S_IRWXG >> 3;
-
     enum S_ISUID    = 0x800; // octal 04000
     enum S_ISGID    = 0x400; // octal 02000
     enum S_ISVTX    = 0x200; // octal 01000
-
-    private
-    {
-        extern (D) bool S_ISTYPE( mode_t mode, uint mask )
-        {
-            return ( mode & S_IFMT ) == mask;
-        }
-    }
-
-    extern (D) bool S_ISBLK( mode_t mode )  { return S_ISTYPE( mode, S_IFBLK );  }
-    extern (D) bool S_ISCHR( mode_t mode )  { return S_ISTYPE( mode, S_IFCHR );  }
-    extern (D) bool S_ISDIR( mode_t mode )  { return S_ISTYPE( mode, S_IFDIR );  }
-    extern (D) bool S_ISFIFO( mode_t mode ) { return S_ISTYPE( mode, S_IFIFO );  }
-    extern (D) bool S_ISREG( mode_t mode )  { return S_ISTYPE( mode, S_IFREG );  }
-    extern (D) bool S_ISLNK( mode_t mode )  { return S_ISTYPE( mode, S_IFLNK );  }
-    extern (D) bool S_ISSOCK( mode_t mode ) { return S_ISTYPE( mode, S_IFSOCK ); }
 }
 else version (FreeBSD)
 {
+    import core.sys.freebsd.config;
+
     // https://github.com/freebsd/freebsd/blob/master/sys/sys/stat.h
-
-    struct stat_t
+    static if (__FreeBSD_version >= INO64_FIRST)
     {
-        dev_t       st_dev;
-        ino_t       st_ino;
-        mode_t      st_mode;
-        nlink_t     st_nlink;
-        uid_t       st_uid;
-        gid_t       st_gid;
-        dev_t       st_rdev;
+        struct stat_t
+        {
+            dev_t     st_dev;
+            ino_t     st_ino;
+            nlink_t   st_nlink;
+            mode_t    st_mode;
+            short st_padding0;
+            uid_t     st_uid;
+            gid_t     st_gid;
+            int st_padding1;
+            dev_t     st_rdev;
 
-        time_t      st_atime;
-        c_long      __st_atimensec;
-        time_t      st_mtime;
-        c_long      __st_mtimensec;
-        time_t      st_ctime;
-        c_long      __st_ctimensec;
+            version (X86) int st_atim_ext;
+            timespec  st_atim;
 
-        off_t       st_size;
-        blkcnt_t    st_blocks;
-        blksize_t   st_blksize;
-        fflags_t    st_flags;
-        uint        st_gen;
-        int         st_lspare;
+            version (X86) int st_mtim_ext;
+            timespec  st_mtim;
 
-        time_t      st_birthtime;
-        c_long      st_birthtimensec;
+            version (X86) int st_ctim_ext;
+            timespec  st_ctim;
 
-        ubyte[16 - timespec.sizeof] padding;
+            version (X86) int st_btim_ext;
+            timespec  st_birthtim;
+
+            off_t     st_size;
+            blkcnt_t st_blocks;
+            blksize_t st_blksize;
+            fflags_t  st_flags;
+            ulong st_gen;
+            ulong[10] st_spare;
+
+            extern(D) @safe @property inout pure nothrow
+            {
+                ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
+                ref inout(time_t) st_birthtime() return { return st_birthtim.tv_sec; }
+            }
+        }
     }
+    else
+    {
+        struct stat_t
+        {
+            uint        st_dev;
+            uint        st_ino;
+            mode_t      st_mode;
+            ushort      st_nlink;
+            uid_t       st_uid;
+            gid_t       st_gid;
+            uint        st_rdev;
+            timespec    st_atim;
+            timespec    st_mtim;
+            timespec    st_ctim;
+            off_t       st_size;
+            blkcnt_t    st_blocks;
+            blksize_t   st_blksize;
+            fflags_t    st_flags;
+            uint        st_gen;
+            int         st_lspare;
+            timespec    st_birthtim;
+            ubyte[16 - timespec.sizeof] padding;
 
-    enum S_IRUSR    = 0x100; // octal 0000400
-    enum S_IWUSR    = 0x080; // octal 0000200
-    enum S_IXUSR    = 0x040; // octal 0000100
-    enum S_IRWXU    = 0x1C0; // octal 0000700
-
-    enum S_IRGRP    = 0x020;  // octal 0000040
-    enum S_IWGRP    = 0x010;  // octal 0000020
-    enum S_IXGRP    = 0x008;  // octal 0000010
-    enum S_IRWXG    = 0x038;  // octal 0000070
-
-    enum S_IROTH    = 0x4; // 0000004
-    enum S_IWOTH    = 0x2; // 0000002
-    enum S_IXOTH    = 0x1; // 0000001
-    enum S_IRWXO    = 0x7; // 0000007
+            extern(D) @safe @property inout pure nothrow
+            {
+                ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+                ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+                ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
+                ref inout(time_t) st_birthtime() return { return st_birthtim.tv_sec; }
+            }
+        }
+    }
 
     enum S_ISUID    = 0x800; // octal 0004000
     enum S_ISGID    = 0x400; // octal 0002000
     enum S_ISVTX    = 0x200; // octal 0001000
-
-    private
-    {
-        extern (D) bool S_ISTYPE( mode_t mode, uint mask )
-        {
-            return ( mode & S_IFMT ) == mask;
-        }
-    }
-
-    extern (D) bool S_ISBLK( mode_t mode )  { return S_ISTYPE( mode, S_IFBLK );  }
-    extern (D) bool S_ISCHR( mode_t mode )  { return S_ISTYPE( mode, S_IFCHR );  }
-    extern (D) bool S_ISDIR( mode_t mode )  { return S_ISTYPE( mode, S_IFDIR );  }
-    extern (D) bool S_ISFIFO( mode_t mode ) { return S_ISTYPE( mode, S_IFIFO );  }
-    extern (D) bool S_ISREG( mode_t mode )  { return S_ISTYPE( mode, S_IFREG );  }
-    extern (D) bool S_ISLNK( mode_t mode )  { return S_ISTYPE( mode, S_IFLNK );  }
-    extern (D) bool S_ISSOCK( mode_t mode ) { return S_ISTYPE( mode, S_IFSOCK ); }
-
-    enum UTIME_NOW = -1;
-    enum UTIME_OMIT = -2;
-
-    // Since FreeBSD 11:
-    version (none)
-    {
-        int utimensat(int dirfd, const char *pathname,
-            ref const(timespec)[2] times, int flags);
-        int futimens(int fd, ref const(timespec)[2] times);
-    }
 }
 else version (NetBSD)
 {
@@ -1165,40 +1333,63 @@ else version (NetBSD)
         uint32_t[2]  st_spare;
     }
 
-    enum S_IRUSR    = 0x100; // octal 0000400
-    enum S_IWUSR    = 0x080; // octal 0000200
-    enum S_IXUSR    = 0x040; // octal 0000100
-    enum S_IRWXU    = 0x1C0; // octal 0000700
+    enum S_ISUID    = 0x800; // octal 0004000
+    enum S_ISGID    = 0x400; // octal 0002000
+    enum S_ISVTX    = 0x200; // octal 0001000
+}
+else version (OpenBSD)
+{
+    import core.sys.openbsd.sys.cdefs;
 
-    enum S_IRGRP    = 0x020;  // octal 0000040
-    enum S_IWGRP    = 0x010;  // octal 0000020
-    enum S_IXGRP    = 0x008;  // octal 0000010
-    enum S_IRWXG    = 0x038;  // octal 0000070
-
-    enum S_IROTH    = 0x4; // 0000004
-    enum S_IWOTH    = 0x2; // 0000002
-    enum S_IXOTH    = 0x1; // 0000001
-    enum S_IRWXO    = 0x7; // 0000007
+    struct stat_t
+    {
+        mode_t    st_mode;
+        dev_t     st_dev;
+        ino_t     st_ino;
+        nlink_t   st_nlink;
+        uid_t     st_uid;
+        gid_t     st_gid;
+        dev_t     st_rdev;
+      static if (__POSIX_VISIBLE >= 200809 || __BSD_VISIBLE)
+      {
+        timespec  st_atim;
+        timespec  st_mtim;
+        timespec  st_ctim;
+        extern(D) @safe @property inout pure nothrow
+        {
+            ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
+            ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
+            ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
+        }
+      }
+      else
+      {
+        time_t    st_atime;
+        long      st_atimensec;
+        time_t    st_mtime;
+        long      st_mtimensec;
+        time_t    st_ctime;
+        long      st_ctimensec;
+      }
+        off_t     st_size;
+        blkcnt_t  st_blocks;
+        blksize_t st_blksize;
+        uint32_t  st_flags;
+        uint32_t  st_gen;
+      static if (__POSIX_VISIBLE >= 200809 || __BSD_VISIBLE)
+      {
+        timespec __st_birthtim;
+      }
+      else
+      {
+        time_t  __st_birthtime;
+        long    __st_birthtimensec;
+      }
+    }
 
     enum S_ISUID    = 0x800; // octal 0004000
     enum S_ISGID    = 0x400; // octal 0002000
     enum S_ISVTX    = 0x200; // octal 0001000
-
-    private
-    {
-        extern (D) bool S_ISTYPE( mode_t mode, uint mask )
-        {
-            return ( mode & S_IFMT ) == mask;
-        }
-    }
-
-    extern (D) bool S_ISBLK( mode_t mode )  { return S_ISTYPE( mode, S_IFBLK );  }
-    extern (D) bool S_ISCHR( mode_t mode )  { return S_ISTYPE( mode, S_IFCHR );  }
-    extern (D) bool S_ISDIR( mode_t mode )  { return S_ISTYPE( mode, S_IFDIR );  }
-    extern (D) bool S_ISFIFO( mode_t mode ) { return S_ISTYPE( mode, S_IFIFO );  }
-    extern (D) bool S_ISREG( mode_t mode )  { return S_ISTYPE( mode, S_IFREG );  }
-    extern (D) bool S_ISLNK( mode_t mode )  { return S_ISTYPE( mode, S_IFLNK );  }
-    extern (D) bool S_ISSOCK( mode_t mode ) { return S_ISTYPE( mode, S_IFSOCK ); }
 }
 else version (DragonFlyBSD)
 {
@@ -1225,42 +1416,11 @@ else version (DragonFlyBSD)
             int32_t   st_lspare;
             int64_t   st_qspare1;           /* was recursive change detect */
             int64_t   st_qspare2;
-    };
-
-    enum S_IRUSR    = 0x100; // octal 0000400
-    enum S_IWUSR    = 0x080; // octal 0000200
-    enum S_IXUSR    = 0x040; // octal 0000100
-    enum S_IRWXU    = 0x1C0; // octal 0000700
-
-    enum S_IRGRP    = 0x020;  // octal 0000040
-    enum S_IWGRP    = 0x010;  // octal 0000020
-    enum S_IXGRP    = 0x008;  // octal 0000010
-    enum S_IRWXG    = 0x038;  // octal 0000070
-
-    enum S_IROTH    = 0x4; // 0000004
-    enum S_IWOTH    = 0x2; // 0000002
-    enum S_IXOTH    = 0x1; // 0000001
-    enum S_IRWXO    = 0x7; // 0000007
+    }
 
     enum S_ISUID    = 0x800; // octal 0004000
     enum S_ISGID    = 0x400; // octal 0002000
     enum S_ISVTX    = 0x200; // octal 0001000
-
-    private
-    {
-        extern (D) bool S_ISTYPE( mode_t mode, uint mask )
-        {
-            return ( mode & S_IFMT ) == mask;
-        }
-    }
-
-    extern (D) bool S_ISBLK( mode_t mode )  { return S_ISTYPE( mode, S_IFBLK );  }
-    extern (D) bool S_ISCHR( mode_t mode )  { return S_ISTYPE( mode, S_IFCHR );  }
-    extern (D) bool S_ISDIR( mode_t mode )  { return S_ISTYPE( mode, S_IFDIR );  }
-    extern (D) bool S_ISFIFO( mode_t mode ) { return S_ISTYPE( mode, S_IFIFO );  }
-    extern (D) bool S_ISREG( mode_t mode )  { return S_ISTYPE( mode, S_IFREG );  }
-    extern (D) bool S_ISLNK( mode_t mode )  { return S_ISTYPE( mode, S_IFLNK );  }
-    extern (D) bool S_ISSOCK( mode_t mode ) { return S_ISTYPE( mode, S_IFSOCK ); }
 }
 else version (Solaris)
 {
@@ -1298,7 +1458,7 @@ else version (Solaris)
             char[_ST_FSTYPSZ] st_fstype = 0;
         }
 
-        static if (__USE_LARGEFILE64) alias stat_t stat64_t;
+        static if (__USE_LARGEFILE64) alias stat64_t = stat_t;
     }
     else
     {
@@ -1348,7 +1508,6 @@ else version (Solaris)
             dev_t st_rdev;
             c_long[2] st_pad2;
             off64_t st_size;
-            c_long st_pad3;
             union
             {
                 timestruc_t st_atim;
@@ -1371,432 +1530,46 @@ else version (Solaris)
         }
 
         static if (__USE_FILE_OFFSET64)
-            alias stat64_t stat_t;
+            alias stat_t = stat64_t;
         else
-            alias stat32_t stat_t;
+            alias stat_t = stat32_t;
 
     }
-
-    enum S_IRUSR = 0x100;
-    enum S_IWUSR = 0x080;
-    enum S_IXUSR = 0x040;
-    enum S_IRWXU = 0x1C0;
-
-    enum S_IRGRP = 0x020;
-    enum S_IWGRP = 0x010;
-    enum S_IXGRP = 0x008;
-    enum S_IRWXG = 0x038;
-
-    enum S_IROTH = 0x4; // 0000004
-    enum S_IWOTH = 0x2; // 0000002
-    enum S_IXOTH = 0x1; // 0000001
-    enum S_IRWXO = 0x7; // 0000007
 
     enum S_ISUID = 0x800;
     enum S_ISGID = 0x400;
     enum S_ISVTX = 0x200;
-
-    private
-    {
-        extern (D) bool S_ISTYPE(mode_t mode, uint mask)
-        {
-            return (mode & S_IFMT) == mask;
-        }
-    }
-
-    extern (D) bool S_ISBLK(mode_t mode) { return S_ISTYPE(mode, S_IFBLK); }
-    extern (D) bool S_ISCHR(mode_t mode) { return S_ISTYPE(mode, S_IFCHR); }
-    extern (D) bool S_ISDIR(mode_t mode) { return S_ISTYPE(mode, S_IFDIR); }
-    extern (D) bool S_ISFIFO(mode_t mode) { return S_ISTYPE(mode, S_IFIFO); }
-    extern (D) bool S_ISREG(mode_t mode) { return S_ISTYPE(mode, S_IFREG); }
-    extern (D) bool S_ISLNK(mode_t mode) { return S_ISTYPE(mode, S_IFLNK); }
-    extern (D) bool S_ISSOCK(mode_t mode) { return S_ISTYPE(mode, S_IFSOCK); }
-    extern (D) bool S_ISDOOR(mode_t mode) { return S_ISTYPE(mode, S_IFDOOR); }
-    extern (D) bool S_ISPORT(mode_t mode) { return S_ISTYPE(mode, S_IFPORT); }
 }
-else version (CRuntime_Bionic)
+else
 {
-    version (X86)
-    {
-        struct stat_t
-        {
-            ulong       st_dev;
-            ubyte[4]    __pad0;
-            c_ulong     __st_ino;
-            uint        st_mode;
-            uint        st_nlink;
-            c_ulong     st_uid;
-            c_ulong     st_gid;
-            ulong       st_rdev;
-            ubyte[4]    __pad3;
-
-            long        st_size;
-            c_ulong     st_blksize;
-            ulong       st_blocks;
-            c_ulong     st_atime;
-            c_ulong     st_atime_nsec;
-            c_ulong     st_mtime;
-            c_ulong     st_mtime_nsec;
-            c_ulong     st_ctime;
-            c_ulong     st_ctime_nsec;
-            ulong       st_ino;
-        }
-    }
-    else version (ARM)
-    {
-        struct stat_t
-        {
-            ulong       st_dev;
-            ubyte[4]    __pad0;
-            c_ulong     __st_ino;
-            uint        st_mode;
-            uint        st_nlink;
-            c_ulong     st_uid;
-            c_ulong     st_gid;
-            ulong       st_rdev;
-            ubyte[4]    __pad3;
-
-            long        st_size;
-            c_ulong     st_blksize;
-            ulong       st_blocks;
-            c_ulong     st_atime;
-            c_ulong     st_atime_nsec;
-            c_ulong     st_mtime;
-            c_ulong     st_mtime_nsec;
-            c_ulong     st_ctime;
-            c_ulong     st_ctime_nsec;
-            ulong       st_ino;
-        }
-    }
-    else version (AArch64)
-    {
-        struct stat_t
-        {
-            ulong       st_dev;
-            ulong       st_ino;
-            uint        st_mode;
-            uint        st_nlink;
-            uid_t       st_uid;
-            gid_t       st_gid;
-            ulong       st_rdev;
-            ulong       __pad1;
-
-            long        st_size;
-            int         st_blksize;
-            int         __pad2;
-            long        st_blocks;
-            long        st_atime;
-            ulong       st_atime_nsec;
-            long        st_mtime;
-            ulong       st_mtime_nsec;
-            long        st_ctime;
-            ulong       st_ctime_nsec;
-            uint        __unused4;
-            uint        __unused5;
-        }
-    }
-    else version (X86_64)
-    {
-        struct stat_t
-        {
-            ulong       st_dev;
-            ulong       st_ino;
-            ulong       st_nlink;
-            uint        st_mode;
-            uid_t       st_uid;
-            gid_t       st_gid;
-            uint        __pad0;
-
-            ulong       st_rdev;
-            long        st_size;
-            long        st_blksize;
-            long        st_blocks;
-            long        st_atime;
-            ulong       st_atime_nsec;
-            long        st_mtime;
-            ulong       st_mtime_nsec;
-            long        st_ctime;
-            ulong       st_ctime_nsec;
-            long[3]     __pad3;
-        }
-    }
-    else
-    {
-        static assert(false, "Architecture not supported.");
-    }
-
-    enum S_IRUSR    = 0x100; // octal 0000400
-    enum S_IWUSR    = 0x080; // octal 0000200
-    enum S_IXUSR    = 0x040; // octal 0000100
-    enum S_IRWXU    = 0x1C0; // octal 0000700
-
-    enum S_IRGRP    = 0x020;  // octal 0000040
-    enum S_IWGRP    = 0x010;  // octal 0000020
-    enum S_IXGRP    = 0x008;  // octal 0000010
-    enum S_IRWXG    = 0x038;  // octal 0000070
-
-    enum S_IROTH    = 0x4; // 0000004
-    enum S_IWOTH    = 0x2; // 0000002
-    enum S_IXOTH    = 0x1; // 0000001
-    enum S_IRWXO    = 0x7; // 0000007
-
-    enum S_ISUID    = 0x800; // octal 0004000
-    enum S_ISGID    = 0x400; // octal 0002000
-    enum S_ISVTX    = 0x200; // octal 0001000
-
-    private
-    {
-        extern (D) bool S_ISTYPE( uint mode, uint mask )
-        {
-            return ( mode & S_IFMT ) == mask;
-        }
-    }
-
-    extern (D) bool S_ISBLK( uint mode )  { return S_ISTYPE( mode, S_IFBLK );  }
-    extern (D) bool S_ISCHR( uint mode )  { return S_ISTYPE( mode, S_IFCHR );  }
-    extern (D) bool S_ISDIR( uint mode )  { return S_ISTYPE( mode, S_IFDIR );  }
-    extern (D) bool S_ISFIFO( uint mode ) { return S_ISTYPE( mode, S_IFIFO );  }
-    extern (D) bool S_ISREG( uint mode )  { return S_ISTYPE( mode, S_IFREG );  }
-    extern (D) bool S_ISLNK( uint mode )  { return S_ISTYPE( mode, S_IFLNK );  }
-    extern (D) bool S_ISSOCK( uint mode ) { return S_ISTYPE( mode, S_IFSOCK ); }
-
-    // Added since Lollipop
-    int utimensat(int dirfd, const char *pathname,
-        ref const(timespec)[2] times, int flags);
+    static assert(false, "Unsupported platform");
 }
-else version (CRuntime_Musl)
+
+/*
+S_IRWXU
+    S_IRUSR
+    S_IWUSR
+    S_IXUSR
+S_IRWXG
+    S_IRGRP
+    S_IWGRP
+    S_IXGRP
+S_IRWXO
+    S_IROTH
+    S_IWOTH
+    S_IXOTH
+
+S_ISBLK(m)
+S_ISCHR(m)
+S_ISDIR(m)
+S_ISFIFO(m)
+S_ISREG(m)
+S_ISLNK(m)
+S_ISSOCK(m)
+ */
+
+version (CRuntime_Glibc)
 {
-    alias __mode_t = uint;
-    enum {
-        S_IRUSR    = 0x100, // octal 0400
-        S_IWUSR    = 0x080, // octal 0200
-        S_IXUSR    = 0x040, // octal 0100
-        S_IRWXU    = S_IRUSR | S_IWUSR | S_IXUSR,
-
-        S_IRGRP    = S_IRUSR >> 3,
-        S_IWGRP    = S_IWUSR >> 3,
-        S_IXGRP    = S_IXUSR >> 3,
-        S_IRWXG    = S_IRWXU >> 3,
-
-        S_IROTH    = S_IRGRP >> 3,
-        S_IWOTH    = S_IWGRP >> 3,
-        S_IXOTH    = S_IXGRP >> 3,
-        S_IRWXO    = S_IRWXG >> 3,
-
-        S_ISUID    = 0x800, // octal 04000
-        S_ISGID    = 0x400, // octal 02000
-        S_ISVTX    = 0x200, // octal 01000
-    }
-    struct stat_t {
-        dev_t st_dev;
-        ino_t st_ino;
-        nlink_t st_nlink;
-
-        mode_t st_mode;
-        uid_t st_uid;
-        gid_t st_gid;
-        uint    __pad0;
-        dev_t st_rdev;
-        off_t st_size;
-        blksize_t st_blksize;
-        blkcnt_t st_blocks;
-
-        timespec st_atim;
-        timespec st_mtim;
-        timespec st_ctim;
-        extern(D) @safe @property inout pure nothrow
-        {
-            ref inout(time_t) st_atime() return { return st_atim.tv_sec; }
-            ref inout(time_t) st_mtime() return { return st_mtim.tv_sec; }
-            ref inout(time_t) st_ctime() return { return st_ctim.tv_sec; }
-        }
-        long[3] __unused;
-    }
-    private
-    {
-        extern (D) bool S_ISTYPE( mode_t mode, uint mask )
-        {
-            return ( mode & S_IFMT ) == mask;
-        }
-    }
-
-    extern (D) bool S_ISBLK( mode_t mode )  { return S_ISTYPE( mode, S_IFBLK );  }
-    extern (D) bool S_ISCHR( mode_t mode )  { return S_ISTYPE( mode, S_IFCHR );  }
-    extern (D) bool S_ISDIR( mode_t mode )  { return S_ISTYPE( mode, S_IFDIR );  }
-    extern (D) bool S_ISFIFO( mode_t mode ) { return S_ISTYPE( mode, S_IFIFO );  }
-    extern (D) bool S_ISREG( mode_t mode )  { return S_ISTYPE( mode, S_IFREG );  }
-    extern (D) bool S_ISLNK( mode_t mode )  { return S_ISTYPE( mode, S_IFLNK );  }
-    extern (D) bool S_ISSOCK( mode_t mode ) { return S_ISTYPE( mode, S_IFSOCK ); }
-
-    int utimensat(int dirfd, const char *pathname,
-        ref const(timespec)[2] times, int flags);
-}
-else version (CRuntime_UClibc)
-{
-    version (X86_64)
-    {
-        struct stat_t
-        {
-            dev_t       st_dev;
-            ino_t       st_ino;
-            nlink_t     st_nlink;
-            mode_t      st_mode;
-            uid_t       st_uid;
-            gid_t       st_gid;
-            uint        __pad0;
-            dev_t       st_rdev;
-            off_t       st_size;
-            blksize_t   st_blksize;
-            blkcnt_t    st_blocks;
-            time_t      st_atime;
-            ulong_t     st_atimensec;
-            time_t      st_mtime;
-            ulong_t     st_mtimensec;
-            time_t      st_ctime;
-            ulong_t     st_ctimensec;
-            slong_t[3]     __unused;
-        }
-    }
-    else version (MIPS_O32)
-    {
-        struct stat_t
-        {
-            c_ulong     st_dev;
-            c_long[3]   st_pad1;
-            ino_t       st_ino;
-            mode_t      st_mode;
-            nlink_t     st_nlink;
-            uid_t       st_uid;
-            gid_t       st_gid;
-            c_ulong     st_rdev;
-            static if (!__USE_FILE_OFFSET64)
-            {
-                c_long[2]   st_pad2;
-                off_t       st_size;
-                c_long      st_pad3;
-            }
-            else
-            {
-                c_long[3]   st_pad2;
-                off_t       st_size;
-            }
-            static if (__USE_MISC || __USE_XOPEN2K8)
-            {
-                timespec    st_atim;
-                timespec    st_mtim;
-                timespec    st_ctim;
-                extern(D)
-                {
-                    @property ref time_t st_atime() { return st_atim.tv_sec; }
-                    @property ref time_t st_mtime() { return st_mtim.tv_sec; }
-                    @property ref time_t st_ctime() { return st_ctim.tv_sec; }
-                }
-            }
-            else
-            {
-                time_t      st_atime;
-                c_ulong     st_atimensec;
-                time_t      st_mtime;
-                c_ulong     st_mtimensec;
-                time_t      st_ctime;
-                c_ulong     st_ctimensec;
-            }
-            blksize_t   st_blksize;
-            static if (!__USE_FILE_OFFSET64)
-            {
-                blkcnt_t    st_blocks;
-            }
-            else
-            {
-                c_long      st_pad4;
-                blkcnt_t    st_blocks;
-            }
-            c_long[14]  st_pad5;
-        }
-    }
-    else version (ARM)
-    {
-        private
-        {
-            alias __dev_t = ulong;
-            alias __ino_t = c_ulong;
-            alias __ino64_t = ulong;
-            alias __mode_t = uint;
-            alias __nlink_t = size_t;
-            alias __uid_t = uint;
-            alias __gid_t = uint;
-            alias __off_t = c_long;
-            alias __off64_t = long;
-            alias __blksize_t = c_long;
-            alias __blkcnt_t = c_long;
-            alias __blkcnt64_t = long;
-            alias __timespec = timespec;
-            alias __time_t = time_t;
-        }
-        struct stat_t
-        {
-            __dev_t st_dev;
-            ushort __pad1;
-
-            static if (!__USE_FILE_OFFSET64)
-            {
-                __ino_t st_ino;
-            }
-            else
-            {
-                __ino_t __st_ino;
-            }
-            __mode_t st_mode;
-            __nlink_t st_nlink;
-            __uid_t st_uid;
-            __gid_t st_gid;
-            __dev_t st_rdev;
-            ushort __pad2;
-
-            static if (!__USE_FILE_OFFSET64)
-            {
-                __off_t st_size;
-            }
-            else
-            {
-                __off64_t st_size;
-            }
-            __blksize_t st_blksize;
-
-            static if (!__USE_FILE_OFFSET64)
-            {
-                __blkcnt_t st_blocks;
-            }
-            else
-            {
-                __blkcnt64_t st_blocks;
-            }
-
-            __time_t st_atime;
-            c_ulong st_atimensec;
-            __time_t st_mtime;
-            c_ulong st_mtimensec;
-            __time_t st_ctime;
-            c_ulong st_ctimensec;
-
-            static if (!__USE_FILE_OFFSET64)
-            {
-                c_ulong __unused4;
-                c_ulong __unused5;
-            }
-            else
-            {
-                __ino64_t st_ino;
-            }
-        }
-        static if (__USE_FILE_OFFSET64)
-            static assert(stat_t.sizeof == 104);
-        else
-            static assert(stat_t.sizeof == 88);
-    }
-    else
-        static assert(0, "unimplemented");
-
     enum S_IRUSR    = 0x100; // octal 0400
     enum S_IWUSR    = 0x080; // octal 0200
     enum S_IXUSR    = 0x040; // octal 0100
@@ -1812,52 +1585,344 @@ else version (CRuntime_UClibc)
     enum S_IXOTH    = S_IXGRP >> 3;
     enum S_IRWXO    = S_IRWXG >> 3;
 
-    enum S_ISUID    = 0x800; // octal 04000
-    enum S_ISGID    = 0x400; // octal 02000
-    enum S_ISVTX    = 0x200; // octal 01000
-
     private
     {
-        extern (D) bool S_ISTYPE( mode_t mode, uint mask )
+        extern (D) bool S_ISTYPE()( mode_t mode, uint mask )
         {
             return ( mode & S_IFMT ) == mask;
         }
     }
 
-    extern (D) bool S_ISBLK( mode_t mode )  { return S_ISTYPE( mode, S_IFBLK );  }
-    extern (D) bool S_ISCHR( mode_t mode )  { return S_ISTYPE( mode, S_IFCHR );  }
-    extern (D) bool S_ISDIR( mode_t mode )  { return S_ISTYPE( mode, S_IFDIR );  }
-    extern (D) bool S_ISFIFO( mode_t mode ) { return S_ISTYPE( mode, S_IFIFO );  }
-    extern (D) bool S_ISREG( mode_t mode )  { return S_ISTYPE( mode, S_IFREG );  }
-    extern (D) bool S_ISLNK( mode_t mode )  { return S_ISTYPE( mode, S_IFLNK );  }
-    extern (D) bool S_ISSOCK( mode_t mode ) { return S_ISTYPE( mode, S_IFSOCK ); }
+    extern (D) bool S_ISBLK()( mode_t mode )  { return S_ISTYPE( mode, S_IFBLK );  }
+    extern (D) bool S_ISCHR()( mode_t mode )  { return S_ISTYPE( mode, S_IFCHR );  }
+    extern (D) bool S_ISDIR()( mode_t mode )  { return S_ISTYPE( mode, S_IFDIR );  }
+    extern (D) bool S_ISFIFO()( mode_t mode ) { return S_ISTYPE( mode, S_IFIFO );  }
+    extern (D) bool S_ISREG()( mode_t mode )  { return S_ISTYPE( mode, S_IFREG );  }
+    extern (D) bool S_ISLNK()( mode_t mode )  { return S_ISTYPE( mode, S_IFLNK );  }
+    extern (D) bool S_ISSOCK()( mode_t mode ) { return S_ISTYPE( mode, S_IFSOCK ); }
+}
+else version (Darwin)
+{
+    enum S_IRUSR    = 0x100;  // octal 0400
+    enum S_IWUSR    = 0x080;  // octal 0200
+    enum S_IXUSR    = 0x040;  // octal 0100
+    enum S_IRWXU    = S_IRUSR | S_IWUSR | S_IXUSR;
 
-    static if ( true /*__USE_POSIX199309*/ )
+    enum S_IRGRP    = S_IRUSR >> 3;
+    enum S_IWGRP    = S_IWUSR >> 3;
+    enum S_IXGRP    = S_IXUSR >> 3;
+    enum S_IRWXG    = S_IRWXU >> 3;
+
+    enum S_IROTH    = S_IRGRP >> 3;
+    enum S_IWOTH    = S_IWGRP >> 3;
+    enum S_IXOTH    = S_IXGRP >> 3;
+    enum S_IRWXO    = S_IRWXG >> 3;
+
+    private
     {
-        extern bool S_TYPEISMQ( stat_t* buf )  { return false; }
-        extern bool S_TYPEISSEM( stat_t* buf ) { return false; }
-        extern bool S_TYPEISSHM( stat_t* buf ) { return false; }
+        extern (D) bool S_ISTYPE()( mode_t mode, uint mask )
+        {
+            return ( mode & S_IFMT ) == mask;
+        }
     }
 
-    enum UTIME_NOW = 0x3fffffff;
-    enum UTIME_OMIT = 0x3ffffffe;
+    extern (D) bool S_ISBLK()( mode_t mode )  { return S_ISTYPE( mode, S_IFBLK );  }
+    extern (D) bool S_ISCHR()( mode_t mode )  { return S_ISTYPE( mode, S_IFCHR );  }
+    extern (D) bool S_ISDIR()( mode_t mode )  { return S_ISTYPE( mode, S_IFDIR );  }
+    extern (D) bool S_ISFIFO()( mode_t mode ) { return S_ISTYPE( mode, S_IFIFO );  }
+    extern (D) bool S_ISREG()( mode_t mode )  { return S_ISTYPE( mode, S_IFREG );  }
+    extern (D) bool S_ISLNK()( mode_t mode )  { return S_ISTYPE( mode, S_IFLNK );  }
+    extern (D) bool S_ISSOCK()( mode_t mode ) { return S_ISTYPE( mode, S_IFSOCK ); }
+}
+else version (FreeBSD)
+{
+    enum S_IRUSR    = 0x100; // octal 0000400
+    enum S_IWUSR    = 0x080; // octal 0000200
+    enum S_IXUSR    = 0x040; // octal 0000100
+    enum S_IRWXU    = 0x1C0; // octal 0000700
 
-    int utimensat(int dirfd, const char *pathname,
-    ref const(timespec)[2] times, int flags);
-    int futimens(int fd, ref const(timespec)[2] times);
+    enum S_IRGRP    = 0x020;  // octal 0000040
+    enum S_IWGRP    = 0x010;  // octal 0000020
+    enum S_IXGRP    = 0x008;  // octal 0000010
+    enum S_IRWXG    = 0x038;  // octal 0000070
+
+    enum S_IROTH    = 0x4; // 0000004
+    enum S_IWOTH    = 0x2; // 0000002
+    enum S_IXOTH    = 0x1; // 0000001
+    enum S_IRWXO    = 0x7; // 0000007
+
+    private
+    {
+        extern (D) bool S_ISTYPE()( mode_t mode, uint mask )
+        {
+            return ( mode & S_IFMT ) == mask;
+        }
+    }
+
+    extern (D) bool S_ISBLK()( mode_t mode )  { return S_ISTYPE( mode, S_IFBLK );  }
+    extern (D) bool S_ISCHR()( mode_t mode )  { return S_ISTYPE( mode, S_IFCHR );  }
+    extern (D) bool S_ISDIR()( mode_t mode )  { return S_ISTYPE( mode, S_IFDIR );  }
+    extern (D) bool S_ISFIFO()( mode_t mode ) { return S_ISTYPE( mode, S_IFIFO );  }
+    extern (D) bool S_ISREG()( mode_t mode )  { return S_ISTYPE( mode, S_IFREG );  }
+    extern (D) bool S_ISLNK()( mode_t mode )  { return S_ISTYPE( mode, S_IFLNK );  }
+    extern (D) bool S_ISSOCK()( mode_t mode ) { return S_ISTYPE( mode, S_IFSOCK ); }
+}
+else version (NetBSD)
+{
+    enum S_IRUSR    = 0x100; // octal 0000400
+    enum S_IWUSR    = 0x080; // octal 0000200
+    enum S_IXUSR    = 0x040; // octal 0000100
+    enum S_IRWXU    = 0x1C0; // octal 0000700
+
+    enum S_IRGRP    = 0x020;  // octal 0000040
+    enum S_IWGRP    = 0x010;  // octal 0000020
+    enum S_IXGRP    = 0x008;  // octal 0000010
+    enum S_IRWXG    = 0x038;  // octal 0000070
+
+    enum S_IROTH    = 0x4; // 0000004
+    enum S_IWOTH    = 0x2; // 0000002
+    enum S_IXOTH    = 0x1; // 0000001
+    enum S_IRWXO    = 0x7; // 0000007
+
+    private
+    {
+        extern (D) bool S_ISTYPE()( mode_t mode, uint mask )
+        {
+            return ( mode & S_IFMT ) == mask;
+        }
+    }
+
+    extern (D) bool S_ISBLK()( mode_t mode )  { return S_ISTYPE( mode, S_IFBLK );  }
+    extern (D) bool S_ISCHR()( mode_t mode )  { return S_ISTYPE( mode, S_IFCHR );  }
+    extern (D) bool S_ISDIR()( mode_t mode )  { return S_ISTYPE( mode, S_IFDIR );  }
+    extern (D) bool S_ISFIFO()( mode_t mode ) { return S_ISTYPE( mode, S_IFIFO );  }
+    extern (D) bool S_ISREG()( mode_t mode )  { return S_ISTYPE( mode, S_IFREG );  }
+    extern (D) bool S_ISLNK()( mode_t mode )  { return S_ISTYPE( mode, S_IFLNK );  }
+    extern (D) bool S_ISSOCK()( mode_t mode ) { return S_ISTYPE( mode, S_IFSOCK ); }
+}
+else version (OpenBSD)
+{
+    enum S_IRUSR    = 0x100; // octal 0000400
+    enum S_IWUSR    = 0x080; // octal 0000200
+    enum S_IXUSR    = 0x040; // octal 0000100
+    enum S_IRWXU    = 0x1C0; // octal 0000700
+
+    enum S_IRGRP    = 0x020;  // octal 0000040
+    enum S_IWGRP    = 0x010;  // octal 0000020
+    enum S_IXGRP    = 0x008;  // octal 0000010
+    enum S_IRWXG    = 0x038;  // octal 0000070
+
+    enum S_IROTH    = 0x4; // 0000004
+    enum S_IWOTH    = 0x2; // 0000002
+    enum S_IXOTH    = 0x1; // 0000001
+    enum S_IRWXO    = 0x7; // 0000007
+
+    extern (D) bool S_ISBLK()(mode_t mode)  { return (mode & S_IFMT) == S_IFBLK;  }
+    extern (D) bool S_ISCHR()(mode_t mode)  { return (mode & S_IFMT) == S_IFCHR;  }
+    extern (D) bool S_ISDIR()(mode_t mode)  { return (mode & S_IFMT) == S_IFDIR;  }
+    extern (D) bool S_ISFIFO()(mode_t mode) { return (mode & S_IFMT) == S_IFIFO;  }
+    extern (D) bool S_ISREG()(mode_t mode)  { return (mode & S_IFMT) == S_IFREG;  }
+    extern (D) bool S_ISLNK()(mode_t mode)  { return (mode & S_IFMT) == S_IFLNK;  }
+    extern (D) bool S_ISSOCK()(mode_t mode) { return (mode & S_IFMT) == S_IFSOCK; }
+}
+else version (DragonFlyBSD)
+{
+    enum S_IRUSR    = 0x100; // octal 0000400
+    enum S_IWUSR    = 0x080; // octal 0000200
+    enum S_IXUSR    = 0x040; // octal 0000100
+    enum S_IRWXU    = 0x1C0; // octal 0000700
+
+    enum S_IRGRP    = 0x020;  // octal 0000040
+    enum S_IWGRP    = 0x010;  // octal 0000020
+    enum S_IXGRP    = 0x008;  // octal 0000010
+    enum S_IRWXG    = 0x038;  // octal 0000070
+
+    enum S_IROTH    = 0x4; // 0000004
+    enum S_IWOTH    = 0x2; // 0000002
+    enum S_IXOTH    = 0x1; // 0000001
+    enum S_IRWXO    = 0x7; // 0000007
+
+    private
+    {
+        extern (D) bool S_ISTYPE()( mode_t mode, uint mask )
+        {
+            return ( mode & S_IFMT ) == mask;
+        }
+    }
+
+    extern (D) bool S_ISBLK()( mode_t mode )  { return S_ISTYPE( mode, S_IFBLK );  }
+    extern (D) bool S_ISCHR()( mode_t mode )  { return S_ISTYPE( mode, S_IFCHR );  }
+    extern (D) bool S_ISDIR()( mode_t mode )  { return S_ISTYPE( mode, S_IFDIR );  }
+    extern (D) bool S_ISFIFO()( mode_t mode ) { return S_ISTYPE( mode, S_IFIFO );  }
+    extern (D) bool S_ISREG()( mode_t mode )  { return S_ISTYPE( mode, S_IFREG );  }
+    extern (D) bool S_ISLNK()( mode_t mode )  { return S_ISTYPE( mode, S_IFLNK );  }
+    extern (D) bool S_ISSOCK()( mode_t mode ) { return S_ISTYPE( mode, S_IFSOCK ); }
+}
+else version (Solaris)
+{
+    enum S_IRUSR = 0x100;
+    enum S_IWUSR = 0x080;
+    enum S_IXUSR = 0x040;
+    enum S_IRWXU = 0x1C0;
+
+    enum S_IRGRP = 0x020;
+    enum S_IWGRP = 0x010;
+    enum S_IXGRP = 0x008;
+    enum S_IRWXG = 0x038;
+
+    enum S_IROTH = 0x4; // 0000004
+    enum S_IWOTH = 0x2; // 0000002
+    enum S_IXOTH = 0x1; // 0000001
+    enum S_IRWXO = 0x7; // 0000007
+
+    private
+    {
+        extern (D) bool S_ISTYPE()(mode_t mode, uint mask)
+        {
+            return (mode & S_IFMT) == mask;
+        }
+    }
+
+    extern (D) bool S_ISBLK()(mode_t mode) { return S_ISTYPE(mode, S_IFBLK); }
+    extern (D) bool S_ISCHR()(mode_t mode) { return S_ISTYPE(mode, S_IFCHR); }
+    extern (D) bool S_ISDIR()(mode_t mode) { return S_ISTYPE(mode, S_IFDIR); }
+    extern (D) bool S_ISFIFO()(mode_t mode) { return S_ISTYPE(mode, S_IFIFO); }
+    extern (D) bool S_ISREG()(mode_t mode) { return S_ISTYPE(mode, S_IFREG); }
+    extern (D) bool S_ISLNK()(mode_t mode) { return S_ISTYPE(mode, S_IFLNK); }
+    extern (D) bool S_ISSOCK()(mode_t mode) { return S_ISTYPE(mode, S_IFSOCK); }
+    extern (D) bool S_ISDOOR()(mode_t mode) { return S_ISTYPE(mode, S_IFDOOR); }
+    extern (D) bool S_ISPORT()(mode_t mode) { return S_ISTYPE(mode, S_IFPORT); }
+}
+else version (CRuntime_Bionic)
+{
+    enum S_IRUSR    = 0x100; // octal 0000400
+    enum S_IWUSR    = 0x080; // octal 0000200
+    enum S_IXUSR    = 0x040; // octal 0000100
+    enum S_IRWXU    = 0x1C0; // octal 0000700
+
+    enum S_IRGRP    = 0x020;  // octal 0000040
+    enum S_IWGRP    = 0x010;  // octal 0000020
+    enum S_IXGRP    = 0x008;  // octal 0000010
+    enum S_IRWXG    = 0x038;  // octal 0000070
+
+    enum S_IROTH    = 0x4; // 0000004
+    enum S_IWOTH    = 0x2; // 0000002
+    enum S_IXOTH    = 0x1; // 0000001
+    enum S_IRWXO    = 0x7; // 0000007
+
+    private
+    {
+        extern (D) bool S_ISTYPE()( uint mode, uint mask )
+        {
+            return ( mode & S_IFMT ) == mask;
+        }
+    }
+
+    extern (D) bool S_ISBLK()( uint mode )  { return S_ISTYPE( mode, S_IFBLK );  }
+    extern (D) bool S_ISCHR()( uint mode )  { return S_ISTYPE( mode, S_IFCHR );  }
+    extern (D) bool S_ISDIR()( uint mode )  { return S_ISTYPE( mode, S_IFDIR );  }
+    extern (D) bool S_ISFIFO()( uint mode ) { return S_ISTYPE( mode, S_IFIFO );  }
+    extern (D) bool S_ISREG()( uint mode )  { return S_ISTYPE( mode, S_IFREG );  }
+    extern (D) bool S_ISLNK()( uint mode )  { return S_ISTYPE( mode, S_IFLNK );  }
+    extern (D) bool S_ISSOCK()( uint mode ) { return S_ISTYPE( mode, S_IFSOCK ); }
+}
+else version (CRuntime_Musl)
+{
+    enum {
+        S_IRUSR    = 0x100, // octal 0400
+        S_IWUSR    = 0x080, // octal 0200
+        S_IXUSR    = 0x040, // octal 0100
+        S_IRWXU    = S_IRUSR | S_IWUSR | S_IXUSR,
+
+        S_IRGRP    = S_IRUSR >> 3,
+        S_IWGRP    = S_IWUSR >> 3,
+        S_IXGRP    = S_IXUSR >> 3,
+        S_IRWXG    = S_IRWXU >> 3,
+
+        S_IROTH    = S_IRGRP >> 3,
+        S_IWOTH    = S_IWGRP >> 3,
+        S_IXOTH    = S_IXGRP >> 3,
+        S_IRWXO    = S_IRWXG >> 3,
+    }
+
+    private
+    {
+        extern (D) bool S_ISTYPE()( mode_t mode, uint mask )
+        {
+            return ( mode & S_IFMT ) == mask;
+        }
+    }
+
+    extern (D) bool S_ISBLK()( mode_t mode )  { return S_ISTYPE( mode, S_IFBLK );  }
+    extern (D) bool S_ISCHR()( mode_t mode )  { return S_ISTYPE( mode, S_IFCHR );  }
+    extern (D) bool S_ISDIR()( mode_t mode )  { return S_ISTYPE( mode, S_IFDIR );  }
+    extern (D) bool S_ISFIFO()( mode_t mode ) { return S_ISTYPE( mode, S_IFIFO );  }
+    extern (D) bool S_ISREG()( mode_t mode )  { return S_ISTYPE( mode, S_IFREG );  }
+    extern (D) bool S_ISLNK()( mode_t mode )  { return S_ISTYPE( mode, S_IFLNK );  }
+    extern (D) bool S_ISSOCK()( mode_t mode ) { return S_ISTYPE( mode, S_IFSOCK ); }
+}
+else version (CRuntime_UClibc)
+{
+    enum S_IRUSR    = 0x100; // octal 0400
+    enum S_IWUSR    = 0x080; // octal 0200
+    enum S_IXUSR    = 0x040; // octal 0100
+    enum S_IRWXU    = S_IRUSR | S_IWUSR | S_IXUSR;
+
+    enum S_IRGRP    = S_IRUSR >> 3;
+    enum S_IWGRP    = S_IWUSR >> 3;
+    enum S_IXGRP    = S_IXUSR >> 3;
+    enum S_IRWXG    = S_IRWXU >> 3;
+
+    enum S_IROTH    = S_IRGRP >> 3;
+    enum S_IWOTH    = S_IWGRP >> 3;
+    enum S_IXOTH    = S_IXGRP >> 3;
+    enum S_IRWXO    = S_IRWXG >> 3;
+
+    private
+    {
+        extern (D) bool S_ISTYPE()( mode_t mode, uint mask )
+        {
+            return ( mode & S_IFMT ) == mask;
+        }
+    }
+
+    extern (D) bool S_ISBLK()( mode_t mode )  { return S_ISTYPE( mode, S_IFBLK );  }
+    extern (D) bool S_ISCHR()( mode_t mode )  { return S_ISTYPE( mode, S_IFCHR );  }
+    extern (D) bool S_ISDIR()( mode_t mode )  { return S_ISTYPE( mode, S_IFDIR );  }
+    extern (D) bool S_ISFIFO()( mode_t mode ) { return S_ISTYPE( mode, S_IFIFO );  }
+    extern (D) bool S_ISREG()( mode_t mode )  { return S_ISTYPE( mode, S_IFREG );  }
+    extern (D) bool S_ISLNK()( mode_t mode )  { return S_ISTYPE( mode, S_IFLNK );  }
+    extern (D) bool S_ISSOCK()( mode_t mode ) { return S_ISTYPE( mode, S_IFSOCK ); }
 }
 else
 {
     static assert(false, "Unsupported platform");
 }
 
-int    chmod(in char*, mode_t);
+/*
+int    chmod(const scope char*, mode_t);
+int    fchmod(int, mode_t);
+int    fchmodat(int, const scope char*, mode_t, int);
+int    fstat(int, stat_t*);
+int    fstatat(int, const scope char*, stat_t*, int);
+int    futimens(int, ref const(timespec)[2]);
+int    lstat(const scope char*, stat_t*);
+int    mkdir(const scope char*, mode_t);
+int    mkdirat(int, const scope char*, mode_t);
+int    mkfifo(const scope char*, mode_t);
+int    mkfifoat(int, const scope char*, mode_t);
+int    stat(const scope char*, stat_t*);
+mode_t umask(mode_t);
+int    utimensat(int, const scope char*, ref const(timespec)[2], int);
+*/
+
+int    chmod(const scope char*, mode_t);
 int    fchmod(int, mode_t);
 //int    fstat(int, stat_t*);
-//int    lstat(in char*, stat_t*);
-int    mkdir(in char*, mode_t);
-int    mkfifo(in char*, mode_t);
-//int    stat(in char*, stat_t*);
+//int    lstat(const scope char*, stat_t*);
+int    mkdir(const scope char*, mode_t);
+int    mkfifo(const scope char*, mode_t);
+//int    stat(const scope char*, stat_t*);
 mode_t umask(mode_t);
 
 version (CRuntime_Glibc)
@@ -1865,34 +1930,45 @@ version (CRuntime_Glibc)
   static if ( __USE_LARGEFILE64 )
   {
     int   fstat64(int, stat_t*) @trusted;
-    alias fstat64 fstat;
+    alias fstat = fstat64;
 
-    int   lstat64(in char*, stat_t*);
-    alias lstat64 lstat;
+    int   lstat64(const scope char*, stat_t*);
+    alias lstat = lstat64;
 
-    int   stat64(in char*, stat_t*);
-    alias stat64 stat;
+    int   stat64(const scope char*, stat_t*);
+    alias stat = stat64;
+
+    int   fstatat64(int, const scope char*, stat_t*, int);
+    alias fstatat = fstatat64;
+
   }
   else
   {
     int   fstat(int, stat_t*) @trusted;
-    int   lstat(in char*, stat_t*);
-    int   stat(in char*, stat_t*);
+    int   lstat(const scope char*, stat_t*);
+    int   stat(const scope char*, stat_t*);
   }
+    int   fchmodat(int, const scope char*, mode_t, int);
+    int   futimens(int, ref const(timespec)[2]);
+    int   mkdirat(int, const scope char*, mode_t);
+    int   mkfifoat(int, const scope char*, mode_t);
+    int   utimensat(int, const scope char*, ref const(timespec)[2], int);
 }
 else version (Solaris)
 {
     version (D_LP64)
     {
         int fstat(int, stat_t*) @trusted;
-        int lstat(in char*, stat_t*);
-        int stat(in char*, stat_t*);
+        int lstat(const scope char*, stat_t*);
+        int stat(const scope char*, stat_t*);
+        int fstatat(int, const scope char*, stat_t*, int);
 
         static if (__USE_LARGEFILE64)
         {
-            alias fstat fstat64;
-            alias lstat lstat64;
-            alias stat stat64;
+            alias fstat64 = fstat;
+            alias lstat64 = lstat;
+            alias stat64 = stat;
+            alias fstatat64 = fstatat;
         }
     }
     else
@@ -1900,21 +1976,30 @@ else version (Solaris)
         static if (__USE_LARGEFILE64)
         {
             int   fstat64(int, stat_t*) @trusted;
-            alias fstat64 fstat;
+            alias fstat = fstat64;
 
-            int   lstat64(in char*, stat_t*);
-            alias lstat64 lstat;
+            int   lstat64(const scope char*, stat_t*);
+            alias lstat = lstat64;
 
-            int   stat64(in char*, stat_t*);
-            alias stat64 stat;
+            int   stat64(const scope char*, stat_t*);
+            alias stat = stat64;
+
+            int fstatat64(int, const scope char*, stat_t*, int);
+            alias fstatat = fstatat64;
         }
         else
         {
             int fstat(int, stat_t*) @trusted;
-            int lstat(in char*, stat_t*);
-            int stat(in char*, stat_t*);
+            int lstat(const scope char*, stat_t*);
+            int stat(const scope char*, stat_t*);
+            int fstatat(int, const scope char*, stat_t*, int);
         }
     }
+    int   fchmodat(int, const scope char*, mode_t, int);
+    int   futimens(int, ref const(timespec)[2]);
+    int   mkdirat(int, const scope char*, mode_t);
+    int   mkfifoat(int, const scope char*, mode_t);
+    int   utimensat(int, const scope char*, ref const(timespec)[2], int);
 }
 else version (Darwin)
 {
@@ -1922,74 +2007,217 @@ else version (Darwin)
     // inode functions by appending $INODE64 to newer 64-bit inode functions.
     version (OSX)
     {
-        pragma(mangle, "fstat$INODE64") int fstat(int, stat_t*);
-        pragma(mangle, "lstat$INODE64") int lstat(in char*, stat_t*);
-        pragma(mangle, "stat$INODE64")  int stat(in char*, stat_t*);
+        version (AArch64)
+        {
+            int fstat(int, stat_t*);
+            int fstatat(int, const scope char*, stat_t*, int);
+            int lstat(const scope char*, stat_t*);
+            int stat(const scope char*, stat_t*);
+        }
+        else
+        {
+            pragma(mangle, "fstat$INODE64") int fstat(int, stat_t*);
+            pragma(mangle, "fstatat$INODE64") int fstatat(int, const scope char*, stat_t*, int);
+            pragma(mangle, "lstat$INODE64") int lstat(const scope char*, stat_t*);
+            pragma(mangle, "stat$INODE64")  int stat(const scope char*, stat_t*);
+        }
     }
     else
     {
         int fstat(int, stat_t*);
-        int lstat(in char*, stat_t*);
-        int stat(in char*, stat_t*);
+        int fstatat(int, const scope char*, stat_t*, int);
+        int lstat(const scope char*, stat_t*);
+        int stat(const scope char*, stat_t*);
     }
+    int   fchmodat(int, const scope char*, mode_t, int);
+    int   mkdirat(int, const scope char*, mode_t);
+    // OSX available starting 10.12
+    //int   futimens(int, ref const(timespec)[2]);
+    //int   utimensat(int, const scope char*, ref const(timespec)[2], int);
+    // OSX available starting 13
+    //int   mkfifoat(int, const scope char*, mode_t);
 }
 else version (FreeBSD)
 {
-    int   fstat(int, stat_t*);
-    int   lstat(in char*, stat_t*);
-    int   stat(in char*, stat_t*);
+    version (GNU)
+    {
+        int   fstat(int, stat_t*);
+        int   lstat(const scope char*, stat_t*);
+        int   stat(const scope char*, stat_t*);
+    }
+    else
+    {
+        static if (__FreeBSD_version >= INO64_FIRST)
+        {
+            pragma(mangle, "fstat@FBSD_1.5") int   fstat(int, stat_t*);
+            pragma(mangle, "lstat@FBSD_1.5") int   lstat(const scope char*, stat_t*);
+            pragma(mangle, "stat@FBSD_1.5")  int   stat(const scope char*, stat_t*);
+        }
+        else
+        {
+            pragma(mangle, "fstat@FBSD_1.0") int   fstat(int, stat_t*);
+            pragma(mangle, "lstat@FBSD_1.0") int   lstat(const scope char*, stat_t*);
+            pragma(mangle, "stat@FBSD_1.0")  int   stat(const scope char*, stat_t*);
+        }
+    }
+    static if (__FreeBSD_version >= 800000)
+    {
+        int fchmodat(int, const scope char*, mode_t, int);
+        int fstatat(int, const scope char*, stat_t*, int);
+        int mkdirat(int, const scope char*, mode_t);
+        int mkfifoat(int, const scope char*, mode_t);
+    }
+    static if (__FreeBSD_version >= 1003000)
+    {
+        int futimens(int, ref const(timespec)[2]);
+        int utimensat(int, const scope char*, ref const(timespec)[2], int);
+    }
 }
 else version (NetBSD)
 {
     int   __fstat50(int, stat_t*);
-    int   __lstat50(in char*, stat_t*);
-    int   __stat50(in char*, stat_t*);
-    alias __fstat50 fstat;
-    alias __lstat50 lstat;
-    alias __stat50 stat;
+    int   __lstat50(const scope char*, stat_t*);
+    int   __stat50(const scope char*, stat_t*);
+    alias fstat = __fstat50;
+    alias lstat = __lstat50;
+    alias stat = __stat50;
+    int   fchmodat(int, const scope char*, mode_t, int);
+    int   fstatat(int, const scope char*, stat_t*, int);
+    int   futimens(int, ref const(timespec)[2]);
+    int   mkdirat(int, const scope char*, mode_t);
+    int   mkfifoat(int, const scope char*, mode_t);
+    int   utimensat(int, const scope char*, ref const(timespec)[2], int);
+}
+else version (OpenBSD)
+{
+    int   fstat(int, stat_t*);
+    int   lstat(const scope char*, stat_t*);
+    int   stat(const scope char*, stat_t*);
+    int   fchmodat(int, const scope char*, mode_t, int);
+    int   fstatat(int, const scope char*, stat_t*, int);
+    int   futimens(int, ref const(timespec)[2]);
+    int   mkdirat(int, const scope char*, mode_t);
+    int   mkfifoat(int, const scope char*, mode_t);
+    int   utimensat(int, const scope char*, ref const(timespec)[2], int);
 }
 else version (DragonFlyBSD)
 {
     int   fstat(int, stat_t*);
-    int   lstat(in char*, stat_t*);
-    int   stat(in char*, stat_t*);
+    int   lstat(const scope char*, stat_t*);
+    int   stat(const scope char*, stat_t*);
+    int   fchmodat(int, const scope char*, mode_t, int);
+    int   fstatat(int, const scope char*, stat_t*, int);
+    int   futimens(int, ref const(timespec)[2]);
+    int   mkdirat(int, const scope char*, mode_t);
+    int   mkfifoat(int, const scope char*, mode_t);
+    int   utimensat(int, const scope char*, ref const(timespec)[2], int);
 }
 else version (CRuntime_Bionic)
 {
     int   fstat(int, stat_t*) @trusted;
-    int   lstat(in char*, stat_t*);
-    int   stat(in char*, stat_t*);
+    int   lstat(const scope char*, stat_t*);
+    int   stat(const scope char*, stat_t*);
+    int   fchmodat(int, const scope char*, mode_t, int);
+    int   fstatat(int, const scope char*, stat_t*, int);
+    int   futimens(int, ref const(timespec)[2]);
+    int   mkdirat(int, const scope char*, mode_t);
+    int   mkfifoat(int, const scope char*, mode_t);
+    int   utimensat(int, const scope char*, ref const(timespec)[2], int);
 }
 else version (CRuntime_Musl)
 {
-    int stat(in char*, stat_t*);
+    pragma(mangle, muslRedirTime64Mangle!("stat", "__stat_time64"))
+    int stat(const scope char*, stat_t*);
+    pragma(mangle, muslRedirTime64Mangle!("fstat", "__fstat_time64"))
     int fstat(int, stat_t*);
-    int lstat(in char*, stat_t*);
+    pragma(mangle, muslRedirTime64Mangle!("lstat", "__lstat_time64"))
+    int lstat(const scope char*, stat_t*);
+    pragma(mangle, muslRedirTime64Mangle!("fstatat", "__fstatat_time64"))
+    int   fstatat(int, const scope char*, stat_t*, int);
 
-    alias fstat fstat64;
-    alias lstat lstat64;
-    alias stat stat64;
+    alias fstat64 = fstat;
+    alias lstat64 = lstat;
+    alias stat64 = stat;
+    int   fchmodat(int, const scope char*, mode_t, int);
+    int   futimens(int, ref const(timespec)[2]);
+    int   mkdirat(int, const scope char*, mode_t);
+    int   mkfifoat(int, const scope char*, mode_t);
+    int   utimensat(int, const scope char*, ref const(timespec)[2], int);
 }
 else version (CRuntime_UClibc)
 {
   static if ( __USE_LARGEFILE64 )
   {
     int   fstat64(int, stat_t*) @trusted;
-    alias fstat64 fstat;
+    alias fstat = fstat64;
 
-    int   lstat64(in char*, stat_t*);
-    alias lstat64 lstat;
+    int   lstat64(const scope char*, stat_t*);
+    alias lstat = lstat64;
 
-    int   stat64(in char*, stat_t*);
-    alias stat64 stat;
+    int   stat64(const scope char*, stat_t*);
+    alias stat = stat64;
+
+    int   fstatat64(int, const scope char*, stat_t*, int);
+    alias fstatat = fstatat64;
   }
   else
   {
     int   fstat(int, stat_t*) @trusted;
-    int   lstat(in char*, stat_t*);
-    int   stat(in char*, stat_t*);
+    int   lstat(const scope char*, stat_t*);
+    int   stat(const scope char*, stat_t*);
+    int   fstatat(int, const scope char*, stat_t*, int);
   }
+    int   fchmodat(int, const scope char*, mode_t, int);
+    int   futimens(int, ref const(timespec)[2]);
+    int   mkdirat(int, const scope char*, mode_t);
+    int   mkfifoat(int, const scope char*, mode_t);
+    int   utimensat(int, const scope char*, ref const(timespec)[2], int);
 }
+
+/*
+UTIME_NOW
+UTIME_OMIT
+*/
+version (linux)
+{
+    enum UTIME_NOW = 0x3fffffff;
+    enum UTIME_OMIT = 0x3ffffffe;
+}
+else version (Darwin)
+{
+    enum UTIME_NOW = -1;
+    enum UTIME_OMIT = -2;
+}
+else version (FreeBSD)
+{
+    enum UTIME_NOW = -1;
+    enum UTIME_OMIT = -2;
+}
+else version (NetBSD)
+{
+    enum UTIME_NOW = 0x3fffffff;
+    enum UTIME_OMIT = 0x3ffffffe;
+}
+else version (OpenBSD)
+{
+    enum UTIME_NOW = -2;
+    enum UTIME_OMIT = -1;
+}
+else version (DragonFlyBSD)
+{
+    enum UTIME_NOW = -1;
+    enum UTIME_OMIT = -2;
+}
+else version (Solaris)
+{
+    enum UTIME_NOW = -1;
+    enum UTIME_OMIT = -2;
+}
+else
+{
+    static assert(false, "Unsupported platform");
+}
+
 
 //
 // Typed Memory Objects (TYM)
@@ -2010,11 +2238,9 @@ S_IFREG
 S_IFDIR
 S_IFLNK
 S_IFSOCK
-
-int mknod(in 3char*, mode_t, dev_t);
 */
 
-version (CRuntime_Glibc)
+version (linux)
 {
     enum S_IFMT     = 0xF000; // octal 0170000
     enum S_IFBLK    = 0x6000; // octal 0060000
@@ -2024,8 +2250,6 @@ version (CRuntime_Glibc)
     enum S_IFDIR    = 0x4000; // octal 0040000
     enum S_IFLNK    = 0xA000; // octal 0120000
     enum S_IFSOCK   = 0xC000; // octal 0140000
-
-    int mknod(in char*, mode_t, dev_t);
 }
 else version (Darwin)
 {
@@ -2037,8 +2261,6 @@ else version (Darwin)
     enum S_IFDIR    = 0x4000; // octal 0040000
     enum S_IFLNK    = 0xA000; // octal 0120000
     enum S_IFSOCK   = 0xC000; // octal 0140000
-
-    int mknod(in char*, mode_t, dev_t);
 }
 else version (FreeBSD)
 {
@@ -2050,8 +2272,6 @@ else version (FreeBSD)
     enum S_IFDIR    = 0x4000; // octal 0040000
     enum S_IFLNK    = 0xA000; // octal 0120000
     enum S_IFSOCK   = 0xC000; // octal 0140000
-
-    int mknod(in char*, mode_t, dev_t);
 }
 else version (NetBSD)
 {
@@ -2063,8 +2283,17 @@ else version (NetBSD)
     enum S_IFDIR    = 0x4000; // octal 0040000
     enum S_IFLNK    = 0xA000; // octal 0120000
     enum S_IFSOCK   = 0xC000; // octal 0140000
-
-    int mknod(in char*, mode_t, dev_t);
+}
+else version (OpenBSD)
+{
+    enum S_IFMT     = 0xF000; // octal 0170000
+    enum S_IFBLK    = 0x6000; // octal 0060000
+    enum S_IFCHR    = 0x2000; // octal 0020000
+    enum S_IFIFO    = 0x1000; // octal 0010000
+    enum S_IFREG    = 0x8000; // octal 0100000
+    enum S_IFDIR    = 0x4000; // octal 0040000
+    enum S_IFLNK    = 0xA000; // octal 0120000
+    enum S_IFSOCK   = 0xC000; // octal 0140000
 }
 else version (DragonFlyBSD)
 {
@@ -2076,8 +2305,6 @@ else version (DragonFlyBSD)
     enum S_IFDIR    = 0x4000; // octal 0040000
     enum S_IFLNK    = 0xA000; // octal 0120000
     enum S_IFSOCK   = 0xC000; // octal 0140000
-
-    int mknod(in char*, mode_t, dev_t);
 }
 else version (Solaris)
 {
@@ -2091,49 +2318,76 @@ else version (Solaris)
     enum S_IFSOCK = 0xC000;
     enum S_IFDOOR = 0xD000;
     enum S_IFPORT = 0xE000;
+}
+else
+{
+    static assert(false, "Unsupported platform");
+}
 
-    int mknod(in char*, mode_t, dev_t);
+/*
+int mknod(const scope char*, mode_t, dev_t);
+int mknodat(int, const scope char*, mode_t, dev_t);
+*/
+
+version (CRuntime_Glibc)
+{
+    int mknod(const scope char*, mode_t, dev_t);
+    int mknodat(int, const scope char*, mode_t, dev_t);
+}
+else version (Darwin)
+{
+    int mknod(const scope char*, mode_t, dev_t);
+    int mknodat(int, const scope char*, mode_t, dev_t);
+}
+else version (FreeBSD)
+{
+    version (GNU)
+    {
+        int mknod(const scope char*, mode_t, dev_t);
+    }
+    else
+    {
+        static if (__FreeBSD_version >= INO64_FIRST)
+            pragma(mangle, "mknod@FBSD_1.5") int mknod(const scope char*, mode_t, dev_t);
+        else
+            pragma(mangle, "mknod@FBSD_1.0") int mknod(const scope char*, mode_t, dev_t);
+    }
+    int mknodat(int, const scope char*, mode_t, dev_t);
+}
+else version (NetBSD)
+{
+    pragma(mangle, "__mknod50") int mknod(const scope char*, mode_t, dev_t);
+    int mknodat(int, const scope char*, mode_t, dev_t);
+}
+else version (OpenBSD)
+{
+    int mknod(const scope char*, mode_t, dev_t);
+    int mknodat(int, const scope char*, mode_t, dev_t);
+}
+else version (DragonFlyBSD)
+{
+    int mknod(const scope char*, mode_t, dev_t);
+    int mknodat(int, const scope char*, mode_t, dev_t);
+}
+else version (Solaris)
+{
+    int mknod(const scope char*, mode_t, dev_t);
+    int mknodat(int, const scope char*, mode_t, dev_t);
 }
 else version (CRuntime_Bionic)
 {
-    enum S_IFMT     = 0xF000; // octal 0170000
-    enum S_IFBLK    = 0x6000; // octal 0060000
-    enum S_IFCHR    = 0x2000; // octal 0020000
-    enum S_IFIFO    = 0x1000; // octal 0010000
-    enum S_IFREG    = 0x8000; // octal 0100000
-    enum S_IFDIR    = 0x4000; // octal 0040000
-    enum S_IFLNK    = 0xA000; // octal 0120000
-    enum S_IFSOCK   = 0xC000; // octal 0140000
-
-    int mknod(in char*, mode_t, dev_t);
+    int mknod(const scope char*, mode_t, dev_t);
+    int mknodat(int, const scope char*, mode_t, dev_t);
 }
 else version (CRuntime_Musl)
 {
-    enum {
-        S_IFMT     = 0xF000, // octal 0170000
-        S_IFBLK    = 0x6000, // octal 0060000
-        S_IFCHR    = 0x2000, // octal 0020000
-        S_IFIFO    = 0x1000, // octal 0010000
-        S_IFREG    = 0x8000, // octal 0100000
-        S_IFDIR    = 0x4000, // octal 0040000
-        S_IFLNK    = 0xA000, // octal 0120000
-        S_IFSOCK   = 0xC000, // octal 0140000
-    }
-
-    int mknod(in char*, mode_t, dev_t);
+    int mknod(const scope char*, mode_t, dev_t);
+    int mknodat(int, const scope char*, mode_t, dev_t);
 }
 else version (CRuntime_UClibc)
 {
-    enum S_IFMT     = 0xF000; // octal 0170000
-    enum S_IFBLK    = 0x6000; // octal 0060000
-    enum S_IFCHR    = 0x2000; // octal 0020000
-    enum S_IFIFO    = 0x1000; // octal 0010000
-    enum S_IFREG    = 0x8000; // octal 0100000
-    enum S_IFDIR    = 0x4000; // octal 0040000
-    enum S_IFLNK    = 0xA000; // octal 0120000
-    enum S_IFSOCK   = 0xC000; // octal 0140000
-
-    int mknod(in char*, mode_t, dev_t);
+    int mknod(const scope char*, mode_t, dev_t);
+    int mknodat(int, const scope char*, mode_t, dev_t);
 }
 else
 {

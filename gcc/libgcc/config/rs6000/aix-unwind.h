@@ -1,5 +1,5 @@
 /* DWARF2 EH unwinding support for AIX.
-   Copyright (C) 2011-2019 Free Software Foundation, Inc.
+   Copyright (C) 2011-2026 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -24,12 +24,12 @@
 
 /* Useful register numbers.  */
 
-#define LR_REGNO             65
-#define CR2_REGNO            70
-#define XER_REGNO            76
-#define FIRST_ALTIVEC_REGNO  77
-#define VRSAVE_REGNO        109
-#define VSCR_REGNO          110
+#define R_LR             65
+#define R_CR2            70
+#define R_XER            76
+#define R_FIRST_ALTIVEC  77
+#define R_VRSAVE        109
+#define R_VSCR          110
 
 /* If the current unwind info (FS) does not contain explicit info
    saving R2, then we have to do a minor amount of code reading to
@@ -40,11 +40,11 @@
 #ifdef __64BIT__
 #define MD_FROB_UPDATE_CONTEXT(CTX, FS)					\
   do {									\
-    if ((FS)->regs.reg[2].how == REG_UNSAVED)				\
+    if ((FS)->regs.how[2] == REG_UNSAVED)				\
       {									\
 	unsigned int *insn						\
 	  = (unsigned int *)						\
-	    _Unwind_GetGR ((CTX), LR_REGNO);				\
+	    _Unwind_GetGR ((CTX), R_LR);				\
 	if (*insn == 0xE8410028)					\
 	  _Unwind_SetGRPtr ((CTX), 2, (CTX)->cfa + 40);			\
       }									\
@@ -52,11 +52,11 @@
 #else
 #define MD_FROB_UPDATE_CONTEXT(CTX, FS)					\
   do {									\
-    if ((FS)->regs.reg[2].how == REG_UNSAVED)				\
+    if ((FS)->regs.how[2] == REG_UNSAVED)				\
       {									\
 	unsigned int *insn						\
 	  = (unsigned int *)						\
-	    _Unwind_GetGR ((CTX), LR_REGNO);				\
+	    _Unwind_GetGR ((CTX), R_LR);				\
 	if (*insn == 0x80410014)					\
 	  _Unwind_SetGRPtr ((CTX), 2, (CTX)->cfa + 20);			\
       }									\
@@ -110,7 +110,7 @@ typedef struct {
   uint     pad1 [4];
   vstate_t vstate;
   char     bumper [BUMPER_SIZE];
-  int      mark; 
+  int      mark;
 } extended_context_t;
 
 typedef struct {
@@ -160,7 +160,7 @@ ucontext_for (struct _Unwind_Context *context)
 	  switch (*(ra + 18))
 	    {
 	      /* AIX 5.2 */
-	    case 0x835a0520: /* lwz r26,1312(r26) */ 
+	    case 0x835a0520: /* lwz r26,1312(r26) */
 	      return (ucontext_t *)(context->cfa + 0x70);
 
 	      /* AIX 5.3 */
@@ -207,7 +207,7 @@ ucontext_for (struct _Unwind_Context *context)
 
 #define REGISTER_CFA_OFFSET_FOR(FS,REGNO,ADDR,CFA)\
 do { \
-(FS)->regs.reg[REGNO].how = REG_SAVED_OFFSET; \
+(FS)->regs.how[REGNO] = REG_SAVED_OFFSET; \
 (FS)->regs.reg[REGNO].loc.offset = (long) (ADDR) - (CFA); \
 } while (0)
 
@@ -241,9 +241,9 @@ ppc_aix_fallback_frame_state (struct _Unwind_Context *context,
     if (i != __LIBGCC_STACK_POINTER_REGNUM__)
       REGISTER_CFA_OFFSET_FOR (fs, i, &mctx->gpr[i], new_cfa);
 
-  REGISTER_CFA_OFFSET_FOR (fs, CR2_REGNO, &mctx->cr, new_cfa);
-  REGISTER_CFA_OFFSET_FOR (fs, XER_REGNO, &mctx->xer, new_cfa);
-  REGISTER_CFA_OFFSET_FOR (fs, LR_REGNO, &mctx->lr, new_cfa);
+  REGISTER_CFA_OFFSET_FOR (fs, R_CR2, &mctx->cr, new_cfa);
+  REGISTER_CFA_OFFSET_FOR (fs, R_XER, &mctx->xer, new_cfa);
+  REGISTER_CFA_OFFSET_FOR (fs, R_LR, &mctx->lr, new_cfa);
 
   fs->retaddr_column = RETURN_COLUMN;
   REGISTER_CFA_OFFSET_FOR (fs, RETURN_COLUMN, &mctx->iar, new_cfa);
@@ -268,10 +268,10 @@ ppc_aix_fallback_frame_state (struct _Unwind_Context *context,
 
 	  for (i = 0; i < 32; i++)
 	    REGISTER_CFA_OFFSET_FOR
-	    (fs, i+FIRST_ALTIVEC_REGNO, &vstate->regs[i], new_cfa);
+	    (fs, i+R_FIRST_ALTIVEC, &vstate->regs[i], new_cfa);
 
-	  REGISTER_CFA_OFFSET_FOR (fs, VSCR_REGNO, &vstate->vscr, new_cfa);
-	  REGISTER_CFA_OFFSET_FOR (fs, VRSAVE_REGNO, &vstate->vrsave, new_cfa);
+	  REGISTER_CFA_OFFSET_FOR (fs, R_VSCR, &vstate->vscr, new_cfa);
+	  REGISTER_CFA_OFFSET_FOR (fs, R_VRSAVE, &vstate->vrsave, new_cfa);
 	}
     }
 

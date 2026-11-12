@@ -1,3 +1,6 @@
+/* { dg-require-stack-size "4092+4" } */
+/* { dg-additional-options "-std=gnu89" } */
+
 typedef struct
 {
   int Header;

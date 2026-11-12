@@ -6,23 +6,17 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
 -- ware  Foundation;  either version 3,  or (at your option) any later ver- --
 -- sion.  GNAT is distributed in the hope that it will be useful, but WITH- --
 -- OUT ANY WARRANTY;  without even the  implied warranty of MERCHANTABILITY --
--- or FITNESS FOR A PARTICULAR PURPOSE.                                     --
---                                                                          --
--- As a special exception under Section 7 of GPL version 3, you are granted --
--- additional permissions described in the GCC Runtime Library Exception,   --
--- version 3.1, as published by the Free Software Foundation.               --
---                                                                          --
--- You should have received a copy of the GNU General Public License and    --
--- a copy of the GCC Runtime Library Exception along with this program;     --
--- see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see    --
--- <http://www.gnu.org/licenses/>.                                          --
+-- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
+-- for  more details.  You should have  received  a copy of the GNU General --
+-- Public License  distributed with GNAT; see file COPYING3.  If not, go to --
+-- http://www.gnu.org/licenses for a complete copy of the license.          --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -140,6 +134,9 @@ package body Scans is
       --  Ada 2012 reserved words
 
       Set_Reserved (Name_Some, Tok_Some);
+
+      --  GNAT extensions reserved words
+      Set_Reserved (Name_Finally, Tok_Finally);
    end Initialize_Ada_Keywords;
 
    ------------------
@@ -166,42 +163,54 @@ package body Scans is
       return Name_Find (Name);
    end Keyword_Name;
 
-   ------------------------
-   -- Restore_Scan_State --
-   ------------------------
-
-   procedure Restore_Scan_State (Saved_State : Saved_Scan_State) is
-   begin
-      Scan_Ptr                 := Saved_State.Save_Scan_Ptr;
-      Token                    := Saved_State.Save_Token;
-      Token_Ptr                := Saved_State.Save_Token_Ptr;
-      Current_Line_Start       := Saved_State.Save_Current_Line_Start;
-      Start_Column             := Saved_State.Save_Start_Column;
-      Checksum                 := Saved_State.Save_Checksum;
-      First_Non_Blank_Location := Saved_State.Save_First_Non_Blank_Location;
-      Token_Node               := Saved_State.Save_Token_Node;
-      Token_Name               := Saved_State.Save_Token_Name;
-      Prev_Token               := Saved_State.Save_Prev_Token;
-      Prev_Token_Ptr           := Saved_State.Save_Prev_Token_Ptr;
-   end Restore_Scan_State;
-
    ---------------------
    -- Save_Scan_State --
    ---------------------
 
    procedure Save_Scan_State (Saved_State : out Saved_Scan_State) is
    begin
-      Saved_State.Save_Scan_Ptr                 := Scan_Ptr;
-      Saved_State.Save_Token                    := Token;
-      Saved_State.Save_Token_Ptr                := Token_Ptr;
-      Saved_State.Save_Current_Line_Start       := Current_Line_Start;
-      Saved_State.Save_Start_Column             := Start_Column;
-      Saved_State.Save_Checksum                 := Checksum;
+      Saved_State.Save_Scan_Ptr := Scan_Ptr;
+      Saved_State.Save_Token := Token;
+      Saved_State.Save_Token_Ptr := Token_Ptr;
+      Saved_State.Save_Current_Line_Start := Current_Line_Start;
+      Saved_State.Save_Start_Column := Start_Column;
+      Saved_State.Save_Checksum := Checksum;
       Saved_State.Save_First_Non_Blank_Location := First_Non_Blank_Location;
-      Saved_State.Save_Token_Node               := Token_Node;
-      Saved_State.Save_Token_Name               := Token_Name;
-      Saved_State.Save_Prev_Token               := Prev_Token;
-      Saved_State.Save_Prev_Token_Ptr           := Prev_Token_Ptr;
+
+      --  Check that we're not saving a bogus Token_Node
+
+      pragma Assert
+        ((Token_Node /= Empty) = (Token in Token_Class_Lit_Or_Name));
+      Saved_State.Save_Token_Node := Token_Node;
+
+      Saved_State.Save_Token_Name := Token_Name;
+      Saved_State.Save_Prev_Token := Prev_Token;
+      Saved_State.Save_Prev_Token_Ptr := Prev_Token_Ptr;
    end Save_Scan_State;
+
+   ------------------------
+   -- Restore_Scan_State --
+   ------------------------
+
+   --  use Output, VAST, Atree;
+
+   procedure Restore_Scan_State (Saved_State : Saved_Scan_State) is
+   begin
+      Scan_Ptr := Saved_State.Save_Scan_Ptr;
+      Token := Saved_State.Save_Token;
+      Token_Ptr := Saved_State.Save_Token_Ptr;
+      Current_Line_Start := Saved_State.Save_Current_Line_Start;
+      Start_Column := Saved_State.Save_Start_Column;
+      Checksum := Saved_State.Save_Checksum;
+      First_Non_Blank_Location := Saved_State.Save_First_Non_Blank_Location;
+
+      Token_Node := Saved_State.Save_Token_Node;
+      pragma Assert
+        ((Token_Node /= Empty) = (Token in Token_Class_Lit_Or_Name));
+
+      Token_Name := Saved_State.Save_Token_Name;
+      Prev_Token := Saved_State.Save_Prev_Token;
+      Prev_Token_Ptr := Saved_State.Save_Prev_Token_Ptr;
+   end Restore_Scan_State;
 
 end Scans;

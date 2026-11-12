@@ -3,6 +3,7 @@
 /* { dg-do run } */
 /* { dg-require-effective-target fpic } */
 /* { dg-require-effective-target ia32 } */
+/* { dg-require-profiling "-pg" } */
 /* { dg-options "-O2 -fpic -pg -save-temps" } */
 
 int main ()
@@ -11,5 +12,5 @@ int main ()
 }
 
 /* { dg-final { scan-assembler "mcount" } } */
-/* { dg-final { scan-assembler "get_pc_thunk" { xfail { *-*-solaris2.10* && { ! gld } } } } } */
+/* { dg-final { scan-assembler "get_pc_thunk" } } */
 /* { dg-final { cleanup-profile-file } } */

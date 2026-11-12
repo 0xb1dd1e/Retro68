@@ -1,5 +1,5 @@
 /* 128-bit long double support routines for Darwin.
-   Copyright (C) 1993-2019 Free Software Foundation, Inc.
+   Copyright (C) 1993-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -118,8 +118,8 @@ pack_ldouble (double dh, double dl)
 }
 
 /* Add two 'IBM128_TYPE' values and return the result.	*/
-IBM128_TYPE
-__gcc_qadd (double a, double aa, double c, double cc)
+static inline IBM128_TYPE
+ldouble_qadd_internal (double a, double aa, double c, double cc)
 {
   double xh, xl, z, q, zz;
 
@@ -158,9 +158,15 @@ __gcc_qadd (double a, double aa, double c, double cc)
 }
 
 IBM128_TYPE
-__gcc_qsub (double a, double b, double c, double d)
+__gcc_qadd (double a, double aa, double c, double cc)
 {
-  return __gcc_qadd (a, b, -c, -d);
+  return ldouble_qadd_internal (a, aa, c, cc);
+}
+
+IBM128_TYPE
+__gcc_qsub (double a, double aa, double c, double cc)
+{
+  return ldouble_qadd_internal (a, aa, -c, -cc);
 }
 
 #ifdef __NO_FPRS__
@@ -171,7 +177,7 @@ IBM128_TYPE
 __gcc_qmul (double a, double b, double c, double d)
 {
   double xh, xl, t, tau, u, v, w;
-  
+
   t = a * c;			/* Highest order double term.  */
 
   if (unlikely (t == 0)		/* Preserve -0.  */
@@ -179,7 +185,7 @@ __gcc_qmul (double a, double b, double c, double d)
     return t;
 
   /* Sum terms of two highest orders. */
-  
+
   /* Use fused multiply-add to get low part of a * c.  */
 #ifndef __NO_FPRS__
   asm ("fmsub %0,%1,%2,%3" : "=f"(tau) : "f"(a), "f"(c), "f"(t));
@@ -203,9 +209,9 @@ IBM128_TYPE
 __gcc_qdiv (double a, double b, double c, double d)
 {
   double xh, xl, s, sigma, t, tau, u, v, w;
-  
+
   t = a / c;                    /* highest order double term */
-  
+
   if (unlikely (t == 0)		/* Preserve -0.  */
       || nonfinite (t))
     return t;
@@ -224,7 +230,7 @@ __gcc_qdiv (double a, double b, double c, double d)
   s = c * t;                    /* (s,sigma) = c*t exactly.  */
   w = -(-b + d * t);	/* Written to get fnmsub for speed, but not
 			   numerically necessary.  */
-  
+
   /* Use fused multiply-add to get low part of c * t.	 */
 #ifndef __NO_FPRS__
   asm ("fmsub %0,%1,%2,%3" : "=f"(sigma) : "f"(c), "f"(t), "f"(s));
@@ -232,7 +238,7 @@ __gcc_qdiv (double a, double b, double c, double d)
   sigma = fmsub (c, t, s);
 #endif
   v = a - s;
-  
+
   tau = ((v-sigma)+w)/c;   /* Correction to t.  */
   u = t + tau;
 
@@ -407,7 +413,7 @@ fmsub (double a, double b, double c)
     FP_UNPACK_RAW_D (C, c);
 
     /* Extend double to quad.  */
-#if (2 * _FP_W_TYPE_SIZE) < _FP_FRACBITS_Q
+#if _FP_W_TYPE_SIZE < 64
     FP_EXTEND(Q,D,4,2,X,A);
     FP_EXTEND(Q,D,4,2,Y,B);
     FP_EXTEND(Q,D,4,2,Z,C);
@@ -436,7 +442,7 @@ fmsub (double a, double b, double c)
     FP_SUB_Q(V,U,Z);
 
     /* Truncate quad to double.  */
-#if (2 * _FP_W_TYPE_SIZE) < _FP_FRACBITS_Q
+#if _FP_W_TYPE_SIZE < 64
     V_f[3] &= 0x0007ffff;
     FP_TRUNC(D,Q,2,4,R,V);
 #else

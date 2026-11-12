@@ -1,5 +1,6 @@
-/* { dg-do run } */
-/* { dg-options "-O3 -mpower8-vector -Wno-psabi" } */
+/* { dg-do run { target le } } */
+/* { dg-options "-O3 -mvsx -Wno-psabi" } */
+/* { dg-additional-options "-mdejagnu-cpu=power8" { target { ! has_arch_pwr8 } } } */
 /* { dg-require-effective-target p8vector_hw } */
 
 #define NO_WARN_X86_INTRINSICS 1
@@ -30,6 +31,7 @@ TEST (void)
   int source1[4]={34, 545, 955, 67};
   int source2[4]={67, 4, 57, 897};
   int e[4];
+  float f[4];
    
   s1.x = _mm_loadu_ps ((float *)source1);
   s2.x = _mm_loadu_ps ((float *)source2);
@@ -39,7 +41,8 @@ TEST (void)
   e[1] = (~source1[1]) & source2[1];
   e[2] = (~source1[2]) & source2[2];
   e[3] = (~source1[3]) & source2[3];
+  __builtin_memcpy (f, e, sizeof (f));
 
-  if (check_union128 (u, (float *)e))
+  if (check_union128 (u, f))
     abort ();
 }

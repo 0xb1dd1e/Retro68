@@ -1,4 +1,5 @@
 // { dg-options "-std=c++14 -I${srcdir}/g++.dg/cpp1y -I${srcdir}/g++.dg/cpp1y/testinc" }
+// { dg-skip-if "requires hosted libstdc++ for complex" { ! hostedlib } }
 
 //  C++98 features:
 
@@ -236,20 +237,14 @@
 #  error "__has_include"
 #endif
 
-//  Quoted complex.h should find at least the bracket version (use operator).
-#if __has_include__ "complex.h"
-#else
-#  error "complex.h"
-#endif
-
 //  Try known bracket header (use operator).
-#if __has_include__(<complex>)
+#if __has_include (<complex>)
 #else
 #  error "<complex>"
 #endif
 
 //  Define and use a macro to invoke the operator.
-#define sluggo(TXT) __has_include__(TXT)
+#define sluggo(TXT) __has_include(TXT)
 
 #if sluggo(<complex>)
 #else
@@ -303,11 +298,11 @@
 #if __has_include(<array>)
 #  define STD_ARRAY 1
 #  include <array>
-  template<typename _Tp, size_t _Num>
+  template<typename _Tp, std::size_t _Num>
     using array = std::array<_Tp, _Num>;
 #elif __has_include(<tr1/array>)
 #  define TR1_ARRAY 1
 #  include <tr1/array>
-  template<typename _Tp, size_t _Num>
+  template<typename _Tp, std::size_t _Num>
     typedef std::tr1::array<_Tp, _Num> array;
 #endif

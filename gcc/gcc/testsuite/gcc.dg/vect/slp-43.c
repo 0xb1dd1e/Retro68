@@ -23,11 +23,13 @@ foo_ ## T ## _ ## N (T * __restrict__ in_, T * __restrict__ out_, int s) \
 }
 
 #define TEST(T,N) \
+ _Pragma("GCC novector") \
  do { \
   memset (out, 0, 4096); \
   foo_ ## T ## _ ## N ((T *)in, (T *)out, 1); \
   if (memcmp (in, out, sizeof (T) * MAX_VEC_ELEMENTS * N) != 0) \
     __builtin_abort (); \
+  _Pragma("GCC novector") \
   for (int i = sizeof (T) * MAX_VEC_ELEMENTS * N; i < 4096; ++i) \
     if (out[i] != 0) \
       __builtin_abort (); \
@@ -78,4 +80,6 @@ int main()
 }
 
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 13 "vect" { target vect_hw_misalign } } } */
-/* { dg-final { scan-tree-dump-times "vectorized 1 loops" 2 "vect" { target { ! vect_hw_misalign } } } } */
+/* For ! vect_hw_misalign it depends on vector size and actual alignment
+   requirements of the target which functions can be vectorized.  Avoid
+   that bean-counting and per-target listing here.  */

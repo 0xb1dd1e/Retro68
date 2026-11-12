@@ -2,6 +2,9 @@
 #include <ieeefp.h>
 #endif
 
+void abort (void);
+void exit (int);
+
 double d (unsigned long long k)
 {
   double x;
@@ -18,7 +21,8 @@ float s (unsigned long long k)
   return x;
 }
 
-main ()
+int
+main (void)
 {
   unsigned long long int k;
   double x;
@@ -41,14 +45,8 @@ main ()
   k = 0x8234508000000001ULL;
   x = s (k);
   k = (unsigned long long) x;
-#ifdef __SPU__
-  /* SPU float rounds towards zero.  */
-  if (k != 0x8234500000000000ULL)
-    abort ();
-#else
   if (k != 0x8234510000000000ULL)
     abort ();
-#endif
 
   exit (0);
 }

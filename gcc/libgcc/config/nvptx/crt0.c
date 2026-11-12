@@ -1,4 +1,4 @@
-/* Copyright (C) 2014-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2014-2026 Free Software Foundation, Inc.
 
    This file is free software; you can redistribute it and/or modify it
    under the terms of the GNU General Public License as published by the
@@ -32,7 +32,19 @@ void *__nvptx_stacks[32] __attribute__((shared,nocommon));
 /* Likewise for -muniform-simt.  */
 unsigned __nvptx_uni[32] __attribute__((shared,nocommon));
 
-void __attribute__((kernel))
+/* Global constructor/destructor support.  Dummy; if necessary, overridden via
+   'gbl-ctors.c'.  */
+
+extern void __gbl_ctors (void);
+
+void __attribute__((weak))
+__gbl_ctors (void)
+{
+}
+
+extern void __main (int *, int, void **) __attribute__((kernel));
+
+void
 __main (int *rval_ptr, int argc, void **argv)
 {
   __exitval_ptr = rval_ptr;
@@ -44,6 +56,8 @@ __main (int *rval_ptr, int argc, void **argv)
   static char stack[131072] __attribute__((aligned(8)));
   __nvptx_stacks[0] = stack + sizeof stack;
   __nvptx_uni[0] = 0;
+
+  __gbl_ctors ();
 
   exit (main (argc, argv));
 }

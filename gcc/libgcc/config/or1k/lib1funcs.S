@@ -1,4 +1,4 @@
-/* Copyright (C) 2018-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2018-2026 Free Software Foundation, Inc.
 
 This file is free software; you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the
@@ -19,6 +19,11 @@ a copy of the GCC Runtime Library Exception along with this program;
 see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 <http://www.gnu.org/licenses/>.  */
 
+/* An executable stack is *not* required for these functions.  */
+#ifdef __linux__
+.section .note.GNU-stack,"",%progbits
+.previous
+#endif
 
 #ifdef L__mulsi3
 	.balign 4
@@ -68,18 +73,18 @@ __udivmodsi3_internal:
 	   is not clobbered by this routine, and use that as to
 	   save a return address without creating a stack frame.  */
 
-	l.sfeqi		r4, 0		/* division by zero; return 0.  */
+	l.sfeq		r4, r0		/* division by zero; return 0.  */
 	l.ori		r11, r0, 0	/* initial quotient */
 	l.bf		9f
 	 l.ori		r12, r3, 0	/* initial remainder */
 
 	/* Given X/Y, shift Y left until Y >= X.  */
 	l.ori		r6, r0, 1	/* mask = 1 */
-1:	l.sfltsi	r4, 0		/* y has msb set */
+1:	l.sflts		r4, r0		/* y has msb set */
 	l.bf		2f
 	 l.sfltu	r4, r12		/* y < x */
 	l.add		r4, r4, r4	/* y <<= 1 */
-	l.bnf		1b
+	l.bf		1b
 	 l.add		r6, r6, r6	/* mask <<= 1 */
 
 	/* Shift Y back to the right again, subtracting from X.  */

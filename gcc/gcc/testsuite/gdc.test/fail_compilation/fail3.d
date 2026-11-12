@@ -1,7 +1,8 @@
 /*
 TEST_OUTPUT:
 ---
-fail_compilation/fail3.d(40): Error: incompatible types for ((a) + (b)): 'vec2' and 'vec2'
+fail_compilation/fail3.d(42): Error: operator `+` is not defined for type `vec2`
+fail_compilation/fail3.d(13):        perhaps overload the operator with `auto opBinary(string op : "+")(vec2 rhs) {}`
 ---
 */
 
@@ -14,6 +15,7 @@ template vector(T)
         T x, y;
     }
 
+    // not struct member
     vec2 opAdd(vec2 a, vec2 b)
     {
         vec2 r;

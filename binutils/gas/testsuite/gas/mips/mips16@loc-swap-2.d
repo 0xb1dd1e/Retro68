@@ -1,4 +1,4 @@
-#PROG: readelf
+#DUMPPROG: readelf
 #readelf: -wl
 #name: MIPS DWARF-2 location information with branch swapping (2)
 #as: -32
@@ -6,9 +6,9 @@
 
 Raw dump of debug contents of section .debug_line:
 
-  Offset:                      0x0
+  Offset:                      (0x)?0
   Length:                      60
-  DWARF Version:               2
+  DWARF Version:               3
   Prologue Length:             35
   Minimum Instruction Length:  1
   Initial value of 'is_stmt':  1

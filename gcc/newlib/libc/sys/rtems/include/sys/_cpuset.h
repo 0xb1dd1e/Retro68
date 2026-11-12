@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2008,	Jeffrey Roberson <jeff@freebsd.org>
  * All rights reserved.
  *
@@ -26,22 +28,32 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * $FreeBSD: head/sys/sys/_cpuset.h 299122 2016-05-05 15:43:26Z jhb $
+ * $FreeBSD$
  */
 
 #ifndef _SYS__CPUSET_H_
 #define	_SYS__CPUSET_H_
 
 #include <sys/_bitset.h>
-#include <machine/param.h>
 
 #define	CPU_MAXSIZE	256
 
 #ifndef	CPU_SETSIZE
-#define	CPU_SETSIZE	MAXCPU
+#ifdef __LONG_WIDTH__
+#define	CPU_SETSIZE	__LONG_WIDTH__
+#else
+#define	CPU_SETSIZE	32
+#endif
 #endif
 
-BITSET_DEFINE(_cpuset, CPU_SETSIZE);
+__BITSET_DEFINE(_cpuset, CPU_SETSIZE);
 typedef struct _cpuset cpuset_t;
+
+#ifndef _KERNEL
+__BEGIN_DECLS
+cpuset_t *__cpuset_alloc(size_t set_size);
+void __cpuset_free(cpuset_t *ptr);
+__END_DECLS
+#endif
 
 #endif /* !_SYS__CPUSET_H_ */

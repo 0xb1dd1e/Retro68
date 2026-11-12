@@ -1,3 +1,5 @@
+/* Disabling epilogues until we find a better way to deal with scans.  */
+/* { dg-additional-options "--param vect-epilogues-nomask=0" } */
 /* { dg-require-effective-target vect_int } */
 
 #include "tree-vect.h"
@@ -43,6 +45,7 @@ main (void)
   if (ret != (MAX - 1) * 3)
     abort ();
 
+#pragma GCC novector
   for (i=0; i<MAX; i++)
     {
       __asm__ volatile ("");

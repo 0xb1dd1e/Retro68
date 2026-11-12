@@ -318,33 +318,33 @@ test_vpaddd_u64 (uint64x2_t a)
 /* { dg-final { scan-assembler-times "\\tuqadd\\td\[0-9\]+" 1 } } */
 
 uint64_t
-test_vqaddd_u64 (uint64_t a, uint64_t b)
+test_vqaddd_u64 (uint64x1_t a, uint64x1_t b)
 {
-  return vqaddd_u64 (a, b);
+  return vqaddd_u64 (a[0], b[0]);
 }
 
 /* { dg-final { scan-assembler-times "\\tuqadd\\ts\[0-9\]+" 1 } } */
 
 uint32_t
-test_vqadds_u32 (uint32_t a, uint32_t b)
+test_vqadds_u32 (uint32x4_t a, uint32x4_t b)
 {
-  return vqadds_u32 (a, b);
+  return vqadds_u32 (a[0], b[0]);
 }
 
 /* { dg-final { scan-assembler-times "\\tuqadd\\th\[0-9\]+" 1 } } */
 
 uint16_t
-test_vqaddh_u16 (uint16_t a, uint16_t b)
+test_vqaddh_u16 (uint16x8_t a, uint16x8_t b)
 {
-  return vqaddh_u16 (a, b);
+  return vqaddh_u16 (a[0], b[0]);
 }
 
 /* { dg-final { scan-assembler-times "\\tuqadd\\tb\[0-9\]+" 1 } } */
 
 uint8_t
-test_vqaddb_u8 (uint8_t a, uint8_t b)
+test_vqaddb_u8 (uint8x16_t a, uint8x16_t b)
 {
-  return vqaddb_u8 (a, b);
+  return vqaddb_u8 (a[0], b[0]);
 }
 
 /* { dg-final { scan-assembler-times "\\tsqadd\\td\[0-9\]+" 1 } } */
@@ -661,7 +661,7 @@ test_vqnegs_s32 (int32_t a)
 
 /* { dg-final { scan-assembler-times "\\tsqxtun\\tb\[0-9\]+" 1 } } */
 
-int8_t
+uint8_t
 test_vqmovunh_s16 (int16_t a)
 {
   return vqmovunh_s16 (a);
@@ -669,7 +669,7 @@ test_vqmovunh_s16 (int16_t a)
 
 /* { dg-final { scan-assembler-times "\\tsqxtun\\th\[0-9\]+" 1 } } */
 
-int16_t
+uint16_t
 test_vqmovuns_s32 (int32_t a)
 {
   return vqmovuns_s32 (a);
@@ -677,7 +677,7 @@ test_vqmovuns_s32 (int32_t a)
 
 /* { dg-final { scan-assembler-times "\\tsqxtun\\ts\[0-9\]+" 1 } } */
 
-int32_t
+uint32_t
 test_vqmovund_s64 (int64_t a)
 {
   return vqmovund_s64 (a);
@@ -761,33 +761,33 @@ test_vsubd_s64_2 (int64_t a, int64_t b)
 /* { dg-final { scan-assembler-times "\\tuqsub\\td\[0-9\]+" 1 } } */
 
 uint64_t
-test_vqsubd_u64 (uint64_t a, uint64_t b)
+test_vqsubd_u64 (uint64x1_t a, uint64x1_t b)
 {
-  return vqsubd_u64 (a, b);
+  return vqsubd_u64 (a[0], b[0]);
 }
 
 /* { dg-final { scan-assembler-times "\\tuqsub\\ts\[0-9\]+" 1 } } */
 
 uint32_t
-test_vqsubs_u32 (uint32_t a, uint32_t b)
+test_vqsubs_u32 (uint32x4_t a, uint32x4_t b)
 {
-  return vqsubs_u32 (a, b);
+  return vqsubs_u32 (a[0], b[0]);
 }
 
 /* { dg-final { scan-assembler-times "\\tuqsub\\th\[0-9\]+" 1 } } */
 
 uint16_t
-test_vqsubh_u16 (uint16_t a, uint16_t b)
+test_vqsubh_u16 (uint16x8_t a, uint16x8_t b)
 {
-  return vqsubh_u16 (a, b);
+  return vqsubh_u16 (a[0], b[0]);
 }
 
 /* { dg-final { scan-assembler-times "\\tuqsub\\tb\[0-9\]+" 1 } } */
 
 uint8_t
-test_vqsubb_u8 (uint8_t a, uint8_t b)
+test_vqsubb_u8 (uint8x16_t a, uint8x16_t b)
 {
-  return vqsubb_u8 (a, b);
+  return vqsubb_u8 (a[0], b[0]);
 }
 
 /* { dg-final { scan-assembler-times "\\tsqsub\\td\[0-9\]+" 1 } } */
@@ -913,7 +913,7 @@ test_vrsrad_n_s64 (int64_t a, int64_t b)
   return vrsrad_n_s64 (a, b, 3);
 }
 
-/* { dg-final { scan-assembler-times "\\tsrsra\\td\[0-9\]+" 1 } } */
+/* { dg-final { scan-assembler-times "\\tursra\\td\[0-9\]+" 1 } } */
 
 uint64_t
 test_vrsrad_n_u64 (uint64_t a, uint64_t b)

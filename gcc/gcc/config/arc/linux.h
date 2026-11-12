@@ -1,6 +1,6 @@
 /* Target macros for arc*-*-linux targets.
 
-   Copyright (C) 2017-2019 Free Software Foundation, Inc.
+   Copyright (C) 2017-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -29,7 +29,8 @@ along with GCC; see the file COPYING3.  If not see
     }						\
   while (0)
 
-#define GLIBC_DYNAMIC_LINKER   "/lib/ld-linux-arc.so.2"
+#define GLIBC_DYNAMIC_LINKER					\
+  "/lib/ld-linux-arc%{mbig-endian:eb}%{mcpu=arc700:700}.so.2"
 #define UCLIBC_DYNAMIC_LINKER  "/lib/ld-uClibc.so.0"
 
 /* Note that the default is to link against dynamic libraries, if they are
@@ -44,7 +45,6 @@ along with GCC; see the file COPYING3.  If not see
     %{!shared:-dynamic-linker " GNU_USER_DYNAMIC_LINKER "}} \
   -X \
   %{mbig-endian:-EB} %{EB} %{EL} \
-  %{!z:-z max-page-size=0x2000 -z common-page-size=0x2000} \
   %{mcpu=nps400:-marclinux_nps; :-marclinux}"
 
 #undef STARTFILE_SPEC

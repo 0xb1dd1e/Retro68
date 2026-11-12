@@ -5,7 +5,7 @@
  *
  * Authors: Stewart Gordon
  * License: $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source: $(DRUNTIMESRC src/core/sys/windows/_winldap.d)
+ * Source: $(DRUNTIMESRC core/sys/windows/_winldap.d)
  */
 module core.sys.windows.winldap;
 version (Windows):
@@ -30,7 +30,7 @@ version (ANSI) {} else version = Unicode;
 */
 
 import core.sys.windows.schannel, core.sys.windows.winber;
-private import core.sys.windows.wincrypt, core.sys.windows.windef;
+import core.sys.windows.wincrypt, core.sys.windows.windef;
 
 //align(4):
 
@@ -297,7 +297,7 @@ struct LDAP {
     PCHAR    ld_matched;
     PCHAR    ld_error;
 }
-alias LDAP* PLDAP;
+alias PLDAP = LDAP*;
 
 // should be opaque structure
 struct LDAPMessage {
@@ -308,13 +308,13 @@ struct LDAPMessage {
     LDAPMessage* lm_next;
     ULONG        lm_time;
 }
-alias LDAPMessage* PLDAPMessage;
+alias PLDAPMessage = LDAPMessage*;
 
 struct LDAP_TIMEVAL {
     LONG tv_sec;
     LONG tv_usec;
 }
-alias LDAP_TIMEVAL* PLDAP_TIMEVAL;
+alias PLDAP_TIMEVAL = LDAP_TIMEVAL*;
 
 struct LDAPAPIInfoA {
     int    ldapai_info_version;
@@ -324,7 +324,7 @@ struct LDAPAPIInfoA {
     char*  ldapai_vendor_name;
     int    ldapai_vendor_version;
 }
-alias LDAPAPIInfoA* PLDAPAPIInfoA;
+alias PLDAPAPIInfoA = LDAPAPIInfoA*;
 
 struct LDAPAPIInfoW {
     int     ldapai_info_version;
@@ -334,35 +334,35 @@ struct LDAPAPIInfoW {
     PWCHAR  ldapai_vendor_name;
     int     ldapai_vendor_version;
 }
-alias LDAPAPIInfoW* PLDAPAPIInfoW;
+alias PLDAPAPIInfoW = LDAPAPIInfoW*;
 
 struct LDAPAPIFeatureInfoA {
     int   ldapaif_info_version;
     char* ldapaif_name;
     int   ldapaif_version;
 }
-alias LDAPAPIFeatureInfoA* PLDAPAPIFeatureInfoA;
+alias PLDAPAPIFeatureInfoA = LDAPAPIFeatureInfoA*;
 
 struct LDAPAPIFeatureInfoW {
     int    ldapaif_info_version;
     PWCHAR ldapaif_name;
     int    ldapaif_version;
 }
-alias LDAPAPIFeatureInfoW* PLDAPAPIFeatureInfoW;
+alias PLDAPAPIFeatureInfoW = LDAPAPIFeatureInfoW*;
 
 struct LDAPControlA {
     PCHAR    ldctl_oid;
     BerValue ldctl_value;
     BOOLEAN  ldctl_iscritical;
 }
-alias LDAPControlA* PLDAPControlA;
+alias PLDAPControlA = LDAPControlA*;
 
 struct LDAPControlW {
     PWCHAR   ldctl_oid;
     BerValue ldctl_value;
     BOOLEAN  ldctl_iscritical;
 }
-alias LDAPControlW* PLDAPControlW;
+alias PLDAPControlW = LDAPControlW*;
 
 /*  Do we really need these?  In MinGW, LDAPModA/W have only mod_op, mod_type
  *  and mod_vals, and macros are used to simulate anonymous unions in those
@@ -389,7 +389,7 @@ struct LDAPModA {
         BerValue**    mod_bvalues;
     }
 }
-alias LDAPModA* PLDAPModA;
+alias PLDAPModA = LDAPModA*;
 
 struct LDAPModW {
     ULONG         mod_op;
@@ -402,39 +402,39 @@ struct LDAPModW {
         BerValue**    mod_bvalues;
     }
 }
-alias LDAPModW* PLDAPModW;
+alias PLDAPModW = LDAPModW*;
 
 /* Opaque structure
  *  http://msdn.microsoft.com/library/en-us/ldap/ldap/ldapsearch.asp
  */
 struct LDAPSearch;
-alias LDAPSearch* PLDAPSearch;
+alias PLDAPSearch = LDAPSearch*;
 
 struct LDAPSortKeyA {
     PCHAR   sk_attrtype;
     PCHAR   sk_matchruleoid;
     BOOLEAN sk_reverseorder;
 }
-alias LDAPSortKeyA* PLDAPSortKeyA;
+alias PLDAPSortKeyA = LDAPSortKeyA*;
 
 struct LDAPSortKeyW {
     PWCHAR  sk_attrtype;
     PWCHAR  sk_matchruleoid;
     BOOLEAN sk_reverseorder;
 }
-alias LDAPSortKeyW* PLDAPSortKeyW;
+alias PLDAPSortKeyW = LDAPSortKeyW*;
 
 /*  MinGW defines these as immediate function typedefs, which don't translate
  *  well into D.
  */
 extern (C) {
-    alias ULONG function(PLDAP, PLDAP, PWCHAR, PCHAR, ULONG, PVOID, PVOID,
-      PLDAP*) QUERYFORCONNECTION;
-    alias BOOLEAN function(PLDAP, PLDAP, PWCHAR, PCHAR, PLDAP, ULONG, PVOID,
-      PVOID, ULONG) NOTIFYOFNEWCONNECTION;
-    alias ULONG function(PLDAP, PLDAP) DEREFERENCECONNECTION;
-    alias BOOLEAN function(PLDAP, PSecPkgContext_IssuerListInfoEx,
-      PCCERT_CONTEXT*) QUERYCLIENTCERT;
+    alias QUERYFORCONNECTION = ULONG function(PLDAP, PLDAP, PWCHAR, PCHAR, ULONG, PVOID, PVOID,
+      PLDAP*);
+    alias NOTIFYOFNEWCONNECTION = BOOLEAN function(PLDAP, PLDAP, PWCHAR, PCHAR, PLDAP, ULONG, PVOID,
+      PVOID, ULONG);
+    alias DEREFERENCECONNECTION = ULONG function(PLDAP, PLDAP);
+    alias QUERYCLIENTCERT = BOOLEAN function(PLDAP, PSecPkgContext_IssuerListInfoEx,
+      PCCERT_CONTEXT*);
 }
 
 struct LDAP_REFERRAL_CALLBACK {
@@ -443,7 +443,7 @@ struct LDAP_REFERRAL_CALLBACK {
     NOTIFYOFNEWCONNECTION* NotifyRoutine;
     DEREFERENCECONNECTION* DereferenceRoutine;
 }
-alias LDAP_REFERRAL_CALLBACK* PLDAP_REFERRAL_CALLBACK;
+alias PLDAP_REFERRAL_CALLBACK = LDAP_REFERRAL_CALLBACK*;
 
 struct LDAPVLVInfo {
     int       ldvlv_version;
@@ -460,7 +460,7 @@ struct LDAPVLVInfo {
  * Under Microsoft WinLDAP the function ldap_error is only stub.
  * This macro uses LDAP structure to get error string and pass it to the user.
  */
-private extern (C) int printf(in char* format, ...);
+private extern (C) int printf(const scope char* format, ...);
 int ldap_perror(LDAP* handle, char* message) {
     return printf("%s: %s\n", message, handle.ld_error);
 }
@@ -491,111 +491,111 @@ extern (C) {
     ULONG ldap_controls_freeW(LDAPControlW**);
     ULONG ldap_free_controlsA(LDAPControlA**);
     ULONG ldap_free_controlsW(LDAPControlW**);
-    ULONG ldap_sasl_bindA(LDAP*, PCHAR, PCHAR, BERVAL*, PLDAPControlA*,
+    ULONG ldap_sasl_bindA(LDAP*, PCSTR, PCSTR, BERVAL*, PLDAPControlA*,
       PLDAPControlA*, int*);
-    ULONG ldap_sasl_bindW(LDAP*, PWCHAR, PWCHAR, BERVAL*, PLDAPControlW*,
+    ULONG ldap_sasl_bindW(LDAP*, PCWSTR, PCWSTR, BERVAL*, PLDAPControlW*,
       PLDAPControlW*, int*);
-    ULONG ldap_sasl_bind_sA(LDAP*, PCHAR, PCHAR, BERVAL*, PLDAPControlA*,
+    ULONG ldap_sasl_bind_sA(LDAP*, PCSTR, PCSTR, BERVAL*, PLDAPControlA*,
       PLDAPControlA*, PBERVAL*);
-    ULONG ldap_sasl_bind_sW(LDAP*, PWCHAR, PWCHAR, BERVAL*, PLDAPControlW*,
+    ULONG ldap_sasl_bind_sW(LDAP*, PCWSTR, PCWSTR, BERVAL*, PLDAPControlW*,
       PLDAPControlW*, PBERVAL*);
-    ULONG ldap_simple_bindA(LDAP*, PCHAR, PCHAR);
-    ULONG ldap_simple_bindW(LDAP*, PWCHAR, PWCHAR);
-    ULONG ldap_simple_bind_sA(LDAP*, PCHAR, PCHAR);
-    ULONG ldap_simple_bind_sW(LDAP*, PWCHAR, PWCHAR);
+    ULONG ldap_simple_bindA(LDAP*, PSTR, PSTR);
+    ULONG ldap_simple_bindW(LDAP*, PWSTR, PWSTR);
+    ULONG ldap_simple_bind_sA(LDAP*, PSTR, PSTR);
+    ULONG ldap_simple_bind_sW(LDAP*, PWSTR, PWSTR);
     ULONG ldap_unbind(LDAP*);
     ULONG ldap_unbind_s(LDAP*);
-    ULONG ldap_search_extA(LDAP*, PCHAR, ULONG, PCHAR, PCHAR[], ULONG,
+    ULONG ldap_search_extA(LDAP*, PCSTR, ULONG, PCSTR, PZPSTR, ULONG,
+      PLDAPControlA*, PLDAPControlA*, ULONG, ULONG, ULONG*);
+    ULONG ldap_search_extW(LDAP*, PCWSTR, ULONG, PCWSTR, PZPWSTR, ULONG,
       PLDAPControlW*, PLDAPControlW*, ULONG, ULONG, ULONG*);
-    ULONG ldap_search_extW(LDAP*, PWCHAR, ULONG, PWCHAR, PWCHAR[], ULONG,
-      PLDAPControlW*, PLDAPControlW*, ULONG, ULONG, ULONG*);
-    ULONG ldap_search_ext_sA(LDAP*, PCHAR, ULONG, PCHAR, PCHAR[], ULONG,
-      PLDAPControlA*, PLDAPControlA*, LDAP_TIMEVAL*, ULONG, LDAPMessage**);
-    ULONG ldap_search_ext_sW(LDAP*, PWCHAR, ULONG, PWCHAR, PWCHAR[], ULONG,
-      PLDAPControlW*, PLDAPControlW*, LDAP_TIMEVAL*, ULONG, LDAPMessage**);
-    ULONG ldap_searchA(LDAP*, PCHAR, ULONG, PCHAR, PCHAR[], ULONG);
-    ULONG ldap_searchW(LDAP*, PWCHAR, ULONG, PWCHAR, PWCHAR[], ULONG);
-    ULONG ldap_search_sA(LDAP*, PCHAR, ULONG, PCHAR, PCHAR[], ULONG,
-      LDAPMessage**);
-    ULONG ldap_search_sW(LDAP*, PWCHAR, ULONG, PWCHAR, PWCHAR[], ULONG,
-      LDAPMessage**);
-    ULONG ldap_search_stA(LDAP*, PCHAR, ULONG, PCHAR, PCHAR[], ULONG,
-      LDAP_TIMEVAL*, LDAPMessage**);
-    ULONG ldap_search_stW(LDAP*, PWCHAR, ULONG, PWCHAR, PWCHAR[], ULONG,
-      LDAP_TIMEVAL*, LDAPMessage**);
-    ULONG ldap_compare_extA(LDAP*, PCHAR, PCHAR, PCHAR, BerValue*,
+    ULONG ldap_search_ext_sA(LDAP*, PCSTR, ULONG, PCSTR, PZPSTR, ULONG,
+      PLDAPControlA*, PLDAPControlA*, LDAP_TIMEVAL*, ULONG, PLDAPMessage*);
+    ULONG ldap_search_ext_sW(LDAP*, PCWSTR, ULONG, PCWSTR, PZPWSTR, ULONG,
+      PLDAPControlW*, PLDAPControlW*, LDAP_TIMEVAL*, ULONG, PLDAPMessage*);
+    ULONG ldap_searchA(LDAP*, PCSTR, ULONG, PCSTR, PZPSTR, ULONG);
+    ULONG ldap_searchW(LDAP*, PCWSTR, ULONG, PCWSTR, PZPWSTR, ULONG);
+    ULONG ldap_search_sA(LDAP*, PCSTR, ULONG, PCSTR, PZPSTR, ULONG,
+      PLDAPMessage*);
+    ULONG ldap_search_sW(LDAP*, PCWSTR, ULONG, PCWSTR, PZPWSTR, ULONG,
+      PLDAPMessage*);
+    ULONG ldap_search_stA(LDAP*, PCSTR, ULONG, PCSTR, PZPSTR, ULONG,
+      LDAP_TIMEVAL*, PLDAPMessage*);
+    ULONG ldap_search_stW(LDAP*, PCWSTR, ULONG, PCWSTR, PZPWSTR, ULONG,
+      LDAP_TIMEVAL*, PLDAPMessage*);
+    ULONG ldap_compare_extA(LDAP*, PCSTR, PCSTR, PCSTR, BerValue*,
       PLDAPControlA*, PLDAPControlA*, ULONG*);
-    ULONG ldap_compare_extW(LDAP*, PWCHAR, PWCHAR, PWCHAR, BerValue*,
+    ULONG ldap_compare_extW(LDAP*, PCWSTR, PCWSTR, PCWSTR, BerValue*,
       PLDAPControlW*, PLDAPControlW*, ULONG*);
-    ULONG ldap_compare_ext_sA(LDAP*, PCHAR, PCHAR, PCHAR, BerValue*,
+    ULONG ldap_compare_ext_sA(LDAP*, PCSTR, PCSTR, PCSTR, BerValue*,
       PLDAPControlA*, PLDAPControlA*);
-    ULONG ldap_compare_ext_sW(LDAP*, PWCHAR, PWCHAR, PWCHAR, BerValue*,
+    ULONG ldap_compare_ext_sW(LDAP*, PCWSTR, PCWSTR, PCWSTR, BerValue*,
       PLDAPControlW*, PLDAPControlW*);
-    ULONG ldap_compareA(LDAP*, PCHAR, PCHAR, PCHAR);
-    ULONG ldap_compareW(LDAP*, PWCHAR, PWCHAR, PWCHAR);
-    ULONG ldap_compare_sA(LDAP*, PCHAR, PCHAR, PCHAR);
-    ULONG ldap_compare_sW(LDAP*, PWCHAR, PWCHAR, PWCHAR);
-    ULONG ldap_modify_extA(LDAP*, PCHAR, LDAPModA*[], PLDAPControlA*,
+    ULONG ldap_compareA(LDAP*, PCSTR, PCSTR, PCSTR);
+    ULONG ldap_compareW(LDAP*, PCWSTR, PCWSTR, PCWSTR);
+    ULONG ldap_compare_sA(LDAP*, PCSTR, PCSTR, PCSTR);
+    ULONG ldap_compare_sW(LDAP*, PCWSTR, PCWSTR, PCWSTR);
+    ULONG ldap_modify_extA(LDAP*, PCSTR, LDAPModA**, PLDAPControlA*,
       PLDAPControlA*, ULONG*);
-    ULONG ldap_modify_extW(LDAP*, PWCHAR, LDAPModW*[], PLDAPControlW*,
+    ULONG ldap_modify_extW(LDAP*, PCWSTR, LDAPModW**, PLDAPControlW*,
       PLDAPControlW*, ULONG*);
-    ULONG ldap_modify_ext_sA(LDAP*, PCHAR, LDAPModA*[], PLDAPControlA*,
+    ULONG ldap_modify_ext_sA(LDAP*, PCSTR, LDAPModA**, PLDAPControlA*,
       PLDAPControlA*);
-    ULONG ldap_modify_ext_sW(LDAP*, PWCHAR, LDAPModW*[], PLDAPControlW*,
+    ULONG ldap_modify_ext_sW(LDAP*, PCWSTR, LDAPModW**, PLDAPControlW*,
       PLDAPControlW*);
-    ULONG ldap_modifyA(LDAP*, PCHAR, LDAPModA*[]);
-    ULONG ldap_modifyW(LDAP*, PWCHAR, LDAPModW*[]);
-    ULONG ldap_modify_sA(LDAP*, PCHAR, LDAPModA*[]);
-    ULONG ldap_modify_sW(LDAP*, PWCHAR, LDAPModW*[]);
-    ULONG ldap_rename_extA(LDAP*, PCHAR, PCHAR, PCHAR, INT, PLDAPControlA*,
+    ULONG ldap_modifyA(LDAP*, PSTR, LDAPModA**);
+    ULONG ldap_modifyW(LDAP*, PWSTR, LDAPModW**);
+    ULONG ldap_modify_sA(LDAP*, PSTR, LDAPModA**);
+    ULONG ldap_modify_sW(LDAP*, PWSTR, LDAPModW**);
+    ULONG ldap_rename_extA(LDAP*, PCSTR, PCSTR, PCSTR, INT, PLDAPControlA*,
       PLDAPControlA*, ULONG*);
-    ULONG ldap_rename_extW(LDAP*, PWCHAR, PWCHAR, PWCHAR, INT, PLDAPControlW*,
+    ULONG ldap_rename_extW(LDAP*, PCWSTR, PCWSTR, PCWSTR, INT, PLDAPControlW*,
       PLDAPControlW*, ULONG*);
-    ULONG ldap_rename_ext_sA(LDAP*, PCHAR, PCHAR, PCHAR, INT,
+    ULONG ldap_rename_ext_sA(LDAP*, PCSTR, PCSTR, PCSTR, INT,
       PLDAPControlA*, PLDAPControlA*);
-    ULONG ldap_rename_ext_sW(LDAP*, PWCHAR, PWCHAR, PWCHAR, INT,
+    ULONG ldap_rename_ext_sW(LDAP*, PCWSTR, PCWSTR, PCWSTR, INT,
       PLDAPControlW*, PLDAPControlW*);
-    ULONG ldap_add_extA(LDAP*, PCHAR, LDAPModA*[], PLDAPControlA*,
+    ULONG ldap_add_extA(LDAP*, PCSTR, LDAPModA**, PLDAPControlA*,
       PLDAPControlA*, ULONG*);
-    ULONG ldap_add_extW(LDAP*, PWCHAR, LDAPModW*[], PLDAPControlW*,
+    ULONG ldap_add_extW(LDAP*, PCWSTR, LDAPModW**, PLDAPControlW*,
       PLDAPControlW*, ULONG*);
-    ULONG ldap_add_ext_sA(LDAP*, PCHAR, LDAPModA*[], PLDAPControlA*,
+    ULONG ldap_add_ext_sA(LDAP*, PCSTR, LDAPModA**, PLDAPControlA*,
       PLDAPControlA*);
-    ULONG ldap_add_ext_sW(LDAP*, PWCHAR, LDAPModW*[], PLDAPControlW*,
+    ULONG ldap_add_ext_sW(LDAP*, PCWSTR, LDAPModW**, PLDAPControlW*,
       PLDAPControlW*);
-    ULONG ldap_addA(LDAP*, PCHAR, LDAPModA*[]);
-    ULONG ldap_addW(LDAP*, PWCHAR, LDAPModW*[]);
-    ULONG ldap_add_sA(LDAP*, PCHAR, LDAPModA*[]);
-    ULONG ldap_add_sW(LDAP*, PWCHAR, LDAPModW*[]);
-    ULONG ldap_delete_extA(LDAP*, PCHAR, PLDAPControlA*, PLDAPControlA*,
+    ULONG ldap_addA(LDAP*, PSTR, LDAPModA**);
+    ULONG ldap_addW(LDAP*, PWSTR, LDAPModW**);
+    ULONG ldap_add_sA(LDAP*, PSTR, LDAPModA**);
+    ULONG ldap_add_sW(LDAP*, PWSTR, LDAPModW**);
+    ULONG ldap_delete_extA(LDAP*, PCSTR, PLDAPControlA*, PLDAPControlA*,
       ULONG*);
-    ULONG ldap_delete_extW(LDAP*, PWCHAR, PLDAPControlW*, PLDAPControlW*,
+    ULONG ldap_delete_extW(LDAP*, PCWSTR, PLDAPControlW*, PLDAPControlW*,
       ULONG*);
-    ULONG ldap_delete_ext_sA(LDAP*, PCHAR, PLDAPControlA*, PLDAPControlA*);
-    ULONG ldap_delete_ext_sW(LDAP*, PWCHAR, PLDAPControlW*, PLDAPControlW*);
-    ULONG ldap_deleteA(LDAP*, PCHAR);
-    ULONG ldap_deleteW(LDAP*, PWCHAR);
-    ULONG ldap_delete_sA(LDAP*, PCHAR);
-    ULONG ldap_delete_sW(LDAP*, PWCHAR);
-    ULONG ldap_extended_operationA(LDAP*, PCHAR, BerValue*, PLDAPControlA*,
+    ULONG ldap_delete_ext_sA(LDAP*, PCSTR, PLDAPControlA*, PLDAPControlA*);
+    ULONG ldap_delete_ext_sW(LDAP*, PCWSTR, PLDAPControlW*, PLDAPControlW*);
+    ULONG ldap_deleteA(LDAP*, PCSTR);
+    ULONG ldap_deleteW(LDAP*, PCWSTR);
+    ULONG ldap_delete_sA(LDAP*, PCSTR);
+    ULONG ldap_delete_sW(LDAP*, PCWSTR);
+    ULONG ldap_extended_operationA(LDAP*, PCSTR, BerValue*, PLDAPControlA*,
       PLDAPControlA*, ULONG*);
-    ULONG ldap_extended_operationW(LDAP*, PWCHAR, BerValue*, PLDAPControlW*,
+    ULONG ldap_extended_operationW(LDAP*, PCWSTR, BerValue*, PLDAPControlW*,
       PLDAPControlW*, ULONG*);
-    ULONG ldap_extended_operation_sA(LDAP*, PCHAR, BerValue*, PLDAPControlA*,
+    ULONG ldap_extended_operation_sA(LDAP*, PSTR, BerValue*, PLDAPControlA*,
       PLDAPControlA*, PCHAR*, BerValue**);
-    ULONG ldap_extended_operation_sW(LDAP*, PWCHAR, BerValue*, PLDAPControlW*,
+    ULONG ldap_extended_operation_sW(LDAP*, PWSTR, BerValue*, PLDAPControlW*,
       PLDAPControlW*, PWCHAR*, BerValue**);
     ULONG ldap_close_extended_op(LDAP*, ULONG);
     ULONG ldap_abandon(LDAP*, ULONG);
     ULONG ldap_result(LDAP*, ULONG, ULONG, LDAP_TIMEVAL*, LDAPMessage**);
     ULONG ldap_msgfree(LDAPMessage*);
-    ULONG ldap_parse_resultA(LDAP*, LDAPMessage*, ULONG*, PCHAR*, PCHAR*,
-      PCHAR**, PLDAPControlA**, BOOLEAN);
-    ULONG ldap_parse_resultW(LDAP*, LDAPMessage*, ULONG*, PWCHAR*, PWCHAR*,
-      PWCHAR**, PLDAPControlW**, BOOLEAN);
-    ULONG ldap_parse_extended_resultA(LDAP, LDAPMessage*, PCHAR*, BerValue**,
+    ULONG ldap_parse_resultA(LDAP*, LDAPMessage*, ULONG*, PSTR*, PSTR*,
+      PZPSTR*, PLDAPControlA**, BOOLEAN);
+    ULONG ldap_parse_resultW(LDAP*, LDAPMessage*, ULONG*, PWSTR*, PWSTR*,
+      PZPWSTR*, PLDAPControlW**, BOOLEAN);
+    ULONG ldap_parse_extended_resultA(LDAP, LDAPMessage*, PSTR*, BerValue**,
       BOOLEAN);
-    ULONG ldap_parse_extended_resultW(LDAP, LDAPMessage*, PWCHAR*, BerValue**,
+    ULONG ldap_parse_extended_resultW(LDAP, LDAPMessage*, PWSTR*, BerValue**,
       BOOLEAN);
     PCHAR ldap_err2stringA(ULONG);
     PWCHAR ldap_err2stringW(ULONG);
@@ -614,10 +614,10 @@ extern (C) {
     PWCHAR ldap_next_attributeW(LDAP*, LDAPMessage*, BerElement*);
     VOID ldap_memfreeA(PCHAR);
     VOID ldap_memfreeW(PWCHAR);
-    PCHAR* ldap_get_valuesA(LDAP*, LDAPMessage*, PCHAR);
-    PWCHAR* ldap_get_valuesW(LDAP*, LDAPMessage*, PWCHAR);
-    BerValue** ldap_get_values_lenA(LDAP*, LDAPMessage*, PCHAR);
-    BerValue** ldap_get_values_lenW(LDAP*, LDAPMessage*, PWCHAR);
+    PCHAR* ldap_get_valuesA(LDAP*, LDAPMessage*, PCSTR);
+    PWCHAR* ldap_get_valuesW(LDAP*, LDAPMessage*, PCWSTR);
+    BerValue** ldap_get_values_lenA(LDAP*, LDAPMessage*, PCSTR);
+    BerValue** ldap_get_values_lenW(LDAP*, LDAPMessage*, PCWSTR);
     ULONG ldap_count_valuesA(PCHAR*);
     ULONG ldap_count_valuesW(PWCHAR*);
     ULONG ldap_count_values_len(BerValue**);
@@ -626,16 +626,16 @@ extern (C) {
     ULONG ldap_value_free_len(BerValue**);
     PCHAR ldap_get_dnA(LDAP*, LDAPMessage*);
     PWCHAR ldap_get_dnW(LDAP*, LDAPMessage*);
-    PCHAR ldap_explode_dnA(PCHAR, ULONG);
-    PWCHAR ldap_explode_dnW(PWCHAR, ULONG);
-    PCHAR ldap_dn2ufnA(PCHAR);
-    PWCHAR ldap_dn2ufnW(PWCHAR);
-    ULONG ldap_ufn2dnA(PCHAR, PCHAR*);
-    ULONG ldap_ufn2dnW(PWCHAR, PWCHAR*);
+    PCHAR ldap_explode_dnA(PCSTR, ULONG);
+    PWCHAR ldap_explode_dnW(PCWSTR, ULONG);
+    PCHAR ldap_dn2ufnA(PCSTR);
+    PWCHAR ldap_dn2ufnW(PCWSTR);
+    ULONG ldap_ufn2dnA(PCSTR, PSTR*);
+    ULONG ldap_ufn2dnW(PCWSTR, PWSTR*);
     ULONG ldap_parse_referenceA(LDAP*, LDAPMessage*, PCHAR**);
     ULONG ldap_parse_referenceW(LDAP*, LDAPMessage*, PWCHAR**);
-    ULONG ldap_check_filterA(LDAP*, PCHAR);
-    ULONG ldap_check_filterW(LDAP*, PWCHAR);
+    ULONG ldap_check_filterA(LDAP*, PSTR);
+    ULONG ldap_check_filterW(LDAP*, PWSTR);
     ULONG ldap_create_page_controlA(PLDAP, ULONG, BerValue*, UCHAR,
       PLDAPControlA*);
     ULONG ldap_create_page_controlW(PLDAP, ULONG, BerValue*, UCHAR,
@@ -644,8 +644,8 @@ extern (C) {
       PLDAPControlA*);
     ULONG ldap_create_sort_controlW(PLDAP, PLDAPSortKeyW*, UCHAR,
     PLDAPControlW*);
-    INT ldap_create_vlv_controlA(LDAP*, LDAPVLVInfo*, UCHAR, LDAPControlA**);
-    INT ldap_create_vlv_controlW(LDAP*, LDAPVLVInfo*, UCHAR, LDAPControlW**);
+    INT ldap_create_vlv_controlA(LDAP*, LDAPVLVInfo*, UCHAR, PLDAPControlA*);
+    INT ldap_create_vlv_controlW(LDAP*, LDAPVLVInfo*, UCHAR, PLDAPControlW*);
     ULONG ldap_encode_sort_controlA(PLDAP, PLDAPSortKeyA*, PLDAPControlA,
       BOOLEAN);
     ULONG ldap_encode_sort_controlW(PLDAP, PLDAPSortKeyW*, PLDAPControlW,
@@ -660,202 +660,202 @@ extern (C) {
     ULONG ldap_parse_page_controlW(PLDAP, PLDAPControlW*, ULONG*, BerValue**);
     ULONG ldap_parse_sort_controlA(PLDAP, PLDAPControlA*, ULONG*, PCHAR*);
     ULONG ldap_parse_sort_controlW(PLDAP, PLDAPControlW*, ULONG*, PWCHAR*);
-    INT ldap_parse_vlv_controlA(LDAP*, LDAPControlA**, uint*, uint*,
-      BerValue**, int*);
-    INT ldap_parse_vlv_controlW(LDAP*, LDAPControlW**, uint*, uint*,
-      BerValue**, int*);
-    PLDAPSearch ldap_search_init_pageA(PLDAP, PCHAR, ULONG, PCHAR, PCHAR[],
+    INT ldap_parse_vlv_controlA(PLDAP, PLDAPControlA*, PULONG, PULONG,
+      BerValue**, PINT);
+    INT ldap_parse_vlv_controlW(PLDAP, PLDAPControlW*, PULONG, PULONG,
+      BerValue**, PINT);
+    PLDAPSearch ldap_search_init_pageA(PLDAP, PCSTR, ULONG, PCSTR, PZPSTR,
       ULONG, PLDAPControlA*, PLDAPControlA*, ULONG, ULONG, PLDAPSortKeyA*);
-    PLDAPSearch ldap_search_init_pageW(PLDAP, PWCHAR, ULONG, PWCHAR, PWCHAR[],
+    PLDAPSearch ldap_search_init_pageW(PLDAP, PCWSTR, ULONG, PCWSTR, PZPWSTR,
       ULONG, PLDAPControlW*, PLDAPControlW*, ULONG, ULONG, PLDAPSortKeyW*);
     ULONG ldap_search_abandon_page(PLDAP, PLDAPSearch);
     LDAP ldap_conn_from_msg(LDAP*, LDAPMessage*);
     INT LdapUnicodeToUTF8(LPCWSTR, int, LPSTR, int);
     INT LdapUTF8ToUnicode(LPCSTR, int, LPWSTR, int);
-    deprecated {
-        ULONG ldap_bindA(LDAP*, PCHAR, PCHAR, ULONG);
-        ULONG ldap_bindW(LDAP*, PWCHAR, PWCHAR, ULONG);
-        ULONG ldap_bind_sA(LDAP*, PCHAR, PCHAR, ULONG);
-        ULONG ldap_bind_sW(LDAP*, PWCHAR, PWCHAR, ULONG);
-        ULONG ldap_modrdnA(LDAP*, PCHAR, PCHAR);
-        ULONG ldap_modrdnW(LDAP*, PWCHAR, PWCHAR);
-        ULONG ldap_modrdn_sA(LDAP*, PCHAR, PCHAR);
-        ULONG ldap_modrdn_sW(LDAP*, PWCHAR, PWCHAR);
-        ULONG ldap_modrdn2A(LDAP*, PCHAR, PCHAR, INT);
-        ULONG ldap_modrdn2W(LDAP*, PWCHAR, PWCHAR, INT);
-        ULONG ldap_modrdn2_sA(LDAP*, PCHAR, PCHAR, INT);
-        ULONG ldap_modrdn2_sW(LDAP*, PWCHAR, PWCHAR, INT);
+    ULONG ldap_bindA(LDAP*, PSTR, PCHAR, ULONG);
+    ULONG ldap_bindW(LDAP*, PWSTR, PWCHAR, ULONG);
+    ULONG ldap_bind_sA(LDAP*, PSTR, PCHAR, ULONG);
+    ULONG ldap_bind_sW(LDAP*, PWSTR, PWCHAR, ULONG);
+    deprecated ("For LDAP 3 or later, use the ldap_rename_ext or ldap_rename_ext_s functions") {
+        ULONG ldap_modrdnA(LDAP*, PCSTR, PCSTR);
+        ULONG ldap_modrdnW(LDAP*, PCWSTR, PCWSTR);
+        ULONG ldap_modrdn_sA(LDAP*, PCSTR, PCSTR);
+        ULONG ldap_modrdn_sW(LDAP*, PCWSTR, PCWSTR);
+        ULONG ldap_modrdn2A(LDAP*, PCSTR, PCSTR, INT);
+        ULONG ldap_modrdn2W(LDAP*, PCWSTR, PCWSTR, INT);
+        ULONG ldap_modrdn2_sA(LDAP*, PCSTR, PCSTR, INT);
+        ULONG ldap_modrdn2_sW(LDAP*, PCWSTR, PCWSTR, INT);
     }
 }
 
 version (Unicode) {
-    alias LDAPControlW LDAPControl;
-    alias PLDAPControlW PLDAPControl;
-    alias LDAPModW LDAPMod;
-    alias LDAPModW PLDAPMod;
-    alias LDAPSortKeyW LDAPSortKey;
-    alias PLDAPSortKeyW PLDAPSortKey;
-    alias LDAPAPIInfoW LDAPAPIInfo;
-    alias PLDAPAPIInfoW PLDAPAPIInfo;
-    alias LDAPAPIFeatureInfoW LDAPAPIFeatureInfo;
-    alias PLDAPAPIFeatureInfoW PLDAPAPIFeatureInfo;
-    alias cldap_openW cldap_open;
-    alias ldap_openW ldap_open;
-    alias ldap_simple_bindW ldap_simple_bind;
-    alias ldap_simple_bind_sW ldap_simple_bind_s;
-    alias ldap_sasl_bindW ldap_sasl_bind;
-    alias ldap_sasl_bind_sW ldap_sasl_bind_s;
-    alias ldap_initW ldap_init;
-    alias ldap_sslinitW ldap_sslinit;
-    alias ldap_get_optionW ldap_get_option;
-    alias ldap_set_optionW ldap_set_option;
-    alias ldap_start_tls_sW ldap_start_tls_s;
-    alias ldap_addW ldap_add;
-    alias ldap_add_extW ldap_add_ext;
-    alias ldap_add_sW ldap_add_s;
-    alias ldap_add_ext_sW ldap_add_ext_s;
-    alias ldap_compareW ldap_compare;
-    alias ldap_compare_extW ldap_compare_ext;
-    alias ldap_compare_sW ldap_compare_s;
-    alias ldap_compare_ext_sW ldap_compare_ext_s;
-    alias ldap_deleteW ldap_delete;
-    alias ldap_delete_extW ldap_delete_ext;
-    alias ldap_delete_sW ldap_delete_s;
-    alias ldap_delete_ext_sW ldap_delete_ext_s;
-    alias ldap_extended_operation_sW ldap_extended_operation_s;
-    alias ldap_extended_operationW ldap_extended_operation;
-    alias ldap_modifyW ldap_modify;
-    alias ldap_modify_extW ldap_modify_ext;
-    alias ldap_modify_sW ldap_modify_s;
-    alias ldap_modify_ext_sW ldap_modify_ext_s;
-    alias ldap_check_filterW ldap_check_filter;
-    alias ldap_count_valuesW ldap_count_values;
-    alias ldap_create_page_controlW ldap_create_page_control;
-    alias ldap_create_sort_controlW ldap_create_sort_control;
-    alias ldap_create_vlv_controlW ldap_create_vlv_control;
-    alias ldap_encode_sort_controlW ldap_encode_sort_control;
-    alias ldap_escape_filter_elementW ldap_escape_filter_element;
-    alias ldap_first_attributeW ldap_first_attribute;
-    alias ldap_next_attributeW ldap_next_attribute;
-    alias ldap_get_valuesW ldap_get_values;
-    alias ldap_get_values_lenW ldap_get_values_len;
-    alias ldap_parse_extended_resultW ldap_parse_extended_result;
-    alias ldap_parse_page_controlW ldap_parse_page_control;
-    alias ldap_parse_referenceW ldap_parse_reference;
-    alias ldap_parse_resultW ldap_parse_result;
-    alias ldap_parse_sort_controlW ldap_parse_sort_control;
-    alias ldap_parse_vlv_controlW ldap_parse_vlv_control;
-    alias ldap_searchW ldap_search;
-    alias ldap_search_sW ldap_search_s;
-    alias ldap_search_stW ldap_search_st;
-    alias ldap_search_extW ldap_search_ext;
-    alias ldap_search_ext_sW ldap_search_ext_s;
-    alias ldap_search_init_pageW ldap_search_init_page;
-    alias ldap_err2stringW ldap_err2string;
-    alias ldap_control_freeW ldap_control_free;
-    alias ldap_controls_freeW ldap_controls_free;
-    alias ldap_free_controlsW ldap_free_controls;
-    alias ldap_memfreeW ldap_memfree;
-    alias ldap_value_freeW ldap_value_free;
-    alias ldap_dn2ufnW ldap_dn2ufn;
-    alias ldap_ufn2dnW ldap_ufn2dn;
-    alias ldap_explode_dnW ldap_explode_dn;
-    alias ldap_get_dnW ldap_get_dn;
-    alias ldap_rename_extW ldap_rename;
-    alias ldap_rename_ext_sW ldap_rename_s;
-    alias ldap_rename_extW ldap_rename_ext;
-    alias ldap_rename_ext_sW ldap_rename_ext_s;
+    alias LDAPControl = LDAPControlW;
+    alias PLDAPControl = PLDAPControlW;
+    alias LDAPMod = LDAPModW;
+    alias PLDAPMod = LDAPModW;
+    alias LDAPSortKey = LDAPSortKeyW;
+    alias PLDAPSortKey = PLDAPSortKeyW;
+    alias LDAPAPIInfo = LDAPAPIInfoW;
+    alias PLDAPAPIInfo = PLDAPAPIInfoW;
+    alias LDAPAPIFeatureInfo = LDAPAPIFeatureInfoW;
+    alias PLDAPAPIFeatureInfo = PLDAPAPIFeatureInfoW;
+    alias cldap_open = cldap_openW;
+    alias ldap_open = ldap_openW;
+    alias ldap_simple_bind = ldap_simple_bindW;
+    alias ldap_simple_bind_s = ldap_simple_bind_sW;
+    alias ldap_sasl_bind = ldap_sasl_bindW;
+    alias ldap_sasl_bind_s = ldap_sasl_bind_sW;
+    alias ldap_init = ldap_initW;
+    alias ldap_sslinit = ldap_sslinitW;
+    alias ldap_get_option = ldap_get_optionW;
+    alias ldap_set_option = ldap_set_optionW;
+    alias ldap_start_tls_s = ldap_start_tls_sW;
+    alias ldap_add = ldap_addW;
+    alias ldap_add_ext = ldap_add_extW;
+    alias ldap_add_s = ldap_add_sW;
+    alias ldap_add_ext_s = ldap_add_ext_sW;
+    alias ldap_compare = ldap_compareW;
+    alias ldap_compare_ext = ldap_compare_extW;
+    alias ldap_compare_s = ldap_compare_sW;
+    alias ldap_compare_ext_s = ldap_compare_ext_sW;
+    alias ldap_delete = ldap_deleteW;
+    alias ldap_delete_ext = ldap_delete_extW;
+    alias ldap_delete_s = ldap_delete_sW;
+    alias ldap_delete_ext_s = ldap_delete_ext_sW;
+    alias ldap_extended_operation_s = ldap_extended_operation_sW;
+    alias ldap_extended_operation = ldap_extended_operationW;
+    alias ldap_modify = ldap_modifyW;
+    alias ldap_modify_ext = ldap_modify_extW;
+    alias ldap_modify_s = ldap_modify_sW;
+    alias ldap_modify_ext_s = ldap_modify_ext_sW;
+    alias ldap_check_filter = ldap_check_filterW;
+    alias ldap_count_values = ldap_count_valuesW;
+    alias ldap_create_page_control = ldap_create_page_controlW;
+    alias ldap_create_sort_control = ldap_create_sort_controlW;
+    alias ldap_create_vlv_control = ldap_create_vlv_controlW;
+    alias ldap_encode_sort_control = ldap_encode_sort_controlW;
+    alias ldap_escape_filter_element = ldap_escape_filter_elementW;
+    alias ldap_first_attribute = ldap_first_attributeW;
+    alias ldap_next_attribute = ldap_next_attributeW;
+    alias ldap_get_values = ldap_get_valuesW;
+    alias ldap_get_values_len = ldap_get_values_lenW;
+    alias ldap_parse_extended_result = ldap_parse_extended_resultW;
+    alias ldap_parse_page_control = ldap_parse_page_controlW;
+    alias ldap_parse_reference = ldap_parse_referenceW;
+    alias ldap_parse_result = ldap_parse_resultW;
+    alias ldap_parse_sort_control = ldap_parse_sort_controlW;
+    alias ldap_parse_vlv_control = ldap_parse_vlv_controlW;
+    alias ldap_search = ldap_searchW;
+    alias ldap_search_s = ldap_search_sW;
+    alias ldap_search_st = ldap_search_stW;
+    alias ldap_search_ext = ldap_search_extW;
+    alias ldap_search_ext_s = ldap_search_ext_sW;
+    alias ldap_search_init_page = ldap_search_init_pageW;
+    alias ldap_err2string = ldap_err2stringW;
+    alias ldap_control_free = ldap_control_freeW;
+    alias ldap_controls_free = ldap_controls_freeW;
+    alias ldap_free_controls = ldap_free_controlsW;
+    alias ldap_memfree = ldap_memfreeW;
+    alias ldap_value_free = ldap_value_freeW;
+    alias ldap_dn2ufn = ldap_dn2ufnW;
+    alias ldap_ufn2dn = ldap_ufn2dnW;
+    alias ldap_explode_dn = ldap_explode_dnW;
+    alias ldap_get_dn = ldap_get_dnW;
+    alias ldap_rename = ldap_rename_extW;
+    alias ldap_rename_s = ldap_rename_ext_sW;
+    alias ldap_rename_ext = ldap_rename_extW;
+    alias ldap_rename_ext_s = ldap_rename_ext_sW;
     deprecated {
-        alias ldap_bindW ldap_bind;
-        alias ldap_bind_sW ldap_bind_s;
-        alias ldap_modrdnW ldap_modrdn;
-        alias ldap_modrdn_sW ldap_modrdn_s;
-        alias ldap_modrdn2W ldap_modrdn2;
-        alias ldap_modrdn2_sW ldap_modrdn2_s;
+        alias ldap_bind = ldap_bindW;
+        alias ldap_bind_s = ldap_bind_sW;
+        alias ldap_modrdn = ldap_modrdnW;
+        alias ldap_modrdn_s = ldap_modrdn_sW;
+        alias ldap_modrdn2 = ldap_modrdn2W;
+        alias ldap_modrdn2_s = ldap_modrdn2_sW;
     }
 } else {
-    alias LDAPControlA LDAPControl;
-    alias PLDAPControlA PLDAPControl;
-    alias LDAPModA LDAPMod;
-    alias LDAPModA PLDAPMod;
-    alias LDAPSortKeyA LDAPSortKey;
-    alias PLDAPSortKeyA PLDAPSortKey;
-    alias LDAPAPIInfoA LDAPAPIInfo;
-    alias PLDAPAPIInfoA PLDAPAPIInfo;
-    alias LDAPAPIFeatureInfoA LDAPAPIFeatureInfo;
-    alias PLDAPAPIFeatureInfoA PLDAPAPIFeatureInfo;
-    alias cldap_openA cldap_open;
-    alias ldap_openA ldap_open;
-    alias ldap_simple_bindA ldap_simple_bind;
-    alias ldap_simple_bind_sA ldap_simple_bind_s;
-    alias ldap_sasl_bindA ldap_sasl_bind;
-    alias ldap_sasl_bind_sA ldap_sasl_bind_s;
-    alias ldap_initA ldap_init;
-    alias ldap_sslinitA ldap_sslinit;
-    alias ldap_get_optionA ldap_get_option;
-    alias ldap_set_optionA ldap_set_option;
-    alias ldap_start_tls_sA ldap_start_tls_s;
-    alias ldap_addA ldap_add;
-    alias ldap_add_extA ldap_add_ext;
-    alias ldap_add_sA ldap_add_s;
-    alias ldap_add_ext_sA ldap_add_ext_s;
-    alias ldap_compareA ldap_compare;
-    alias ldap_compare_extA ldap_compare_ext;
-    alias ldap_compare_sA ldap_compare_s;
-    alias ldap_compare_ext_sA ldap_compare_ext_s;
-    alias ldap_deleteA ldap_delete;
-    alias ldap_delete_extA ldap_delete_ext;
-    alias ldap_delete_sA ldap_delete_s;
-    alias ldap_delete_ext_sA ldap_delete_ext_s;
-    alias ldap_extended_operation_sA ldap_extended_operation_s;
-    alias ldap_extended_operationA ldap_extended_operation;
-    alias ldap_modifyA ldap_modify;
-    alias ldap_modify_extA ldap_modify_ext;
-    alias ldap_modify_sA ldap_modify_s;
-    alias ldap_modify_ext_sA ldap_modify_ext_s;
-    alias ldap_check_filterA ldap_check_filter;
-    alias ldap_count_valuesA ldap_count_values;
-    alias ldap_create_page_controlA ldap_create_page_control;
-    alias ldap_create_sort_controlA ldap_create_sort_control;
-    alias ldap_create_vlv_controlA ldap_create_vlv_control;
-    alias ldap_encode_sort_controlA ldap_encode_sort_control;
-    alias ldap_escape_filter_elementA ldap_escape_filter_element;
-    alias ldap_first_attributeA ldap_first_attribute;
-    alias ldap_next_attributeA ldap_next_attribute;
-    alias ldap_get_valuesA ldap_get_values;
-    alias ldap_get_values_lenA ldap_get_values_len;
-    alias ldap_parse_extended_resultA ldap_parse_extended_result;
-    alias ldap_parse_page_controlA ldap_parse_page_control;
-    alias ldap_parse_referenceA ldap_parse_reference;
-    alias ldap_parse_resultA ldap_parse_result;
-    alias ldap_parse_sort_controlA ldap_parse_sort_control;
-    alias ldap_parse_vlv_controlA ldap_parse_vlv_control;
-    alias ldap_searchA ldap_search;
-    alias ldap_search_sA ldap_search_s;
-    alias ldap_search_stA ldap_search_st;
-    alias ldap_search_extA ldap_search_ext;
-    alias ldap_search_ext_sA ldap_search_ext_s;
-    alias ldap_search_init_pageA ldap_search_init_page;
-    alias ldap_err2stringA ldap_err2string;
-    alias ldap_control_freeA ldap_control_free;
-    alias ldap_controls_freeA ldap_controls_free;
-    alias ldap_free_controlsA ldap_free_controls;
-    alias ldap_memfreeA ldap_memfree;
-    alias ldap_value_freeA ldap_value_free;
-    alias ldap_dn2ufnA ldap_dn2ufn;
-    alias ldap_ufn2dnA ldap_ufn2dn;
-    alias ldap_explode_dnA ldap_explode_dn;
-    alias ldap_get_dnA ldap_get_dn;
-    alias ldap_rename_extA ldap_rename;
-    alias ldap_rename_ext_sA ldap_rename_s;
-    alias ldap_rename_extA ldap_rename_ext;
-    alias ldap_rename_ext_sA ldap_rename_ext_s;
+    alias LDAPControl = LDAPControlA;
+    alias PLDAPControl = PLDAPControlA;
+    alias LDAPMod = LDAPModA;
+    alias PLDAPMod = LDAPModA;
+    alias LDAPSortKey = LDAPSortKeyA;
+    alias PLDAPSortKey = PLDAPSortKeyA;
+    alias LDAPAPIInfo = LDAPAPIInfoA;
+    alias PLDAPAPIInfo = PLDAPAPIInfoA;
+    alias LDAPAPIFeatureInfo = LDAPAPIFeatureInfoA;
+    alias PLDAPAPIFeatureInfo = PLDAPAPIFeatureInfoA;
+    alias cldap_open = cldap_openA;
+    alias ldap_open = ldap_openA;
+    alias ldap_simple_bind = ldap_simple_bindA;
+    alias ldap_simple_bind_s = ldap_simple_bind_sA;
+    alias ldap_sasl_bind = ldap_sasl_bindA;
+    alias ldap_sasl_bind_s = ldap_sasl_bind_sA;
+    alias ldap_init = ldap_initA;
+    alias ldap_sslinit = ldap_sslinitA;
+    alias ldap_get_option = ldap_get_optionA;
+    alias ldap_set_option = ldap_set_optionA;
+    alias ldap_start_tls_s = ldap_start_tls_sA;
+    alias ldap_add = ldap_addA;
+    alias ldap_add_ext = ldap_add_extA;
+    alias ldap_add_s = ldap_add_sA;
+    alias ldap_add_ext_s = ldap_add_ext_sA;
+    alias ldap_compare = ldap_compareA;
+    alias ldap_compare_ext = ldap_compare_extA;
+    alias ldap_compare_s = ldap_compare_sA;
+    alias ldap_compare_ext_s = ldap_compare_ext_sA;
+    alias ldap_delete = ldap_deleteA;
+    alias ldap_delete_ext = ldap_delete_extA;
+    alias ldap_delete_s = ldap_delete_sA;
+    alias ldap_delete_ext_s = ldap_delete_ext_sA;
+    alias ldap_extended_operation_s = ldap_extended_operation_sA;
+    alias ldap_extended_operation = ldap_extended_operationA;
+    alias ldap_modify = ldap_modifyA;
+    alias ldap_modify_ext = ldap_modify_extA;
+    alias ldap_modify_s = ldap_modify_sA;
+    alias ldap_modify_ext_s = ldap_modify_ext_sA;
+    alias ldap_check_filter = ldap_check_filterA;
+    alias ldap_count_values = ldap_count_valuesA;
+    alias ldap_create_page_control = ldap_create_page_controlA;
+    alias ldap_create_sort_control = ldap_create_sort_controlA;
+    alias ldap_create_vlv_control = ldap_create_vlv_controlA;
+    alias ldap_encode_sort_control = ldap_encode_sort_controlA;
+    alias ldap_escape_filter_element = ldap_escape_filter_elementA;
+    alias ldap_first_attribute = ldap_first_attributeA;
+    alias ldap_next_attribute = ldap_next_attributeA;
+    alias ldap_get_values = ldap_get_valuesA;
+    alias ldap_get_values_len = ldap_get_values_lenA;
+    alias ldap_parse_extended_result = ldap_parse_extended_resultA;
+    alias ldap_parse_page_control = ldap_parse_page_controlA;
+    alias ldap_parse_reference = ldap_parse_referenceA;
+    alias ldap_parse_result = ldap_parse_resultA;
+    alias ldap_parse_sort_control = ldap_parse_sort_controlA;
+    alias ldap_parse_vlv_control = ldap_parse_vlv_controlA;
+    alias ldap_search = ldap_searchA;
+    alias ldap_search_s = ldap_search_sA;
+    alias ldap_search_st = ldap_search_stA;
+    alias ldap_search_ext = ldap_search_extA;
+    alias ldap_search_ext_s = ldap_search_ext_sA;
+    alias ldap_search_init_page = ldap_search_init_pageA;
+    alias ldap_err2string = ldap_err2stringA;
+    alias ldap_control_free = ldap_control_freeA;
+    alias ldap_controls_free = ldap_controls_freeA;
+    alias ldap_free_controls = ldap_free_controlsA;
+    alias ldap_memfree = ldap_memfreeA;
+    alias ldap_value_free = ldap_value_freeA;
+    alias ldap_dn2ufn = ldap_dn2ufnA;
+    alias ldap_ufn2dn = ldap_ufn2dnA;
+    alias ldap_explode_dn = ldap_explode_dnA;
+    alias ldap_get_dn = ldap_get_dnA;
+    alias ldap_rename = ldap_rename_extA;
+    alias ldap_rename_s = ldap_rename_ext_sA;
+    alias ldap_rename_ext = ldap_rename_extA;
+    alias ldap_rename_ext_s = ldap_rename_ext_sA;
     deprecated {
-        alias ldap_bindA ldap_bind;
-        alias ldap_bind_sA ldap_bind_s;
-        alias ldap_modrdnA ldap_modrdn;
-        alias ldap_modrdn_sA ldap_modrdn_s;
-        alias ldap_modrdn2A ldap_modrdn2;
-        alias ldap_modrdn2_sA ldap_modrdn2_s;
+        alias ldap_bind = ldap_bindA;
+        alias ldap_bind_s = ldap_bind_sA;
+        alias ldap_modrdn = ldap_modrdnA;
+        alias ldap_modrdn_s = ldap_modrdn_sA;
+        alias ldap_modrdn2 = ldap_modrdn2A;
+        alias ldap_modrdn2_s = ldap_modrdn2_sA;
     }
 }

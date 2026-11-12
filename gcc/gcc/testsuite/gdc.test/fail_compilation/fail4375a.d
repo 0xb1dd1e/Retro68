@@ -1,5 +1,10 @@
-// REQUIRED_ARGS: -w
-// 4375: Dangling else
+// https://issues.dlang.org/show_bug.cgi?id=4375: Dangling else
+/*
+TEST_OUTPUT:
+---
+fail_compilation/fail4375a.d(13): Error: else is dangling, add { } after condition at fail_compilation/fail4375a.d(10)
+---
+*/
 
 void main() {
 	if (true)
@@ -8,4 +13,3 @@ void main() {
     else
         assert(4);
 }
-

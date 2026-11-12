@@ -1,6 +1,6 @@
 // SGI's rope class implementation -*- C++ -*-
 
-// Copyright (C) 2001-2019 Free Software Foundation, Inc.
+// Copyright (C) 2001-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -42,7 +42,7 @@
 
 #include <cstdio>
 #include <ostream>
-#include <bits/functexcept.h>
+#include <bits/stdexcept_throw.h>
 
 #include <ext/algorithm> // For copy_n and lexicographical_compare_3way
 #include <ext/memory> // For uninitialized_copy_n
@@ -51,13 +51,6 @@
 namespace __gnu_cxx _GLIBCXX_VISIBILITY(default)
 {
 _GLIBCXX_BEGIN_NAMESPACE_VERSION
-
-  using std::size_t;
-  using std::printf;
-  using std::basic_ostream;
-  using std::__throw_length_error;
-  using std::_Destroy;
-  using std::__uninitialized_fill_n_a;
 
   // Set buf_start, buf_end, and buf_ptr appropriately, filling tmp_buf
   // if necessary.  Assumes _M_path_end[leaf_index] and leaf_pos are correct.
@@ -68,6 +61,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     _Rope_iterator_base<_CharT, _Alloc>::
     _S_setbuf(_Rope_iterator_base<_CharT, _Alloc>& __x)
     {
+      using std::size_t;
       const _RopeRep* __leaf = __x._M_path_end[__x._M_leaf_index];
       size_t __leaf_pos = __x._M_leaf_pos;
       size_t __pos = __x._M_current_pos;
@@ -113,6 +107,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     _Rope_iterator_base<_CharT, _Alloc>::
     _S_setcache(_Rope_iterator_base<_CharT, _Alloc>& __x)
     {
+      using std::size_t;
       const _RopeRep* __path[int(__detail::_S_max_rope_depth) + 1];
       const _RopeRep* __curr_rope;
       int __curr_depth = -1;  /* index into path    */
@@ -190,6 +185,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     _Rope_iterator_base<_CharT, _Alloc>::
     _S_setcache_for_incr(_Rope_iterator_base<_CharT, _Alloc>& __x)
     {
+      using std::size_t;
       int __current_index = __x._M_leaf_index;
       const _RopeRep* __current_node = __x._M_path_end[__current_index];
       size_t __len = __current_node->_M_size;
@@ -255,12 +251,12 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template <class _CharT, class _Alloc>
     void
     _Rope_iterator_base<_CharT, _Alloc>::
-    _M_incr(size_t __n)
+    _M_incr(std::size_t __n)
     {
       _M_current_pos += __n;
       if (0 != _M_buf_ptr)
 	{
-	  size_t __chars_left = _M_buf_end - _M_buf_ptr;
+	  std::size_t __chars_left = _M_buf_end - _M_buf_ptr;
 	  if (__chars_left > __n)
 	    _M_buf_ptr += __n;
 	  else if (__chars_left == __n)
@@ -276,11 +272,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template <class _CharT, class _Alloc>
     void
     _Rope_iterator_base<_CharT, _Alloc>::
-    _M_decr(size_t __n)
+    _M_decr(std::size_t __n)
     {
       if (0 != _M_buf_ptr)
 	{
-	  size_t __chars_left = _M_buf_ptr - _M_buf_start;
+	  std::size_t __chars_left = _M_buf_ptr - _M_buf_start;
 	  if (__chars_left >= __n)
 	    _M_buf_ptr -= __n;
 	  else
@@ -314,18 +310,18 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template <class _CharT, class _Alloc>
     inline
     _Rope_iterator<_CharT, _Alloc>::
-    _Rope_iterator(rope<_CharT, _Alloc>& __r, size_t __pos)
+    _Rope_iterator(rope<_CharT, _Alloc>& __r, std::size_t __pos)
     : _Rope_iterator_base<_CharT,_Alloc>(__r._M_tree_ptr, __pos),
       _M_root_rope(&__r)
     { _RopeRep::_S_ref(this->_M_root); }
 
   template <class _CharT, class _Alloc>
-    inline size_t
+    inline std::size_t
     rope<_CharT, _Alloc>::
     _S_char_ptr_len(const _CharT* __s)
     {
       const _CharT* __p = __s;
-      
+
       while (!_S_is0(*__p))
 	++__p;
       return (__p - __s);
@@ -342,8 +338,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       _CharT* __cstr = _M_c_string;
       if (0 != __cstr)
 	{
-	  size_t __size = this->_M_size + 1;
-	  _Destroy(__cstr, __cstr + __size, _M_get_allocator());
+	  std::size_t __size = this->_M_size + 1;
+	  std::_Destroy(__cstr, __cstr + __size, _M_get_allocator());
 	  this->_Data_deallocate(__cstr, __size);
 	}
     }
@@ -351,11 +347,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template <class _CharT, class _Alloc>
     inline void
     _Rope_RopeRep<_CharT, _Alloc>::
-    _S_free_string(_CharT* __s, size_t __n, allocator_type& __a)
+    _S_free_string(_CharT* __s, std::size_t __n, allocator_type& __a)
     {
       if (!_S_is_basic_char_type((_CharT*)0))
-	_Destroy(__s, __s + __n, __a);
-      
+	std::_Destroy(__s, __s + __n, __a);
+
       //  This has to be a static member, so this gets a bit messy
       __a.deallocate(__s,
 		     _Rope_RopeLeaf<_CharT, _Alloc>::_S_rounded_up_size(__n));
@@ -415,7 +411,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template <class _CharT, class _Alloc>
     inline void
     _Rope_RopeRep<_CharT, _Alloc>::
-    _S_free_string(const _CharT*, size_t, allocator_type)
+    _S_free_string(const _CharT*, std::size_t, allocator_type)
     { }
 
 #endif
@@ -425,9 +421,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template <class _CharT, class _Alloc>
     typename rope<_CharT, _Alloc>::_RopeLeaf*
     rope<_CharT, _Alloc>::
-    _S_leaf_concat_char_iter(_RopeLeaf* __r, const _CharT* __iter, size_t __len)
+    _S_leaf_concat_char_iter(_RopeLeaf* __r, const _CharT* __iter,
+			     std::size_t __len)
     {
-      size_t __old_len = __r->_M_size;
+      std::size_t __old_len = __r->_M_size;
       _CharT* __new_data = (_CharT*)
 	rope::_Data_allocate(_S_rounded_up_size(__old_len + __len));
       _RopeLeaf* __result;
@@ -455,11 +452,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     typename rope<_CharT,_Alloc>::_RopeLeaf*
     rope<_CharT, _Alloc>::
     _S_destr_leaf_concat_char_iter(_RopeLeaf* __r, const _CharT* __iter,
-				   size_t __len)
+				   std::size_t __len)
     {
       if (__r->_M_ref_count > 1)
 	return _S_leaf_concat_char_iter(__r, __iter, __len);
-      size_t __old_len = __r->_M_size;
+      std::size_t __old_len = __r->_M_size;
       if (_S_allocated_capacity(__old_len) >= __old_len + __len)
 	{
 	  // The space has been partially initialized for the standard
@@ -492,11 +489,12 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     rope<_CharT, _Alloc>::
     _S_tree_concat(_RopeRep* __left, _RopeRep* __right)
     {
+      using std::size_t;
       _RopeConcatenation* __result = _S_new_RopeConcatenation(__left, __right,
 							      __left->
 							      _M_get_allocator());
       size_t __depth = __result->_M_depth;
-      
+
       if (__depth > 20
 	  && (__result->_M_size < 1000
 	      || __depth > size_t(__detail::_S_max_rope_depth)))
@@ -526,8 +524,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template <class _CharT, class _Alloc>
     typename rope<_CharT, _Alloc>::_RopeRep*
     rope<_CharT, _Alloc>::
-    _S_concat_char_iter(_RopeRep* __r, const _CharT*__s, size_t __slen)
+    _S_concat_char_iter(_RopeRep* __r, const _CharT*__s, std::size_t __slen,
+			allocator_type& __a)
     {
+      using std::size_t;
       _RopeRep* __result;
       if (0 == __slen)
 	{
@@ -535,8 +535,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	  return __r;
 	}
       if (0 == __r)
-	return __STL_ROPE_FROM_UNOWNED_CHAR_PTR(__s, __slen,
-						__r->_M_get_allocator());
+	return __STL_ROPE_FROM_UNOWNED_CHAR_PTR(__s, __slen, __a);
       if (__r->_M_tag == __detail::_S_leaf
 	  && __r->_M_size + __slen <= size_t(_S_copy_max))
 	{
@@ -565,8 +564,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	      return __result;
 	    }
 	}
-      _RopeRep* __nright =
-	__STL_ROPE_FROM_UNOWNED_CHAR_PTR(__s, __slen, __r->_M_get_allocator());
+      _RopeRep* __nright = __STL_ROPE_FROM_UNOWNED_CHAR_PTR(__s, __slen, __a);
       __try
 	{
 	  __r->_M_ref_nonnil();
@@ -585,16 +583,17 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template <class _CharT, class _Alloc>
     typename rope<_CharT,_Alloc>::_RopeRep*
     rope<_CharT,_Alloc>::
-    _S_destr_concat_char_iter(_RopeRep* __r, const _CharT* __s, size_t __slen)
+    _S_destr_concat_char_iter(_RopeRep* __r, const _CharT* __s,
+			      std::size_t __slen, allocator_type& __a)
     {
+      using std::size_t;
       _RopeRep* __result;
       if (0 == __r)
-	return __STL_ROPE_FROM_UNOWNED_CHAR_PTR(__s, __slen,
-						__r->_M_get_allocator());
+	return __STL_ROPE_FROM_UNOWNED_CHAR_PTR(__s, __slen, __a);
       size_t __count = __r->_M_ref_count;
       size_t __orig_size = __r->_M_size;
       if (__count > 1)
-	return _S_concat_char_iter(__r, __s, __slen);
+	return _S_concat_char_iter(__r, __s, __slen, __a);
       if (0 == __slen)
 	{
 	  __r->_M_ref_count = 2;      // One more than before
@@ -603,7 +602,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       if (__orig_size + __slen <= size_t(_S_copy_max)
 	  && __detail::_S_leaf == __r->_M_tag)
 	{
-	  __result = _S_destr_leaf_concat_char_iter((_RopeLeaf*)__r, __s, 
+	  __result = _S_destr_leaf_concat_char_iter((_RopeLeaf*)__r, __s,
 						    __slen);
 	  return __result;
 	}
@@ -631,8 +630,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	      return __r;
 	    }
 	}
-      _RopeRep* __right =
-	__STL_ROPE_FROM_UNOWNED_CHAR_PTR(__s, __slen, __r->_M_get_allocator());
+      _RopeRep* __right = __STL_ROPE_FROM_UNOWNED_CHAR_PTR(__s, __slen, __a);
       __r->_M_ref_nonnil();
       __try
 	{ __result = _S_tree_concat(__r, __right); }
@@ -645,12 +643,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       return __result;
     }
 #endif /* !__GC */
-  
+
   template <class _CharT, class _Alloc>
     typename rope<_CharT, _Alloc>::_RopeRep*
     rope<_CharT, _Alloc>::
     _S_concat(_RopeRep* __left, _RopeRep* __right)
     {
+      using std::size_t;
       if (0 == __left)
 	{
 	  _S_ref(__right);
@@ -712,14 +711,15 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template <class _CharT, class _Alloc>
     typename rope<_CharT, _Alloc>::_RopeRep*
     rope<_CharT, _Alloc>::
-    _S_substring(_RopeRep* __base, size_t __start, size_t __endp1)
+    _S_substring(_RopeRep* __base, std::size_t __start, std::size_t __endp1)
     {
+      using std::size_t;
       if (0 == __base)
 	return 0;
       size_t __len = __base->_M_size;
       size_t __adj_endp1;
       const size_t __lazy_threshold = 128;
-      
+
       if (__endp1 >= __len)
 	{
 	  if (0 == __start)
@@ -729,7 +729,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	    }
 	  else
 	    __adj_endp1 = __len;
-	  
+
 	}
       else
 	__adj_endp1 = __endp1;
@@ -743,7 +743,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	      _RopeRep* __right = __c->_M_right;
 	      size_t __left_len = __left->_M_size;
 	      _RopeRep* __result;
-	      
+
 	      if (__adj_endp1 <= __left_len)
 		return _S_substring(__left, __start, __endp1);
 	      else if (__start >= __left_len)
@@ -753,7 +753,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 							    __start,
 							    __left_len));
 	      _Self_destruct_ptr __right_result(_S_substring(__right, 0,
-							     __endp1 
+							     __endp1
 							     - __left_len));
 	      __result = _S_concat(__left_result, __right_result);
 	      return __result;
@@ -798,7 +798,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 				       __adj_endp1 - __start,
 				       __base->_M_get_allocator());
 		return __result;
-		
+
 	      } // *** else fall through: ***
 	  }
 	case __detail::_S_function:
@@ -809,7 +809,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	    if (__start >= __adj_endp1)
 	      return 0;
 	    __result_len = __adj_endp1 - __start;
-	    
+
 	    if (__result_len > __lazy_threshold)
 	      goto lazy;
 	    __section = (_CharT*)
@@ -842,14 +842,14 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     private:
       _CharT* _M_buf_ptr;
     public:
-      
+
       _Rope_flatten_char_consumer(_CharT* __buffer)
       { _M_buf_ptr = __buffer; }
 
       ~_Rope_flatten_char_consumer() {}
-      
+
       bool
-      operator()(const _CharT* __leaf, size_t __n)
+      operator()(const _CharT* __leaf, std::size_t __n)
       {
 	uninitialized_copy_n(__leaf, __n, _M_buf_ptr);
 	_M_buf_ptr += __n;
@@ -864,17 +864,17 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     private:
       _CharT _M_pattern;
     public:
-      size_t _M_count;  // Number of nonmatching characters
-      
+      std::size_t _M_count;  // Number of nonmatching characters
+
       _Rope_find_char_char_consumer(_CharT __p)
       : _M_pattern(__p), _M_count(0) {}
-	
+
       ~_Rope_find_char_char_consumer() {}
-      
+
       bool
-      operator()(const _CharT* __leaf, size_t __n)
+      operator()(const _CharT* __leaf, std::size_t __n)
       {
-	size_t __i;
+	std::size_t __i;
 	for (__i = 0; __i < __n; __i++)
 	  {
 	    if (__leaf[__i] == _M_pattern)
@@ -893,23 +893,23 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     : public _Rope_char_consumer<_CharT>
     {
     private:
-      typedef basic_ostream<_CharT,_Traits> _Insert_ostream;
+      typedef std::basic_ostream<_CharT,_Traits> _Insert_ostream;
       _Insert_ostream& _M_o;
     public:
       _Rope_insert_char_consumer(_Insert_ostream& __writer)
 	: _M_o(__writer) {}
       ~_Rope_insert_char_consumer() { }
       // Caller is presumed to own the ostream
-      bool operator() (const _CharT* __leaf, size_t __n);
+      bool operator() (const _CharT* __leaf, std::size_t __n);
       // Returns true to continue traversal.
     };
 
   template<class _CharT, class _Traits>
     bool
     _Rope_insert_char_consumer<_CharT, _Traits>::
-    operator()(const _CharT* __leaf, size_t __n)
+    operator()(const _CharT* __leaf, std::size_t __n)
     {
-      size_t __i;
+      std::size_t __i;
       //  We assume that formatting is set up correctly for each element.
       for (__i = 0; __i < __n; __i++)
 	_M_o.put(__leaf[__i]);
@@ -919,9 +919,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template <class _CharT, class _Alloc>
     bool
     rope<_CharT, _Alloc>::
-    _S_apply_to_pieces(_Rope_char_consumer<_CharT>& __c,
-		       const _RopeRep* __r, size_t __begin, size_t __end)
+    _S_apply_to_pieces(_Rope_char_consumer<_CharT>& __c, const _RopeRep* __r,
+		       std::size_t __begin, std::size_t __end)
     {
+      using std::size_t;
       if (0 == __r)
 	return true;
       switch(__r->_M_tag)
@@ -981,11 +982,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
   template<class _CharT, class _Traits>
     inline void
-    _Rope_fill(basic_ostream<_CharT, _Traits>& __o, size_t __n)
+    _Rope_fill(std::basic_ostream<_CharT, _Traits>& __o, std::size_t __n)
     {
       char __f = __o.fill();
-      size_t __i;
-      
+      std::size_t __i;
+
       for (__i = 0; __i < __n; __i++)
 	__o.put(__f);
     }
@@ -1005,17 +1006,18 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   { return true; }
 
   template<class _CharT, class _Traits, class _Alloc>
-    basic_ostream<_CharT, _Traits>&
-    operator<<(basic_ostream<_CharT, _Traits>& __o,
+    std::basic_ostream<_CharT, _Traits>&
+    operator<<(std::basic_ostream<_CharT, _Traits>& __o,
 	       const rope<_CharT, _Alloc>& __r)
     {
+      using std::size_t;
       size_t __w = __o.width();
       bool __left = bool(__o.flags() & std::ios::left);
       size_t __pad_len;
       size_t __rope_len = __r.size();
       _Rope_insert_char_consumer<_CharT, _Traits> __c(__o);
       bool __is_simple = _Rope_is_simple((_CharT*)0);
-      
+
       if (__rope_len < __w)
 	__pad_len = __w - __rope_len;
       else
@@ -1045,7 +1047,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template <class _CharT, class _Alloc>
     _CharT*
     rope<_CharT, _Alloc>::
-    _S_flatten(_RopeRep* __r, size_t __start, size_t __len,
+    _S_flatten(_RopeRep* __r, std::size_t __start, std::size_t __len,
 	       _CharT* __buffer)
     {
       _Rope_flatten_char_consumer<_CharT> __c(__buffer);
@@ -1054,9 +1056,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     }
 
   template <class _CharT, class _Alloc>
-    size_t
+    std::size_t
     rope<_CharT, _Alloc>::
-    find(_CharT __pattern, size_t __start) const
+    find(_CharT __pattern, std::size_t __start) const
     {
       _Rope_find_char_char_consumer<_CharT> __c(__pattern);
       _S_apply_to_pieces(__c, this->_M_tree_ptr, __start, size());
@@ -1110,6 +1112,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     rope<_CharT, _Alloc>::
     _S_dump(_RopeRep* __r, int __indent)
     {
+      using std::printf;
       for (int __i = 0; __i < __indent; __i++)
 	putchar(' ');
       if (0 == __r)
@@ -1122,7 +1125,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	  _RopeConcatenation* __c = (_RopeConcatenation*)__r;
 	  _RopeRep* __left = __c->_M_left;
 	  _RopeRep* __right = __c->_M_right;
-	  
+
 #ifdef __GC
 	  printf("Concatenation %p (depth = %d, len = %ld, %s balanced)\n",
 		 __r, __r->_M_depth, __r->_M_size,
@@ -1140,7 +1143,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       else
 	{
 	  const char* __kind;
-	  
+
 	  switch (__r->_M_tag)
 	    {
 	    case __detail::_S_leaf:
@@ -1168,7 +1171,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	      _Self_destruct_ptr __prefix(_S_substring(__r, 0, __max_len));
 	      _CharT __buffer[__max_len + 1];
 	      bool __too_big = __r->_M_size > __prefix->_M_size;
-	      
+
 	      _S_flatten(__prefix, __buffer);
 	      __buffer[__prefix->_M_size] = _S_eos((_CharT*)0);
 	      printf("%s%s\n", (char*)__buffer,
@@ -1209,7 +1212,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       // __forest[__i]._M_size >= _S_min_len[__i]
       // __forest[__i]._M_depth = __i
       // References from forest are included in refcount.
-      
+
       for (__i = 0; __i <= int(__detail::_S_max_rope_depth); ++__i)
 	__forest[__i] = 0;
       __try
@@ -1224,6 +1227,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 		__result = _S_concat(__forest[__i], __result);
 		__forest[__i]->_M_unref_nonnil();
 #if !defined(__GC) && __cpp_exceptions
+
+#include <bits/requires_hosted.h> // GNU extensions are currently omitted
 		__forest[__i] = 0;
 #endif
 	      }
@@ -1234,9 +1239,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	    _S_unref(__forest[__i]);
 	  __throw_exception_again;
 	}
-      
+
       if (__result->_M_depth > int(__detail::_S_max_rope_depth))
-	__throw_length_error(__N("rope::_S_balance"));
+	std::__throw_length_error(__N("rope::_S_balance"));
       return(__result);
     }
 
@@ -1253,7 +1258,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
       {
 	_RopeConcatenation* __c = (_RopeConcatenation*)__r;
-	
+
 	_S_add_to_forest(__c->_M_left, __forest);
 	_S_add_to_forest(__c->_M_right, __forest);
       }
@@ -1268,8 +1273,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       _RopeRep* __insertee;		// included in refcount
       _RopeRep* __too_tiny = 0;		// included in refcount
       int __i;				// forest[0..__i-1] is empty
-      size_t __s = __r->_M_size;
-      
+      std::size_t __s = __r->_M_size;
+
       for (__i = 0; __s >= _S_min_len[__i+1]/* not this bucket */; ++__i)
 	{
 	  if (0 != __forest[__i])
@@ -1319,7 +1324,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     _S_fetch(_RopeRep* __r, size_type __i)
     {
       __GC_CONST _CharT* __cstr = __r->_M_c_string;
-      
+
       if (0 != __cstr)
 	return __cstr[__i];
       for(;;)
@@ -1330,13 +1335,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	      {
 		_RopeConcatenation* __c = (_RopeConcatenation*)__r;
 		_RopeRep* __left = __c->_M_left;
-		size_t __left_len = __left->_M_size;
-		
+		std::size_t __left_len = __left->_M_size;
+
 		if (__i >= __left_len)
 		  {
 		    __i -= __left_len;
 		    __r = __c->_M_right;
-		  } 
+		  }
 		else
 		  __r = __left;
 	      }
@@ -1350,15 +1355,15 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	    case __detail::_S_substringfn:
 	      {
 		_RopeFunction* __f = (_RopeFunction*)__r;
-		_CharT __result;
-		
+		_CharT __result = _CharT();
+
 		(*(__f->_M_fn))(__i, 1, &__result);
 		return __result;
 	      }
 	    }
 	}
     }
-  
+
 #ifndef __GC
   // Return a uniquely referenced character slot for the given
   // position, or 0 if that's not possible.
@@ -1368,8 +1373,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     _S_fetch_ptr(_RopeRep* __r, size_type __i)
     {
       _RopeRep* __clrstack[__detail::_S_max_rope_depth];
-      size_t __csptr = 0;
-      
+      std::size_t __csptr = 0;
+
       for(;;)
 	{
 	  if (__r->_M_ref_count > 1)
@@ -1380,15 +1385,15 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	      {
 		_RopeConcatenation* __c = (_RopeConcatenation*)__r;
 		_RopeRep* __left = __c->_M_left;
-		size_t __left_len = __left->_M_size;
-		
+		std::size_t __left_len = __left->_M_size;
+
 		if (__c->_M_c_string != 0)
 		  __clrstack[__csptr++] = __c;
 		if (__i >= __left_len)
 		  {
 		    __i -= __left_len;
 		    __r = __c->_M_right;
-		  } 
+		  }
 		else
 		  __r = __left;
 	      }
@@ -1424,9 +1429,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     rope<_CharT, _Alloc>::
     _S_compare (const _RopeRep* __left, const _RopeRep* __right)
     {
-      size_t __left_len;
-      size_t __right_len;
-      
+      std::size_t __left_len;
+      std::size_t __right_len;
+
       if (0 == __right)
 	return 0 != __left;
       if (0 == __left)
@@ -1494,9 +1499,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       _Self_destruct_ptr __left(_My_rope::_S_substring(__old, 0, _M_pos));
       _Self_destruct_ptr __right(_My_rope::_S_substring(__old, _M_pos + 1,
 							__old->_M_size));
+      typename _RopeRep::allocator_type __a = _M_root->_M_get_allocator();
       _Self_destruct_ptr __result_left(_My_rope::
 				       _S_destr_concat_char_iter(__left,
-								 &__c, 1));
+								 &__c, 1,
+								 __a));
 
       _RopeRep* __result = _My_rope::_S_concat(__result_left, __right);
 #ifndef __GC
@@ -1524,13 +1531,15 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
   template <class _CharT, class _Alloc>
     rope<_CharT, _Alloc>::
-    rope(size_t __n, _CharT __c, const allocator_type& __a)
+    rope(std::size_t __n, _CharT __c, const allocator_type& __a)
     : _Base(__a)
     {
+      using std::__uninitialized_fill_n_a;
+
       rope<_CharT,_Alloc> __result;
-      const size_t __exponentiate_threshold = 32;
-      size_t __exponent;
-      size_t __rest;
+      const std::size_t __exponentiate_threshold = 32;
+      std::size_t __exponent;
+      std::size_t __rest;
       _CharT* __rest_buffer;
       _RopeRep* __remainder;
       rope<_CharT, _Alloc> __remainder_rope;
@@ -1587,21 +1596,21 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	  else
 	    __result = power(__base_rope, __exponent,
 			     _Rope_Concat_fn<_CharT, _Alloc>());
-	    
+
 	  if (0 != __remainder)
 	    __result += __remainder_rope;
 	}
       else
 	__result = __remainder_rope;
-	  
+
       this->_M_tree_ptr = __result._M_tree_ptr;
       this->_M_tree_ptr->_M_ref_nonnil();
     }
-      
+
   template<class _CharT, class _Alloc>
     _CharT
     rope<_CharT, _Alloc>::_S_empty_c_str[1];
-      
+
   template<class _CharT, class _Alloc>
     const _CharT*
     rope<_CharT, _Alloc>::
@@ -1617,7 +1626,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       __GC_CONST _CharT* __result = this->_M_tree_ptr->_M_c_string;
       if (0 == __result)
 	{
-	  size_t __s = size();
+	  std::size_t __s = size();
 	  __result = this->_Data_allocate(__s + 1);
 	  _S_flatten(this->_M_tree_ptr, __result);
 	  __result[__s] = _S_eos((_CharT*)0);
@@ -1626,7 +1635,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       __gthread_mutex_unlock (&this->_M_tree_ptr->_M_c_string_lock);
       return(__result);
     }
-  
+
   template<class _CharT, class _Alloc>
     const _CharT* rope<_CharT, _Alloc>::
     replace_with_c_str()
@@ -1640,7 +1649,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       if (__detail::_S_leaf == this->_M_tree_ptr->_M_tag
 	  && 0 != __old_c_string)
 	return(__old_c_string);
-      size_t __s = size();
+      std::size_t __s = size();
       _CharT* __result = this->_Data_allocate(_S_rounded_up_size(__s));
       _S_flatten(this->_M_tree_ptr, __result);
       __result[__s] = _S_eos((_CharT*)0);
@@ -1651,7 +1660,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     }
 
   // Algorithm specializations.  More should be added.
-  
+
   template<class _Rope_iterator>  // was templated on CharT and Alloc
     void		          // VC++ workaround
     _Rope_rotate(_Rope_iterator __first,
@@ -1660,7 +1669,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     {
       typedef typename _Rope_iterator::value_type _CharT;
       typedef typename _Rope_iterator::_allocator_type _Alloc;
-      
+
       rope<_CharT, _Alloc>& __r(__first.container());
       rope<_CharT, _Alloc> __prefix = __r.substr(0, __first.index());
       rope<_CharT, _Alloc> __suffix =

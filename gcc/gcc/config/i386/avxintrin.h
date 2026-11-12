@@ -1,4 +1,4 @@
-/* Copyright (C) 2008-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2008-2026 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -47,6 +47,7 @@ typedef unsigned int __v8su __attribute__ ((__vector_size__ (32)));
 typedef short __v16hi __attribute__ ((__vector_size__ (32)));
 typedef unsigned short __v16hu __attribute__ ((__vector_size__ (32)));
 typedef char __v32qi __attribute__ ((__vector_size__ (32)));
+typedef signed char __v32qs __attribute__ ((__vector_size__ (32)));
 typedef unsigned char __v32qu __attribute__ ((__vector_size__ (32)));
 
 /* The Intel API is flexible enough that we must allow aliasing with other
@@ -71,22 +72,6 @@ typedef double __m256d_u __attribute__ ((__vector_size__ (32),
 
 /* Compare predicates for scalar and packed compare intrinsics.  */
 
-/* Equal (ordered, non-signaling)  */
-#define _CMP_EQ_OQ	0x00
-/* Less-than (ordered, signaling)  */
-#define _CMP_LT_OS	0x01
-/* Less-than-or-equal (ordered, signaling)  */
-#define _CMP_LE_OS	0x02
-/* Unordered (non-signaling)  */
-#define _CMP_UNORD_Q	0x03
-/* Not-equal (unordered, non-signaling)  */
-#define _CMP_NEQ_UQ	0x04
-/* Not-less-than (unordered, signaling)  */
-#define _CMP_NLT_US	0x05
-/* Not-less-than-or-equal (unordered, signaling)  */
-#define _CMP_NLE_US	0x06
-/* Ordered (nonsignaling)   */
-#define _CMP_ORD_Q	0x07
 /* Equal (unordered, non-signaling)  */
 #define _CMP_EQ_UQ	0x08
 /* Not-greater-than-or-equal (unordered, signaling)  */
@@ -380,18 +365,6 @@ _mm256_xor_ps (__m256 __A, __m256 __B)
 }
 
 #ifdef __OPTIMIZE__
-extern __inline __m128d __attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_mm_cmp_pd (__m128d __X, __m128d __Y, const int __P)
-{
-  return (__m128d) __builtin_ia32_cmppd ((__v2df)__X, (__v2df)__Y, __P);
-}
-
-extern __inline __m128 __attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_mm_cmp_ps (__m128 __X, __m128 __Y, const int __P)
-{
-  return (__m128) __builtin_ia32_cmpps ((__v4sf)__X, (__v4sf)__Y, __P);
-}
-
 extern __inline __m256d __attribute__((__gnu_inline__, __always_inline__, __artificial__))
 _mm256_cmp_pd (__m256d __X, __m256d __Y, const int __P)
 {
@@ -405,27 +378,7 @@ _mm256_cmp_ps (__m256 __X, __m256 __Y, const int __P)
   return (__m256) __builtin_ia32_cmpps256 ((__v8sf)__X, (__v8sf)__Y,
 					   __P);
 }
-
-extern __inline __m128d __attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_mm_cmp_sd (__m128d __X, __m128d __Y, const int __P)
-{
-  return (__m128d) __builtin_ia32_cmpsd ((__v2df)__X, (__v2df)__Y, __P);
-}
-
-extern __inline __m128 __attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_mm_cmp_ss (__m128 __X, __m128 __Y, const int __P)
-{
-  return (__m128) __builtin_ia32_cmpss ((__v4sf)__X, (__v4sf)__Y, __P);
-}
 #else
-#define _mm_cmp_pd(X, Y, P)						\
-  ((__m128d) __builtin_ia32_cmppd ((__v2df)(__m128d)(X),		\
-				   (__v2df)(__m128d)(Y), (int)(P)))
-
-#define _mm_cmp_ps(X, Y, P)						\
-  ((__m128) __builtin_ia32_cmpps ((__v4sf)(__m128)(X),			\
-				  (__v4sf)(__m128)(Y), (int)(P)))
-
 #define _mm256_cmp_pd(X, Y, P)						\
   ((__m256d) __builtin_ia32_cmppd256 ((__v4df)(__m256d)(X),		\
 				      (__v4df)(__m256d)(Y), (int)(P)))
@@ -433,15 +386,14 @@ _mm_cmp_ss (__m128 __X, __m128 __Y, const int __P)
 #define _mm256_cmp_ps(X, Y, P)						\
   ((__m256) __builtin_ia32_cmpps256 ((__v8sf)(__m256)(X),		\
 				     (__v8sf)(__m256)(Y), (int)(P)))
-
-#define _mm_cmp_sd(X, Y, P)						\
-  ((__m128d) __builtin_ia32_cmpsd ((__v2df)(__m128d)(X),		\
-				   (__v2df)(__m128d)(Y), (int)(P)))
-
-#define _mm_cmp_ss(X, Y, P)						\
-  ((__m128) __builtin_ia32_cmpss ((__v4sf)(__m128)(X),			\
-				  (__v4sf)(__m128)(Y), (int)(P)))
 #endif
+
+extern __inline int __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_cvtsi256_si32 (__m256i __A)
+{
+  __v8si __B = (__v8si) __A;
+  return __B[0];
+}
 
 extern __inline __m256d __attribute__((__gnu_inline__, __always_inline__, __artificial__))
 _mm256_cvtepi32_pd (__m128i __A)
@@ -1199,21 +1151,30 @@ _mm256_movemask_ps (__m256 __A)
 extern __inline __m256d __attribute__((__gnu_inline__, __always_inline__, __artificial__))
 _mm256_undefined_pd (void)
 {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winit-self"
   __m256d __Y = __Y;
+#pragma GCC diagnostic pop
   return __Y;
 }
 
 extern __inline __m256 __attribute__((__gnu_inline__, __always_inline__, __artificial__))
 _mm256_undefined_ps (void)
 {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winit-self"
   __m256 __Y = __Y;
+#pragma GCC diagnostic pop
   return __Y;
 }
 
 extern __inline __m256i __attribute__((__gnu_inline__, __always_inline__, __artificial__))
 _mm256_undefined_si256 (void)
 {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winit-self"
   __m256i __Y = __Y;
+#pragma GCC diagnostic pop
   return __Y;
 }
 
@@ -1484,6 +1445,26 @@ _mm256_castsi128_si256 (__m128i __A)
   return (__m256i) __builtin_ia32_si256_si ((__v4si)__A);
 }
 
+/* Similarly, but with zero extension instead of undefined values.  */
+
+extern __inline __m256d __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_zextpd128_pd256 (__m128d __A)
+{
+  return _mm256_insertf128_pd (_mm256_setzero_pd (), __A, 0);
+}
+
+extern __inline __m256 __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_zextps128_ps256 (__m128 __A)
+{
+  return _mm256_insertf128_ps (_mm256_setzero_ps (), __A, 0);
+}
+
+extern __inline __m256i __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_zextsi128_si256 (__m128i __A)
+{
+  return _mm256_insertf128_si256 (_mm256_setzero_si256 (), __A, 0);
+}
+
 extern __inline __m256 __attribute__((__gnu_inline__, __always_inline__, __artificial__))
 _mm256_set_m128 ( __m128 __H, __m128 __L)
 {
@@ -1518,6 +1499,48 @@ extern __inline __m256i __attribute__((__gnu_inline__, __always_inline__, __arti
 _mm256_setr_m128i (__m128i __L, __m128i __H)
 {
   return _mm256_set_m128i (__H, __L);
+}
+
+extern __inline __m256 __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_loadu2_m128 (float const *__PH, float const *__PL)
+{
+  return _mm256_insertf128_ps (_mm256_castps128_ps256 (_mm_loadu_ps (__PL)),
+			       _mm_loadu_ps (__PH), 1);
+}
+
+extern __inline void __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_storeu2_m128 (float *__PH, float *__PL, __m256 __A)
+{
+  _mm_storeu_ps (__PL, _mm256_castps256_ps128 (__A));
+  _mm_storeu_ps (__PH, _mm256_extractf128_ps (__A, 1));
+}
+
+extern __inline __m256d __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_loadu2_m128d (double const *__PH, double const *__PL)
+{
+  return _mm256_insertf128_pd (_mm256_castpd128_pd256 (_mm_loadu_pd (__PL)),
+			       _mm_loadu_pd (__PH), 1);
+}
+
+extern __inline void __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_storeu2_m128d (double *__PH, double *__PL, __m256d __A)
+{
+  _mm_storeu_pd (__PL, _mm256_castpd256_pd128 (__A));
+  _mm_storeu_pd (__PH, _mm256_extractf128_pd (__A, 1));
+}
+
+extern __inline __m256i __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_loadu2_m128i (__m128i_u const *__PH, __m128i_u const *__PL)
+{
+  return _mm256_insertf128_si256 (_mm256_castsi128_si256 (_mm_loadu_si128 (__PL)),
+				  _mm_loadu_si128 (__PH), 1);
+}
+
+extern __inline void __attribute__((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_storeu2_m128i (__m128i_u *__PH, __m128i_u *__PL, __m256i __A)
+{
+  _mm_storeu_si128 (__PL, _mm256_castsi256_si128 (__A));
+  _mm_storeu_si128 (__PH, _mm256_extractf128_si256 (__A, 1));
 }
 
 #ifdef __DISABLE_AVX__

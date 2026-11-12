@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -51,7 +51,8 @@ Supporting OS subroutines required: <<link>>, <<unlink>>, or <<rename>>.
 #include <stdio.h>
 #include <sys/unistd.h>
 
-#ifndef _REENT_ONLY
+#if !defined(_REENT_ONLY) && !( \
+    defined(REENTRANT_SYSCALLS_PROVIDED) && defined(MISSING_SYSCALL_NAMES))
 
 int
 rename (const char *old,

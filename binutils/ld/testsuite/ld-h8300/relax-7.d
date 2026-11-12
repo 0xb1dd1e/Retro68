@@ -1,9 +1,10 @@
 # name: H8300 Relaxation Test 7
-# source: relax-7?.s
-# ld: --relax -m h8300self
+# source: relax-7a.s
+# source: relax-7b.s
+# ld: --relax
 # objdump: -d -s --no-show-raw-insn
 
-.*:     file format .*-h8300
+.*:     file format .*
 
 Contents of section .text:
  0100 1a801aa2 7a01ffff 80000100 6f2201d0  [^\000]*

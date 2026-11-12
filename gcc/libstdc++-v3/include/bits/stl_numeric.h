@@ -1,6 +1,6 @@
 // Numeric functions implementation -*- C++ -*-
 
-// Copyright (C) 2001-2019 Free Software Foundation, Inc.
+// Copyright (C) 2001-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -60,12 +60,16 @@
 #include <debug/debug.h>
 #include <bits/move.h> // For _GLIBCXX_MOVE
 
-#if __cplusplus >= 201103L
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
 _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
+  /** @defgroup numeric_ops Generalized Numeric operations
+   *  @ingroup algorithms
+   */
+
+#if __cplusplus >= 201103L
   /**
    *  @brief  Create a range of sequentially increasing values.
    *
@@ -75,9 +79,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
    *  @param  __first  Start of range.
    *  @param  __last  End of range.
    *  @param  __value  Starting value.
-   *  @return  Nothing.
+   *  @ingroup numeric_ops
    */
   template<typename _ForwardIterator, typename _Tp>
+    _GLIBCXX20_CONSTEXPR
     void
     iota(_ForwardIterator __first, _ForwardIterator __last, _Tp __value)
     {
@@ -94,14 +99,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	  ++__value;
 	}
     }
-
-_GLIBCXX_END_NAMESPACE_VERSION
-} // namespace std
-
 #endif
 
-namespace std _GLIBCXX_VISIBILITY(default)
-{
+_GLIBCXX_END_NAMESPACE_VERSION
+
 _GLIBCXX_BEGIN_NAMESPACE_ALGO
 
 #if __cplusplus > 201703L
@@ -111,6 +112,9 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
 #else
 # define _GLIBCXX_MOVE_IF_20(_E) _E
 #endif
+
+  /// @addtogroup numeric_ops
+  /// @{
 
   /**
    *  @brief  Accumulate values in a range.
@@ -124,6 +128,7 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
    *  @return  The final sum.
    */
   template<typename _InputIterator, typename _Tp>
+    _GLIBCXX20_CONSTEXPR
     inline _Tp
     accumulate(_InputIterator __first, _InputIterator __last, _Tp __init)
     {
@@ -139,8 +144,8 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
   /**
    *  @brief  Accumulate values in a range with operation.
    *
-   *  Accumulates the values in the range [first,last) using the function
-   *  object @p __binary_op.  The initial value is @p __init.  The values are
+   *  Accumulates the values in the range `[first,last)` using the function
+   *  object `__binary_op`.  The initial value is `__init`.  The values are
    *  processed in order.
    *
    *  @param  __first  Start of range.
@@ -150,6 +155,7 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
    *  @return  The final sum.
    */
   template<typename _InputIterator, typename _Tp, typename _BinaryOperation>
+    _GLIBCXX20_CONSTEXPR
     inline _Tp
     accumulate(_InputIterator __first, _InputIterator __last, _Tp __init,
 	       _BinaryOperation __binary_op)
@@ -178,6 +184,7 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
    *  @return  The final inner product.
    */
   template<typename _InputIterator1, typename _InputIterator2, typename _Tp>
+    _GLIBCXX20_CONSTEXPR
     inline _Tp
     inner_product(_InputIterator1 __first1, _InputIterator1 __last1,
 		  _InputIterator2 __first2, _Tp __init)
@@ -210,6 +217,7 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
    */
   template<typename _InputIterator1, typename _InputIterator2, typename _Tp,
 	   typename _BinaryOperation1, typename _BinaryOperation2>
+    _GLIBCXX20_CONSTEXPR
     inline _Tp
     inner_product(_InputIterator1 __first1, _InputIterator1 __last1,
 		  _InputIterator2 __first2, _Tp __init,
@@ -242,6 +250,7 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
    *  @return  Iterator pointing just beyond the values written to __result.
    */
   template<typename _InputIterator, typename _OutputIterator>
+    _GLIBCXX20_CONSTEXPR
     _OutputIterator
     partial_sum(_InputIterator __first, _InputIterator __last,
 		_OutputIterator __result)
@@ -283,6 +292,7 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
    */
   template<typename _InputIterator, typename _OutputIterator,
 	   typename _BinaryOperation>
+    _GLIBCXX20_CONSTEXPR
     _OutputIterator
     partial_sum(_InputIterator __first, _InputIterator __last,
 		_OutputIterator __result, _BinaryOperation __binary_op)
@@ -317,11 +327,11 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
    *  @param  __last  End of input range.
    *  @param  __result  Output sums.
    *  @return  Iterator pointing just beyond the values written to result.
-   *
-   *  _GLIBCXX_RESOLVE_LIB_DEFECTS
-   *  DR 539. partial_sum and adjacent_difference should mention requirements
    */
+  // _GLIBCXX_RESOLVE_LIB_DEFECTS
+  // DR 539. partial_sum and adjacent_difference should mention requirements
   template<typename _InputIterator, typename _OutputIterator>
+    _GLIBCXX20_CONSTEXPR
     _OutputIterator
     adjacent_difference(_InputIterator __first,
 			_InputIterator __last, _OutputIterator __result)
@@ -359,12 +369,12 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
    *  @param  __result  Output sum.
    *  @param  __binary_op Function object.
    *  @return  Iterator pointing just beyond the values written to result.
-   *
-   *  _GLIBCXX_RESOLVE_LIB_DEFECTS
-   *  DR 539. partial_sum and adjacent_difference should mention requirements
    */
+  // _GLIBCXX_RESOLVE_LIB_DEFECTS
+  // DR 539. partial_sum and adjacent_difference should mention requirements
   template<typename _InputIterator, typename _OutputIterator,
 	   typename _BinaryOperation>
+    _GLIBCXX20_CONSTEXPR
     _OutputIterator
     adjacent_difference(_InputIterator __first, _InputIterator __last,
 			_OutputIterator __result, _BinaryOperation __binary_op)
@@ -389,6 +399,8 @@ _GLIBCXX_BEGIN_NAMESPACE_ALGO
 	}
       return ++__result;
     }
+
+  /// @} group numeric_ops
 
 #undef _GLIBCXX_MOVE_IF_20
 

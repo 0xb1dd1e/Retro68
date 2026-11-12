@@ -1,7 +1,8 @@
 //===-- asan_report.h -------------------------------------------*- C++ -*-===//
 //
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -34,7 +35,8 @@ int GetGlobalsForAddress(uptr addr, __asan_global *globals, u32 *reg_sites,
 
 const char *MaybeDemangleGlobalName(const char *name);
 void PrintGlobalNameIfASCII(InternalScopedString *str, const __asan_global &g);
-void PrintGlobalLocation(InternalScopedString *str, const __asan_global &g);
+void PrintGlobalLocation(InternalScopedString *str, const __asan_global &g,
+                         bool print_module_name);
 
 void PrintMemoryByte(InternalScopedString *str, const char *before, u8 byte,
                      bool in_shadow, const char *after = "\n");
@@ -60,6 +62,8 @@ void ReportMallocUsableSizeNotOwned(uptr addr, BufferedStackTrace *stack);
 void ReportSanitizerGetAllocatedSizeNotOwned(uptr addr,
                                              BufferedStackTrace *stack);
 void ReportCallocOverflow(uptr count, uptr size, BufferedStackTrace *stack);
+void ReportReallocArrayOverflow(uptr count, uptr size,
+                                BufferedStackTrace *stack);
 void ReportPvallocOverflow(uptr size, BufferedStackTrace *stack);
 void ReportInvalidAllocationAlignment(uptr alignment,
                                       BufferedStackTrace *stack);
@@ -80,6 +84,13 @@ void ReportStringFunctionSizeOverflow(uptr offset, uptr size,
 void ReportBadParamsToAnnotateContiguousContainer(uptr beg, uptr end,
                                                   uptr old_mid, uptr new_mid,
                                                   BufferedStackTrace *stack);
+void ReportBadParamsToAnnotateDoubleEndedContiguousContainer(
+    uptr storage_beg, uptr storage_end, uptr old_container_beg,
+    uptr old_container_end, uptr new_container_beg, uptr new_container_end,
+    BufferedStackTrace *stack);
+void ReportBadParamsToCopyContiguousContainerAnnotations(
+    uptr old_storage_beg, uptr old_storage_end, uptr new_storage_beg,
+    uptr new_storage_end, BufferedStackTrace *stack);
 
 void ReportODRViolation(const __asan_global *g1, u32 stack_id1,
                         const __asan_global *g2, u32 stack_id2);

@@ -2,8 +2,8 @@
    inputs produce the right code.  */
 
 /* { dg-do compile } */
-/* { dg-require-effective-target powerpc_altivec_ok } */
 /* { dg-options "-maltivec -O2" } */
+/* { dg-require-effective-target powerpc_altivec } */
 
 #include <altivec.h>
 
@@ -26,4 +26,4 @@ testus (vector unsigned short vus2, vector unsigned short vus3, vector unsigned 
   return vec_perm (vus2, vus3, vuc);
 }
 
-/* { dg-final { scan-assembler-times "vperm" 3 } } */
+/* { dg-final { scan-assembler-times {\m(?:v|xx)permr?\M} 3 } } */

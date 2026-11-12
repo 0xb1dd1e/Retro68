@@ -15,7 +15,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with Retro68.  If not, see <http://www.gnu.org/licenses/>.
 
-find_package(Boost COMPONENTS filesystem system REQUIRED)
+find_package(Boost CONFIG COMPONENTS filesystem REQUIRED)
 
 add_library(ResourceFiles
     ResourceFork.h ResourceFork.cc
@@ -24,18 +24,20 @@ add_library(ResourceFiles
     ResourceFile.h ResourceFile.cc
     )
 
-find_path(HFS_INCLUDE_DIR NAMES hfs.h)
-find_library(HFS_LIBRARY NAMES hfs)
+# Prefer Retro68's own hfsutils (built with --enable-devlibs and installed into
+# the toolchain prefix) over any incompatible libhfs in system locations (e.g.
+# from cdrtools). The default search is kept as a fallback, so an hfsutils
+# provided elsewhere (e.g. as a Nix buildInput) is still found.
+find_path(HFS_INCLUDE_DIR NAMES hfs.h HINTS ${CMAKE_INSTALL_PREFIX}/include)
+find_library(HFS_LIBRARY NAMES hfs HINTS ${CMAKE_INSTALL_PREFIX}/lib)
 
-target_link_libraries(ResourceFiles ${Boost_LIBRARIES} ${HFS_LIBRARY})
+target_link_libraries(ResourceFiles Boost::filesystem ${HFS_LIBRARY})
 target_include_directories(ResourceFiles PUBLIC .
-                                         PRIVATE ${HFS_INCLUDE_DIR}
-                                                 ${Boost_INCLUDE_DIR})
+                                         PRIVATE ${HFS_INCLUDE_DIR})
 
-find_package(Boost COMPONENTS program_options REQUIRED)
+find_package(Boost CONFIG COMPONENTS program_options REQUIRED)
 
 add_executable(ResInfo ResInfo.cc)
-target_link_libraries(ResInfo ResourceFiles ${Boost_LIBRARIES})
-target_include_directories(ResInfo PRIVATE ${Boost_INCLUDE_DIR})
+target_link_libraries(ResInfo ResourceFiles Boost::program_options)
 
 install(TARGETS ResInfo RUNTIME DESTINATION bin)

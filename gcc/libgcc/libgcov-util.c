@@ -1,6 +1,6 @@
 /* Utility functions for reading gcda files into in-memory
    gcov_info structures and offline profile processing. */
-/* Copyright (C) 2014-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2014-2026 Free Software Foundation, Inc.
    Contributed by Rong Xu <xur@google.com>.
 
 This file is part of GCC.
@@ -27,6 +27,7 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 
 #define IN_GCOV_TOOL 1
 
+#define INCLUDE_MEMORY
 #include "libgcov.h"
 #include "intl.h"
 #include "diagnostic.h"
@@ -57,12 +58,12 @@ void gcov_set_verbose (void)
 #include <ftw.h>
 #endif
 
-static void tag_function (unsigned, unsigned);
-static void tag_blocks (unsigned, unsigned);
-static void tag_arcs (unsigned, unsigned);
-static void tag_lines (unsigned, unsigned);
-static void tag_counters (unsigned, unsigned);
-static void tag_summary (unsigned, unsigned);
+static void tag_function (unsigned, int);
+static void tag_blocks (unsigned, int);
+static void tag_arcs (unsigned, int);
+static void tag_lines (unsigned, int);
+static void tag_counters (unsigned, int);
+static void tag_summary (unsigned, int);
 
 /* The gcov_info for the first module.  */
 static struct gcov_info *curr_gcov_info;
@@ -80,8 +81,6 @@ static int k_ctrs_mask[GCOV_COUNTERS];
 static struct gcov_ctr_info k_ctrs[GCOV_COUNTERS];
 /* Number of kind of counters that have been seen.  */
 static int k_ctrs_types;
-/* The object summary being processed.  */
-static struct gcov_summary *curr_object_summary;
 
 /* Merge functions for counters.  */
 #define DEF_GCOV_COUNTER(COUNTER, NAME, FN_TYPE) __gcov_merge ## FN_TYPE,
@@ -119,7 +118,7 @@ typedef struct tag_format
 {
     unsigned tag;
     char const *name;
-    void (*proc) (unsigned, unsigned);
+    void (*proc) (unsigned, int);
 } tag_format_t;
 
 /* Handler table for various Tags.  */
@@ -140,7 +139,7 @@ static const tag_format_t tag_table[] =
 /* Handler for reading function tag.  */
 
 static void
-tag_function (unsigned tag ATTRIBUTE_UNUSED, unsigned length ATTRIBUTE_UNUSED)
+tag_function (unsigned tag ATTRIBUTE_UNUSED, int length ATTRIBUTE_UNUSED)
 {
   int i;
 
@@ -173,7 +172,7 @@ tag_function (unsigned tag ATTRIBUTE_UNUSED, unsigned length ATTRIBUTE_UNUSED)
 /* Handler for reading block tag.  */
 
 static void
-tag_blocks (unsigned tag ATTRIBUTE_UNUSED, unsigned length ATTRIBUTE_UNUSED)
+tag_blocks (unsigned tag ATTRIBUTE_UNUSED, int length ATTRIBUTE_UNUSED)
 {
   /* TBD: gcov-tool currently does not handle gcno files. Assert here.  */
   gcc_unreachable ();
@@ -182,7 +181,7 @@ tag_blocks (unsigned tag ATTRIBUTE_UNUSED, unsigned length ATTRIBUTE_UNUSED)
 /* Handler for reading flow arc tag.  */
 
 static void
-tag_arcs (unsigned tag ATTRIBUTE_UNUSED, unsigned length ATTRIBUTE_UNUSED)
+tag_arcs (unsigned tag ATTRIBUTE_UNUSED, int length ATTRIBUTE_UNUSED)
 {
   /* TBD: gcov-tool currently does not handle gcno files. Assert here.  */
   gcc_unreachable ();
@@ -191,7 +190,7 @@ tag_arcs (unsigned tag ATTRIBUTE_UNUSED, unsigned length ATTRIBUTE_UNUSED)
 /* Handler for reading line tag.  */
 
 static void
-tag_lines (unsigned tag ATTRIBUTE_UNUSED, unsigned length ATTRIBUTE_UNUSED)
+tag_lines (unsigned tag ATTRIBUTE_UNUSED, int length ATTRIBUTE_UNUSED)
 {
   /* TBD: gcov-tool currently does not handle gcno files. Assert here.  */
   gcc_unreachable ();
@@ -200,9 +199,9 @@ tag_lines (unsigned tag ATTRIBUTE_UNUSED, unsigned length ATTRIBUTE_UNUSED)
 /* Handler for reading counters array tag with value as TAG and length of LENGTH.  */
 
 static void
-tag_counters (unsigned tag, unsigned length)
+tag_counters (unsigned tag, int length)
 {
-  unsigned n_counts = GCOV_TAG_COUNTER_NUM (length);
+  unsigned n_counts = GCOV_TAG_COUNTER_NUM (abs (length));
   gcov_type *values;
   unsigned ix;
   unsigned tag_ix;
@@ -213,20 +212,21 @@ tag_counters (unsigned tag, unsigned length)
   gcc_assert (k_ctrs[tag_ix].num == 0);
   k_ctrs[tag_ix].num = n_counts;
 
-  k_ctrs[tag_ix].values = values = (gcov_type *) xmalloc (n_counts * sizeof (gcov_type));
+  k_ctrs[tag_ix].values = values = (gcov_type *) xcalloc (n_counts,
+							  sizeof (gcov_type));
   gcc_assert (values);
 
-  for (ix = 0; ix != n_counts; ix++)
-    values[ix] = gcov_read_counter ();
+  if (length > 0)
+    for (ix = 0; ix != n_counts; ix++)
+      values[ix] = gcov_read_counter ();
 }
 
 /* Handler for reading summary tag.  */
 
 static void
-tag_summary (unsigned tag ATTRIBUTE_UNUSED, unsigned length ATTRIBUTE_UNUSED)
+tag_summary (unsigned tag ATTRIBUTE_UNUSED, int ATTRIBUTE_UNUSED)
 {
-  curr_object_summary = (gcov_summary *) xcalloc (sizeof (gcov_summary), 1);
-  gcov_read_summary (curr_object_summary);
+  gcov_read_summary (&curr_gcov_info->summary);
 }
 
 /* This function is called at the end of reading a gcda file.
@@ -243,7 +243,7 @@ read_gcda_finalize (struct gcov_info *obj_info)
   /* We set the following fields: merge, n_functions, functions
      and summary.  */
   obj_info->n_functions = num_fn_info;
-  obj_info->functions = (const struct gcov_fn_info**) obstack_finish (&fn_info);
+  obj_info->functions = (struct gcov_fn_info**) obstack_finish (&fn_info);
 
   /* wrap all the counter array.  */
   for (i=0; i< GCOV_COUNTERS; i++)
@@ -261,7 +261,7 @@ read_gcda_file (const char *filename)
 {
   unsigned tags[4];
   unsigned depth = 0;
-  unsigned magic, version;
+  unsigned version;
   struct gcov_info *obj_info;
   int i;
 
@@ -269,18 +269,10 @@ read_gcda_file (const char *filename)
     k_ctrs_mask[i] = 0;
   k_ctrs_types = 0;
 
-  if (!gcov_open (filename))
-    {
-      fnotice (stderr, "%s:cannot open\n", filename);
-      return NULL;
-    }
-
   /* Read magic.  */
-  magic = gcov_read_unsigned ();
-  if (magic != GCOV_DATA_MAGIC)
+  if (!gcov_magic (gcov_read_unsigned (), GCOV_DATA_MAGIC))
     {
       fnotice (stderr, "%s:not a gcov data file\n", filename);
-      gcov_close ();
       return NULL;
     }
 
@@ -289,7 +281,6 @@ read_gcda_file (const char *filename)
   if (version != GCOV_VERSION)
     {
       fnotice (stderr, "%s:incorrect gcov version %d vs %d \n", filename, version, GCOV_VERSION);
-      gcov_close ();
       return NULL;
     }
 
@@ -298,20 +289,20 @@ read_gcda_file (const char *filename)
              sizeof (struct gcov_ctr_info) * GCOV_COUNTERS, 1);
 
   obj_info->version = version;
+  obj_info->filename = filename;
   obstack_init (&fn_info);
   num_fn_info = 0;
   curr_fn_info = 0;
-  curr_object_summary = NULL;
-  {
-    size_t len = strlen (filename) + 1;
-    char *str_dup = (char*) xmalloc (len);
 
-    memcpy (str_dup, filename, len);
-    obj_info->filename = str_dup;
-  }
+  /* Prepend to global gcov info list.  */
+  obj_info->next = gcov_info_head;
+  gcov_info_head = obj_info;
 
   /* Read stamp.  */
   obj_info->stamp = gcov_read_unsigned ();
+
+  /* Read checksum.  */
+  obj_info->checksum = gcov_read_unsigned ();
 
   while (1)
     {
@@ -325,14 +316,15 @@ read_gcda_file (const char *filename)
       tag = gcov_read_unsigned ();
       if (!tag)
         break;
-      length = gcov_read_unsigned ();
+      int read_length = (int)gcov_read_unsigned ();
+      length = read_length > 0 ? read_length : 0;
       base = gcov_position ();
       mask = GCOV_TAG_MASK (tag) >> 1;
       for (tag_depth = 4; mask; mask >>= 8)
         {
           if (((mask & 0xff) != 0xff))
             {
-              warning (0, "%s:tag `%x' is invalid\n", filename, tag);
+	      warning (0, "%s:tag %qx is invalid", filename, tag);
               break;
             }
           tag_depth--;
@@ -347,7 +339,7 @@ read_gcda_file (const char *filename)
           if (depth && depth < tag_depth)
             {
               if (!GCOV_TAG_IS_SUBTAG (tags[depth - 1], tag))
-                warning (0, "%s:tag `%x' is incorrectly nested\n",
+	        warning (0, "%s:tag %qx is incorrectly nested",
                          filename, tag);
             }
           depth = tag_depth;
@@ -358,29 +350,28 @@ read_gcda_file (const char *filename)
         {
           unsigned long actual_length;
 
-          (*format->proc) (tag, length);
+	  (*format->proc) (tag, read_length);
 
           actual_length = gcov_position () - base;
           if (actual_length > length)
-            warning (0, "%s:record size mismatch %lu bytes overread\n",
+	    warning (0, "%s:record size mismatch %lu bytes overread",
                      filename, actual_length - length);
           else if (length > actual_length)
-            warning (0, "%s:record size mismatch %lu bytes unread\n",
+	    warning (0, "%s:record size mismatch %lu bytes unread",
                      filename, length - actual_length);
        }
 
       gcov_sync (base, length);
       if ((error = gcov_is_error ()))
         {
-          warning (0, error < 0 ? "%s:counter overflow at %lu\n" :
-                                  "%s:read error at %lu\n", filename,
+	  warning (0, error < 0 ? "%s:counter overflow at %lu" :
+	                          "%s:read error at %lu", filename,
                    (long unsigned) gcov_position ());
           break;
         }
     }
 
   read_gcda_finalize (obj_info);
-  gcov_close ();
 
   return obj_info;
 }
@@ -394,9 +385,8 @@ ftw_read_file (const char *filename,
                const struct stat *status ATTRIBUTE_UNUSED,
                int type)
 {
-  int filename_len;
-  int suffix_len;
-  struct gcov_info *obj_info;
+  size_t filename_len;
+  size_t suffix_len;
 
   /* Only read regular files.  */
   if (type != FTW_F)
@@ -414,12 +404,14 @@ ftw_read_file (const char *filename,
   if (verbose)
     fnotice (stderr, "reading file: %s\n", filename);
 
-  obj_info = read_gcda_file (filename);
-  if (!obj_info)
-    return 0;
+  if (!gcov_open (filename, 1))
+    {
+      fnotice (stderr, "%s:cannot open:%s\n", filename, xstrerror (errno));
+      return 0;
+    }
 
-  obj_info->next = gcov_info_head;
-  gcov_info_head = obj_info;
+  (void)read_gcda_file (xstrdup (filename));
+  gcov_close ();
 
   return 0;
 }
@@ -461,9 +453,8 @@ gcov_read_profile_dir (const char* dir_name, int recompute_summary ATTRIBUTE_UNU
 #ifdef HAVE_FTW_H
   ftw (".", ftw_read_file, 50);
 #endif
-  ret = chdir (pwd);
+  chdir (pwd);
   free (pwd);
-
 
   return gcov_info_head;;
 }
@@ -508,14 +499,58 @@ gcov_get_merge_weight (void)
    value buffer and weights and then calls the merge function.  */
 
 static void
-merge_wrapper (gcov_merge_fn f, gcov_type *v1, gcov_unsigned_t n,
-               gcov_type *v2, unsigned w)
+merge_wrapper (gcov_merge_fn f, gcov_type *v1, gcov_unsigned_t n1,
+	       gcov_type *v2, gcov_unsigned_t n2, unsigned w)
 {
   gcov_value_buf = v2;
   gcov_value_buf_pos = 0;
-  gcov_value_buf_size = n;
+  gcov_value_buf_size = n2;
   gcov_merge_weight = w;
-  (*f) (v1, n);
+  (*f) (v1, n1);
+}
+
+/* Convert on disk representation of a TOPN counter to in memory representation
+   that is expected from __gcov_merge_topn function.  */
+
+static void
+topn_to_memory_representation (struct gcov_ctr_info *info)
+{
+  auto_vec<gcov_type> output;
+  gcov_type *values = info->values;
+  int count = info->num;
+
+  while (count > 0)
+    {
+      output.safe_push (values[0]);
+      gcov_type n = values[1];
+      output.safe_push (n);
+      if (n > 0)
+	{
+	  struct gcov_kvp *tuples
+	    = (struct gcov_kvp *)xcalloc (n, sizeof (struct gcov_kvp));
+	  for (unsigned i = 0; i < n - 1; i++)
+	    tuples[i].next = &tuples[i + 1];
+	  for (unsigned i = 0; i < n; i++)
+	    {
+	      tuples[i].value = values[2 + 2 * i];
+	      tuples[i].count = values[2 + 2 * i + 1];
+	    }
+	  output.safe_push ((intptr_t)&tuples[0]);
+	}
+      else
+	output.safe_push (0);
+
+      unsigned len = 2 * n + 2;
+      values += len;
+      count -= len;
+    }
+  gcc_assert (count == 0);
+
+  /* Allocate new buffer and copy it there.  */
+  info->num = output.length ();
+  info->values = (gcov_type *)xmalloc (sizeof (gcov_type) * info->num);
+  for (unsigned i = 0; i < info->num; i++)
+    info->values[i] = output[i];
 }
 
 /* Offline tool to manipulate profile data.
@@ -542,12 +577,17 @@ gcov_merge (struct gcov_info *info1, struct gcov_info *info2, int w)
   int has_mismatch = 0;
 
   gcc_assert (info2->n_functions == n_functions);
+
+  /* Merge summary.  */
+  info1->summary.runs += info2->summary.runs;
+  info1->summary.sum_max += info2->summary.sum_max;
+
   for (f_ix = 0; f_ix < n_functions; f_ix++)
     {
       unsigned t_ix;
-      const struct gcov_fn_info *gfi_ptr1 = info1->functions[f_ix];
-      const struct gcov_fn_info *gfi_ptr2 = info2->functions[f_ix];
-      const struct gcov_ctr_info *ci_ptr1, *ci_ptr2;
+      struct gcov_fn_info *gfi_ptr1 = info1->functions[f_ix];
+      struct gcov_fn_info *gfi_ptr2 = info2->functions[f_ix];
+      struct gcov_ctr_info *ci_ptr1, *ci_ptr2;
 
       if (!gfi_ptr1 || gfi_ptr1->key != info1)
         continue;
@@ -571,8 +611,14 @@ gcov_merge (struct gcov_info *info1, struct gcov_info *info2, int w)
           gcc_assert (merge1 == merge2);
           if (!merge1)
             continue;
-          gcc_assert (ci_ptr1->num == ci_ptr2->num);
-          merge_wrapper (merge1, ci_ptr1->values, ci_ptr1->num, ci_ptr2->values, w);
+
+	  if (merge1 == __gcov_merge_topn)
+	    topn_to_memory_representation (ci_ptr1);
+	  else
+	    gcc_assert (ci_ptr1->num == ci_ptr2->num);
+
+	  merge_wrapper (merge1, ci_ptr1->values, ci_ptr1->num,
+			 ci_ptr2->values, ci_ptr2->num, w);
           ci_ptr1++;
           ci_ptr2++;
         }
@@ -619,16 +665,16 @@ find_match_gcov_info (struct gcov_info **array, int size,
 }
 
 /* Merge the list of gcov_info objects from SRC_PROFILE to TGT_PROFILE.
-   Return 0 on success: without mismatch.
-   Reutrn 1 on error.  */
+   Return the list of merged gcov_info objects.  Return NULL if the list is
+   empty.  */
 
-int
+struct gcov_info *
 gcov_profile_merge (struct gcov_info *tgt_profile, struct gcov_info *src_profile,
                     int w1, int w2)
 {
   struct gcov_info *gi_ptr;
   struct gcov_info **tgt_infos;
-  struct gcov_info *tgt_tail;
+  struct gcov_info **tgt_tail;
   struct gcov_info **in_src_not_tgt;
   unsigned tgt_cnt = 0, src_cnt = 0;
   unsigned unmatch_info_cnt = 0;
@@ -648,7 +694,10 @@ gcov_profile_merge (struct gcov_info *tgt_profile, struct gcov_info *src_profile
   for (gi_ptr = tgt_profile, i = 0; gi_ptr; gi_ptr = gi_ptr->next, i++)
     tgt_infos[i] = gi_ptr;
 
-  tgt_tail = tgt_infos[tgt_cnt - 1];
+  if (tgt_cnt)
+     tgt_tail = &tgt_infos[tgt_cnt - 1]->next;
+  else
+     tgt_tail = &tgt_profile;
 
   /* First pass on tgt_profile, we multiply w1 to all counters.  */
   if (w1 > 1)
@@ -677,11 +726,109 @@ gcov_profile_merge (struct gcov_info *tgt_profile, struct gcov_info *src_profile
       gi_ptr = in_src_not_tgt[i];
       gcov_merge (gi_ptr, gi_ptr, w2 - 1);
       gi_ptr->next = NULL;
-      tgt_tail->next = gi_ptr;
-      tgt_tail = gi_ptr;
+      *tgt_tail = gi_ptr;
+      tgt_tail = &gi_ptr->next;
     }
 
-  return 0;
+  free (in_src_not_tgt);
+  free (tgt_infos);
+
+  return tgt_profile;
+}
+
+/* Deserialize gcov_info objects and associated filenames from the file
+   specified by FILENAME to create a profile list.  When FILENAME is NULL, read
+   from stdin.  Return the profile list.  */
+
+struct gcov_info *
+deserialize_profiles (const char *filename)
+{
+  read_profile_dir_init ();
+
+  while (true)
+    {
+      unsigned version;
+      const char *filename_of_info;
+      struct gcov_info *obj_info;
+
+      if (!gcov_magic (gcov_read_unsigned (), GCOV_FILENAME_MAGIC))
+	{
+	  if (gcov_is_error () != 2)
+	    fnotice (stderr, "%s:not a gcfn stream\n", filename);
+	  break;
+	}
+
+      version = gcov_read_unsigned ();
+      if (version != GCOV_VERSION)
+	{
+	  fnotice (stderr, "%s:incorrect gcov version %d vs %d \n",
+		   filename, version, GCOV_VERSION);
+	  break;
+	}
+
+      filename_of_info = gcov_read_string ();
+      if (!filename_of_info)
+	{
+	  fnotice (stderr, "%s:no filename in gcfn stream\n",
+		   filename);
+	  break;
+	}
+
+      obj_info = read_gcda_file (filename);
+      if (!obj_info)
+	break;
+
+      obj_info->filename = filename_of_info;
+    }
+
+  return gcov_info_head;
+}
+
+/* For each profile of the list specified by SRC_PROFILE, read the GCDA file of
+   the profile.  If a GCDA file exists, add the profile to a list.  Return the
+   profile list.  */
+
+struct gcov_info *
+get_target_profiles_for_merge (struct gcov_info *src_profile)
+{
+  struct gcov_info *gi_ptr;
+
+  read_profile_dir_init ();
+
+  for (gi_ptr = src_profile; gi_ptr; gi_ptr = gi_ptr->next)
+    if (gcov_open (gi_ptr->filename, 1))
+      {
+	(void)read_gcda_file (gi_ptr->filename);
+	gcov_close ();
+      }
+
+  return gcov_info_head;
+}
+
+/* Deserialize gcov_info objects and associated filenames from the file
+   specified by FILENAME to create a source profile list.  When FILENAME is
+   NULL, read from stdin.  Use the filenames of the source profile list to get
+   a target profile list.  Merge the source profile list into the target
+   profile list using weights W1 and W2.  Return the list of merged gcov_info
+   objects.  Return NULL if the list is empty.  */
+
+struct gcov_info *
+gcov_profile_merge_stream (const char *filename, int w1, int w2)
+{
+  struct gcov_info *tgt_profile;
+  struct gcov_info *src_profile;
+
+  if (!gcov_open (filename, 1))
+    {
+      fnotice (stderr, "%s:cannot open:%s\n", filename, xstrerror (errno));
+      return NULL;
+    }
+
+  src_profile = deserialize_profiles (filename ? filename : "<stdin>");
+  gcov_close ();
+  tgt_profile = get_target_profiles_for_merge (src_profile);
+
+  return gcov_profile_merge (tgt_profile, src_profile, w1, w2);
 }
 
 typedef gcov_type (*counter_op_fn) (gcov_type, void*, void*);
@@ -723,11 +870,11 @@ __gcov_time_profile_counter_op (gcov_type *counters ATTRIBUTE_UNUSED,
   /* Do nothing.  */
 }
 
-/* Performing FN upon single counters.  */
+/* Performing FN upon TOP N counters.  */
 
 static void
-__gcov_single_counter_op (gcov_type *counters, unsigned n_counters,
-                          counter_op_fn fn, void *data1, void *data2)
+__gcov_topn_counter_op (gcov_type *counters, unsigned n_counters,
+			counter_op_fn fn, void *data1, void *data2)
 {
   unsigned i, n_measures;
 
@@ -737,25 +884,6 @@ __gcov_single_counter_op (gcov_type *counters, unsigned n_counters,
     {
       counters[1] = fn (counters[1], data1, data2);
       counters[2] = fn (counters[2], data1, data2);
-    }
-}
-
-/* Performing FN upon indirect-call profile counters.  */
-
-static void
-__gcov_icall_topn_counter_op (gcov_type *counters, unsigned n_counters,
-                              counter_op_fn fn, void *data1, void *data2)
-{
-  unsigned i;
-
-  gcc_assert (!(n_counters % GCOV_ICALL_TOPN_NCOUNTS));
-  for (i = 0; i < n_counters; i += GCOV_ICALL_TOPN_NCOUNTS)
-    {
-      unsigned j;
-      gcov_type *value_array = &counters[i + 1];
-
-      for (j = 0; j < GCOV_ICALL_TOPN_NCOUNTS - 1; j += 2)
-        value_array[j + 1] = fn (value_array[j + 1], data1, data2);
     }
 }
 
@@ -1298,6 +1426,8 @@ calculate_overlap (struct gcov_info *gcov_list1,
       prg_val += val;
 
     }
+
+  free (all_infos);
 
   if (overlap_obj_level)
     printf("   SUM:%36s  overlap = %6.2f%% (%5.2f%% %5.2f%%)\n",

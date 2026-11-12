@@ -1,9 +1,9 @@
 /* Verify that overloaded built-ins for vec_sel with 
    double inputs for VSX produce the right code.  */
 
-/* { dg-do compile { target { powerpc*-*-linux* } } } */
-/* { dg-require-effective-target powerpc_p8vector_ok } */
-/* { dg-options "-mdejagnu-cpu=power8 -O2" } */
+/* { dg-do compile } */
+/* { dg-options "-mdejagnu-cpu=power8 -mvsx -O2" } */
+/* { dg-require-effective-target powerpc_vsx } */
 
 #include <altivec.h>
 

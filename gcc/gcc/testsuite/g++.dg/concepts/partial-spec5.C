@@ -3,7 +3,7 @@
 // { dg-options "-fconcepts" }
 
 template <class T>
-concept bool _Auto = true;
+concept _Auto = true;
 
 template <_Auto T>
 struct test {};

@@ -1,5 +1,5 @@
 /* tc-ppc.h -- Header file for tc-ppc.c.
-   Copyright (C) 1994-2018 Free Software Foundation, Inc.
+   Copyright (C) 1994-2026 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Cygnus Support.
 
    This file is part of GAS, the GNU Assembler.
@@ -19,6 +19,7 @@
    Software Foundation, 51 Franklin Street - Fifth Floor, Boston, MA
    02110-1301, USA.  */
 
+#ifndef TC_PPC
 #define TC_PPC
 
 #include "opcode/ppc.h"
@@ -30,14 +31,9 @@ struct fix;
 #define TARGET_BYTES_BIG_ENDIAN 1
 #endif
 
-/* If OBJ_COFF is defined, and TE_PE is not defined, we are assembling
-   XCOFF for AIX or PowerMac.  If TE_PE is defined, we are assembling
-   COFF for Windows NT.  */
-
+/* If OBJ_COFF is defined we are assembling XCOFF for AIX or PowerMac.  */
 #ifdef OBJ_COFF
-#ifndef TE_PE
 #define OBJ_XCOFF
-#endif
 #endif
 
 /* The target BFD architecture.  */
@@ -61,7 +57,7 @@ extern const char *ppc_target_format (void);
 
 /* Strings do not use backslash escapes under COFF.  */
 #ifdef OBJ_COFF
-#define NO_STRING_ESCAPES
+#define TC_STRING_ESCAPES 0
 #endif
 
 #ifdef OBJ_ELF
@@ -77,12 +73,15 @@ extern const char *ppc_target_format (void);
 /* We don't need to handle .word strangely.  */
 #define WORKING_DOT_WORD
 
-#define MAX_MEM_FOR_RS_ALIGN_CODE 4
-#define HANDLE_ALIGN(FRAGP)						\
+#define MAX_MEM_FOR_RS_ALIGN_CODE(p2align, max) 8
+#define HANDLE_ALIGN(SEC, FRAGP)						\
   if ((FRAGP)->fr_type == rs_align_code)				\
-    ppc_handle_align (FRAGP);
+    ppc_handle_align (SEC, FRAGP);
 
-extern void ppc_handle_align (struct frag *);
+extern unsigned int ppc_nop_select (void);
+#define NOP_OPCODE ppc_nop_select ()
+
+extern void ppc_handle_align (segT, struct frag *);
 extern void ppc_frag_check (struct frag *);
 
 #ifdef OBJ_ELF
@@ -104,17 +103,6 @@ extern ppc_cpu_t ppc_cpu;
 #define TC_INIT_FIX_DATA(FIXP) \
   do { (FIXP)->tc_fix_data.ppc_cpu = ppc_cpu; } while (0)
 
-#ifdef TE_PE
-
-/* Question marks are permitted in symbol names.  */
-#define LEX_QM 1
-
-/* Don't adjust TOC relocs.  */
-#define tc_fix_adjustable(FIX) ppc_pe_fix_adjustable (FIX)
-extern int ppc_pe_fix_adjustable (struct fix *);
-
-#endif
-
 #ifdef OBJ_XCOFF
 
 /* Declarations needed when generating XCOFF code.  XCOFF is an
@@ -143,6 +131,7 @@ struct ppc_tc_sy
   /* For a csect symbol, the last symbol which has been defined in
      this csect, or NULL if none have been defined so far.
      For a .bs symbol, the referenced csect symbol.
+     For a C_STSYM symbol, the containing block (.bs symbol).
      For a label, the enclosing csect.  */
   symbolS *within;
   union
@@ -158,10 +147,10 @@ struct ppc_tc_sy
 #define TC_SYMFIELD_TYPE struct ppc_tc_sy
 
 /* We need an additional auxent for function symbols.  */
-#define OBJ_COFF_MAX_AUXENTRIES 2
+#define OBJ_COFF_MAX_AUXENTRIES 4
 
 /* Square and curly brackets are permitted in symbol names.  */
-#define LEX_BR 3
+#define LEX_BR (LEX_BEGIN_NAME | LEX_NAME)
 
 /* Canonicalize the symbol name.  */
 #define tc_canonicalize_symbol_name(name) ppc_canonicalize_symbol_name (name)
@@ -170,10 +159,6 @@ extern char *ppc_canonicalize_symbol_name (char *);
 /* Get the symbol class from the name.  */
 #define tc_symbol_new_hook(sym) ppc_symbol_new_hook (sym)
 extern void ppc_symbol_new_hook (symbolS *);
-
-/* Set the symbol class of a label based on the csect.  */
-#define tc_frob_label(sym) ppc_frob_label (sym)
-extern void ppc_frob_label (symbolS *);
 
 /* TOC relocs requires special handling.  */
 #define tc_fix_adjustable(FIX) ppc_fix_adjustable (FIX)
@@ -203,16 +188,36 @@ do {								\
   symbol_get_tc (dest)->within = symbol_get_tc (src)->within;	\
 } while (0)
 
-extern void ppc_xcoff_end (void);
-#define md_end ppc_xcoff_end
+extern void ppc_xcoff_md_finish (void);
+#define md_finish ppc_xcoff_md_finish
+
+#define TC_PARSE_CONS_EXPRESSION(EXP, NBYTES)	\
+  ppc_xcoff_parse_cons (EXP, NBYTES)
+extern bfd_reloc_code_real_type ppc_xcoff_parse_cons (expressionS *,
+						    unsigned int);
+/* XCOFF format allows only few predefined sections. Gather all
+   information in a common structure.  */
+struct ppc_xcoff_section {
+  /* Main segment of the section.  */
+  segT segment;
+
+  /* Next subsegment to allocate within the segment.  */
+  subsegT next_subsegment;
+
+  /* Linked list of csects in the section.  */
+  symbolS *csects;
+};
+
+#endif /* OBJ_XCOFF */
 
 #define tc_new_dot_label(sym) ppc_new_dot_label (sym)
 extern void ppc_new_dot_label (symbolS *);
 
-#endif /* OBJ_XCOFF */
-
 extern const char       ppc_symbol_chars[];
 #define tc_symbol_chars ppc_symbol_chars
+
+#define tc_comment_chars ppc_comment_chars
+extern const char ppc_comment_chars[];
 
 #ifdef OBJ_ELF
 
@@ -222,9 +227,6 @@ extern int ppc_section_flags (flagword, bfd_vma, int);
 
 #define md_elf_section_type(STR, LEN)		ppc_section_type (STR, LEN)
 #define md_elf_section_flags(FLAGS, ATTR, TYPE)	ppc_section_flags (FLAGS, ATTR, TYPE)
-
-#define tc_comment_chars ppc_comment_chars
-extern const char *ppc_comment_chars;
 
 #define md_elf_section_letter		ppc_elf_section_letter
 extern bfd_vma ppc_elf_section_letter (int, const char **);
@@ -250,10 +252,13 @@ extern void ppc_frob_file_before_adjust (void);
 #define tc_adjust_symtab() ppc_elf_adjust_symtab ()
 extern void ppc_elf_adjust_symtab (void);
 
-extern void ppc_elf_end (void);
-#define md_end ppc_elf_end
+extern void ppc_elf_md_finish (void);
+#define md_finish ppc_elf_md_finish
 
 #endif /* OBJ_ELF */
+
+extern void ppc_md_end (void);
+#define md_end ppc_md_end
 
 #if defined (OBJ_ELF) || defined (OBJ_XCOFF)
 #define TC_FORCE_RELOCATION(FIX) ppc_force_relocation (FIX)
@@ -264,29 +269,66 @@ extern int ppc_force_relocation (struct fix *);
 /* Don't allow the generic code to convert fixups involving the
    subtraction of a label in the current section to pc-relative if we
    don't have the necessary pc-relative relocation.  */
-#define TC_FORCE_RELOCATION_SUB_LOCAL(FIX, SEG)		\
-  (!((FIX)->fx_r_type == BFD_RELOC_LO16			\
-     || (FIX)->fx_r_type == BFD_RELOC_HI16		\
-     || (FIX)->fx_r_type == BFD_RELOC_HI16_S		\
-     || (FIX)->fx_r_type == BFD_RELOC_64		\
-     || (FIX)->fx_r_type == BFD_RELOC_32		\
-     || (FIX)->fx_r_type == BFD_RELOC_16		\
-     || (FIX)->fx_r_type == BFD_RELOC_PPC_16DX_HA))
-#endif
+#define TC_FORCE_RELOCATION_SUB_LOCAL(FIX, SEG) \
+  (!((FIX)->fx_r_type == BFD_RELOC_64				\
+     || (FIX)->fx_r_type == BFD_RELOC_32			\
+     || (FIX)->fx_r_type == BFD_RELOC_16			\
+     || (FIX)->fx_r_type == BFD_RELOC_LO16			\
+     || (FIX)->fx_r_type == BFD_RELOC_HI16			\
+     || (FIX)->fx_r_type == BFD_RELOC_HI16_S			\
+     || (FIX)->fx_r_type == BFD_RELOC_PPC64_ADDR16_HIGH		\
+     || (FIX)->fx_r_type == BFD_RELOC_PPC64_ADDR16_HIGHA	\
+     || (FIX)->fx_r_type == BFD_RELOC_PPC64_HIGHER		\
+     || (FIX)->fx_r_type == BFD_RELOC_PPC64_HIGHER_S		\
+     || (FIX)->fx_r_type == BFD_RELOC_PPC64_HIGHEST		\
+     || (FIX)->fx_r_type == BFD_RELOC_PPC64_HIGHEST_S		\
+     || (FIX)->fx_r_type == BFD_RELOC_PPC64_ADDR16_HIGHER34	\
+     || (FIX)->fx_r_type == BFD_RELOC_PPC64_ADDR16_HIGHERA34	\
+     || (FIX)->fx_r_type == BFD_RELOC_PPC64_ADDR16_HIGHEST34	\
+     || (FIX)->fx_r_type == BFD_RELOC_PPC64_ADDR16_HIGHESTA34	\
+     || (FIX)->fx_r_type == BFD_RELOC_PPC_16DX_HA		\
+     || (FIX)->fx_r_type == BFD_RELOC_PPC64_D34			\
+     || (FIX)->fx_r_type == BFD_RELOC_PPC64_D28))
 
-#define TC_VALIDATE_FIX_SUB(FIX, SEG) 0
+#endif /* OBJ_ELF */
+
+#define RELOC_EXPANSION_POSSIBLE
+#define MAX_RELOC_EXPANSION 2
+
+#if defined (OBJ_XCOFF)
+/* Force a relocation when the fix is negative. */
+#define TC_FORCE_RELOCATION_SUB_SAME(FIX, SEG)				\
+  (GENERIC_FORCE_RELOCATION_SUB_SAME(FIX, SEG)				\
+   || (((SEG)->flags & SEC_DEBUGGING) == 0				\
+	&& (FIX)->fx_addsy && (FIX)->fx_subsy				\
+	&& (S_GET_VALUE (fixP->fx_addsy) < S_GET_VALUE (fixP->fx_subsy))))
+
+/* XCOFF allows undefined differences which will be encoded with
+   R_NEG relocations.  */
+#define UNDEFINED_DIFFERENCE_OK
+
+#define TC_VALIDATE_FIX_SUB(FIX, SEG) \
+  (md_register_arithmetic || (SEG) != reg_section)
+
+#endif /* OBJ_XCOFF */
+
+/* Various frobbings of labels and their addresses.  */
+#define md_start_line_hook() ppc_start_line_hook ()
+extern void ppc_start_line_hook (void);
+
+/* Set the symbol class of a label based on the csect.  */
+#define tc_frob_label(sym) ppc_frob_label (sym)
+extern void ppc_frob_label (symbolS *);
 
 /* call md_pcrel_from_section, not md_pcrel_from */
 #define MD_PCREL_FROM_SECTION(FIX, SEC) md_pcrel_from_section(FIX, SEC)
-extern long md_pcrel_from_section (struct fix *, segT);
 
-#define md_parse_name(name, exp, mode, c) ppc_parse_name (name, exp)
-extern int ppc_parse_name (const char *, struct expressionS *);
+#define md_parse_name(name, exp, mode, c) \
+  (ppc_parse_name (name, exp, mode), true)
+extern void ppc_parse_name (const char *, struct expressionS *, enum expr_mode);
 
 #define md_optimize_expr(left, op, right) ppc_optimize_expr (left, op, right)
 extern int ppc_optimize_expr (expressionS *, operatorT, expressionS *);
-
-#define md_operand(x)
 
 #define md_cleanup() ppc_cleanup ()
 extern void ppc_cleanup (void);
@@ -326,3 +368,10 @@ extern int ppc_dwarf2_line_min_insn_length;
 #define DWARF2_DEFAULT_RETURN_COLUMN    0x41
 #define DWARF2_CIE_DATA_ALIGNMENT       ppc_cie_data_alignment
 #define EH_FRAME_ALIGNMENT		2
+
+#ifdef OBJ_ELF
+/* The target supports Object Attributes v1.  */
+#define TC_OBJ_ATTR_v1 1
+#endif /* OBJ_ELF */
+
+#endif /* TC_PPC */

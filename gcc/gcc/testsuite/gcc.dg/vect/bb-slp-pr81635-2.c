@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-additional-options "-fno-tree-loop-vectorize" } */
+/* { dg-additional-options "-fno-tree-loop-vectorize -fno-tree-dominator-opts" } */
 /* { dg-require-effective-target lp64 } */
 
 double p[1000];
@@ -61,4 +61,4 @@ f4 (double *p, double *q)
     }
 }
 
-/* { dg-final { scan-tree-dump-not "basic block vectorized" "slp1" } } */
+/* { dg-final { scan-tree-dump-not "optimized: basic block" "slp1" } } */

@@ -1,4 +1,5 @@
 // { dg-do assemble  }
+// { dg-skip-if "requires hosted libstdc++ for iostream" { ! hostedlib } }
 // GROUPS passed visibility
 
 #include <iostream>
@@ -10,7 +11,7 @@ public:
 };
 
 class deriv : public base {
-  void base :: f1();// { dg-error "" } .*
+  void base :: f1();// { dg-error "8:cannot declare" } .*
 };
 
 int main ()

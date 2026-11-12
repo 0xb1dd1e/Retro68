@@ -6,34 +6,30 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2010-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 2010-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
 -- ware  Foundation;  either version 3,  or (at your option) any later ver- --
 -- sion.  GNAT is distributed in the hope that it will be useful, but WITH- --
 -- OUT ANY WARRANTY;  without even the  implied warranty of MERCHANTABILITY --
--- or FITNESS FOR A PARTICULAR PURPOSE.                                     --
---                                                                          --
--- As a special exception under Section 7 of GPL version 3, you are granted --
--- additional permissions described in the GCC Runtime Library Exception,   --
--- version 3.1, as published by the Free Software Foundation.               --
---                                                                          --
--- You should have received a copy of the GNU General Public License and    --
--- a copy of the GCC Runtime Library Exception along with this program;     --
--- see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see    --
--- <http://www.gnu.org/licenses/>.                                          --
+-- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
+-- for  more details.  You should have  received  a copy of the GNU General --
+-- Public License  distributed with GNAT; see file COPYING3.  If not, go to --
+-- http://www.gnu.org/licenses for a complete copy of the license.          --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with Atree;    use Atree;
-with Einfo;    use Einfo;
-with Nlists;   use Nlists;
-with Sinfo;    use Sinfo;
-with Tree_IO;  use Tree_IO;
+with Atree;          use Atree;
+with Debug;          use Debug;
+with Einfo.Entities; use Einfo.Entities;
+with Einfo.Utils;    use Einfo.Utils;
+with Nlists;         use Nlists;
+with Sinfo.Nodes;    use Sinfo.Nodes;
+with Sinfo.Utils;    use Sinfo.Utils;
 
 with GNAT.HTable;
 
@@ -44,19 +40,20 @@ package body Aspects is
    --  type. False means it is not inherited.
 
    Base_Aspect : constant array (Aspect_Id) of Boolean :=
-     (Aspect_Atomic                  => True,
-      Aspect_Atomic_Components       => True,
-      Aspect_Constant_Indexing       => True,
-      Aspect_Default_Iterator        => True,
-      Aspect_Discard_Names           => True,
-      Aspect_Independent_Components  => True,
-      Aspect_Iterator_Element        => True,
-      Aspect_Type_Invariant          => True,
-      Aspect_Unchecked_Union         => True,
-      Aspect_Variable_Indexing       => True,
-      Aspect_Volatile                => True,
-      Aspect_Volatile_Full_Access    => True,
-      others                         => False);
+     (Aspect_Atomic                 => True,
+      Aspect_Atomic_Components      => True,
+      Aspect_Constant_Indexing      => True,
+      Aspect_Default_Iterator       => True,
+      Aspect_Discard_Names          => True,
+      Aspect_Independent_Components => True,
+      Aspect_Iterator_Element       => True,
+      Aspect_Stable_Properties      => True,
+      Aspect_Type_Invariant         => True,
+      Aspect_Unchecked_Union        => True,
+      Aspect_Variable_Indexing      => True,
+      Aspect_Volatile               => True,
+      Aspect_Volatile_Full_Access   => True,
+      others                        => False);
 
    --  The following array indicates type aspects that are inherited and apply
    --  to the class-wide type as well.
@@ -69,40 +66,6 @@ package body Aspects is
       Aspect_Remote_Types         => True,
       Aspect_Variable_Indexing    => True,
       others                      => False);
-
-   procedure Set_Aspect_Specifications_No_Check (N : Node_Id; L : List_Id);
-   --  Same as Set_Aspect_Specifications, but does not contain the assertion
-   --  that checks that N does not already have aspect specifications. This
-   --  subprogram is supposed to be used as a part of Tree_Read. When reading
-   --  tree, first read nodes with their basic properties (as Atree.Tree_Read),
-   --  this includes reading the Has_Aspects flag for each node, then we reed
-   --  all the list tables and only after that we call Tree_Read for Aspects.
-   --  That is, when reading the tree, the list of aspects is attached to the
-   --  node that already has Has_Aspects flag set ON.
-
-   ------------------------------------------
-   -- Hash Table for Aspect Specifications --
-   ------------------------------------------
-
-   type AS_Hash_Range is range 0 .. 510;
-   --  Size of hash table headers
-
-   function AS_Hash (F : Node_Id) return AS_Hash_Range;
-   --  Hash function for hash table
-
-   function AS_Hash (F : Node_Id) return AS_Hash_Range is
-   begin
-      return AS_Hash_Range (F mod 511);
-   end AS_Hash;
-
-   package Aspect_Specifications_Hash_Table is new
-     GNAT.HTable.Simple_HTable
-       (Header_Num => AS_Hash_Range,
-        Element    => List_Id,
-        No_Element => No_List,
-        Key        => Node_Id,
-        Hash       => AS_Hash,
-        Equal      => "=");
 
    -------------------------------------
    -- Hash Table for Aspect Id Values --
@@ -128,19 +91,6 @@ package body Aspects is
         Hash       => AI_Hash,
         Equal      => "=");
 
-   ---------------------------
-   -- Aspect_Specifications --
-   ---------------------------
-
-   function Aspect_Specifications (N : Node_Id) return List_Id is
-   begin
-      if Has_Aspects (N) then
-         return Aspect_Specifications_Hash_Table.Get (N);
-      else
-         return No_List;
-      end if;
-   end Aspect_Specifications;
-
    --------------------------------
    -- Aspects_On_Body_Or_Stub_OK --
    --------------------------------
@@ -153,12 +103,9 @@ package body Aspects is
       --  The routine should be invoked on a body [stub] with aspects
 
       pragma Assert (Has_Aspects (N));
-      pragma Assert (Nkind (N) in N_Body_Stub
-                       or else Nkind_In (N, N_Entry_Body,
-                                            N_Package_Body,
-                                            N_Protected_Body,
-                                            N_Subprogram_Body,
-                                            N_Task_Body));
+      pragma Assert
+        (Nkind (N) in N_Body_Stub      | N_Entry_Body      | N_Package_Body |
+                      N_Protected_Body | N_Subprogram_Body | N_Task_Body);
 
       --  Look through all aspects and see whether they can be applied to a
       --  body [stub].
@@ -176,41 +123,21 @@ package body Aspects is
       return True;
    end Aspects_On_Body_Or_Stub_OK;
 
-   ----------------------
-   -- Exchange_Aspects --
-   ----------------------
-
-   procedure Exchange_Aspects (N1 : Node_Id; N2 : Node_Id) is
-   begin
-      pragma Assert
-        (Permits_Aspect_Specifications (N1)
-           and then Permits_Aspect_Specifications (N2));
-
-      --  Perform the exchange only when both nodes have lists to be swapped
-
-      if Has_Aspects (N1) and then Has_Aspects (N2) then
-         declare
-            L1 : constant List_Id := Aspect_Specifications (N1);
-            L2 : constant List_Id := Aspect_Specifications (N2);
-         begin
-            Set_Parent (L1, N2);
-            Set_Parent (L2, N1);
-            Aspect_Specifications_Hash_Table.Set (N1, L2);
-            Aspect_Specifications_Hash_Table.Set (N2, L1);
-         end;
-      end if;
-   end Exchange_Aspects;
-
    -----------------
    -- Find_Aspect --
    -----------------
 
-   function Find_Aspect (Id : Entity_Id; A : Aspect_Id) return Node_Id is
-      Decl  : Node_Id;
-      Item  : Node_Id;
-      Owner : Entity_Id;
-      Spec  : Node_Id;
-
+   function Find_Aspect
+     (Id            : Entity_Id;
+      A             : Aspect_Id;
+      Class_Present : Boolean := False;
+      Or_Rep_Item   : Boolean := False) return Node_Id
+   is
+      Decl                 : Node_Id;
+      Item                 : Node_Id;
+      Owner                : Entity_Id;
+      Spec                 : Node_Id;
+      Alternative_Rep_Item : Node_Id := Empty;
    begin
       Owner := Id;
 
@@ -225,7 +152,10 @@ package body Aspects is
             Owner := Root_Type (Owner);
          end if;
 
-         if Is_Private_Type (Owner) and then Present (Full_View (Owner)) then
+         if Is_Private_Type (Owner)
+           and then Present (Full_View (Owner))
+           and then not Operational_Aspect (A)
+         then
             Owner := Full_View (Owner);
          end if;
       end if;
@@ -236,8 +166,21 @@ package body Aspects is
       while Present (Item) loop
          if Nkind (Item) = N_Aspect_Specification
            and then Get_Aspect_Id (Item) = A
+           and then Class_Present = Sinfo.Nodes.Class_Present (Item)
          then
             return Item;
+
+         --  We could do something similar here for an N_Pragma node
+         --  when Get_Aspect_Id (Pragma_Name (Item)) = A, but let's
+         --  wait for a demonstrated need.
+
+         elsif Or_Rep_Item
+           and then not Class_Present
+           and then Nkind (Item) = N_Attribute_Definition_Clause
+           and then Get_Aspect_Id (Chars (Item)) = A
+         then
+            --  Remember this candidate in case we don't find anything better
+            Alternative_Rep_Item := Item;
          end if;
 
          Next_Rep_Item (Item);
@@ -246,11 +189,28 @@ package body Aspects is
       --  Note that not all aspects are added to the chain of representation
       --  items. In such cases, search the list of aspect specifications. First
       --  find the declaration node where the aspects reside. This is usually
-      --  the parent or the parent of the parent.
+      --  the parent or the parent of the parent, after getting through the
+      --  additional indirection of the N_Defining_Program_Unit_Name if needed.
+
+      if No (Parent (Owner)) then
+         return Empty;
+      end if;
 
       Decl := Parent (Owner);
+
+      if Nkind (Decl) = N_Defining_Program_Unit_Name then
+         Decl := Parent (Decl);
+      end if;
+
       if not Permits_Aspect_Specifications (Decl) then
          Decl := Parent (Decl);
+
+         if No (Decl) then
+            --  Perhaps this happens because the tree is under construction
+            --  and Parent (Decl) has not been set yet?
+
+            return Empty;
+         end if;
       end if;
 
       --  Search the list of aspect specifications for the desired aspect
@@ -258,18 +218,33 @@ package body Aspects is
       if Permits_Aspect_Specifications (Decl) then
          Spec := First (Aspect_Specifications (Decl));
          while Present (Spec) loop
-            if Get_Aspect_Id (Spec) = A then
+            if Get_Aspect_Id (Spec) = A
+              and then Class_Present = Sinfo.Nodes.Class_Present (Spec)
+            then
                return Spec;
             end if;
+
+            declare
+               use User_Aspect_Support;
+            begin
+               if Get_Aspect_Id (Spec) = Aspect_User_Aspect
+                  and then not Analyzed (Spec)
+                  and then
+                    Analyze_User_Aspect_Aspect_Specification_Hook /= null
+               then
+                  Analyze_User_Aspect_Aspect_Specification_Hook.all (Spec);
+               end if;
+            end;
 
             Next (Spec);
          end loop;
       end if;
 
       --  The entity does not carry any aspects or the desired aspect was not
-      --  found.
+      --  found. We have no N_Aspect_Specification node to return, but
+      --  Alternative_Rep_Item may have been set (if Or_Rep_Item is True).
 
-      return Empty;
+      return Alternative_Rep_Item;
    end Find_Aspect;
 
    --------------------------
@@ -277,14 +252,18 @@ package body Aspects is
    --------------------------
 
    function Find_Value_Of_Aspect
-     (Id : Entity_Id;
-      A  : Aspect_Id) return Node_Id
+     (Id            : Entity_Id;
+      A             : Aspect_Id;
+      Class_Present : Boolean := False) return Node_Id
    is
-      Spec : constant Node_Id := Find_Aspect (Id, A);
+      Spec : constant Node_Id := Find_Aspect (Id, A,
+                                              Class_Present => Class_Present);
 
    begin
       if Present (Spec) then
-         if A = Aspect_Default_Iterator then
+         if A = Aspect_Default_Iterator
+           and then Present (Aspect_Rep_Item (Spec))
+         then
             return Expression (Aspect_Rep_Item (Spec));
          else
             return Expression (Spec);
@@ -300,6 +279,14 @@ package body Aspects is
 
    function Get_Aspect_Id (Name : Name_Id) return Aspect_Id is
    begin
+      --  Aspect Unsigned_Base_Range temporarily disabled
+
+      if Name = Name_Unsigned_Base_Range
+        and then not Debug_Flag_Dot_U
+      then
+         return No_Aspect;
+      end if;
+
       return Aspect_Id_Hash_Table.Get (Name);
    end Get_Aspect_Id;
 
@@ -313,10 +300,30 @@ package body Aspects is
    -- Has_Aspect --
    ----------------
 
-   function Has_Aspect (Id : Entity_Id; A : Aspect_Id) return Boolean is
+   function Has_Aspect
+     (Id            : Entity_Id;
+      A             : Aspect_Id;
+      Class_Present : Boolean := False) return Boolean
+   is
    begin
-      return Present (Find_Aspect (Id, A));
+      return Present (Find_Aspect (Id, A, Class_Present => Class_Present));
    end Has_Aspect;
+
+   function Has_Aspects (N : Node_Id) return Boolean
+   is (Atree.Present (N) and then
+       Permits_Aspect_Specifications (N) and then
+       Nlists.Present (Sinfo.Nodes.Aspect_Specifications (N)) and then
+       Nlists.Is_Non_Empty_List (Sinfo.Nodes.Aspect_Specifications (N)));
+
+   ------------------
+   -- Is_Aspect_Id --
+   ------------------
+
+   function Is_Aspect_Id (Aspect : Name_Id) return Boolean is
+     (Get_Aspect_Id (Aspect) /= No_Aspect);
+
+   function Is_Aspect_Id (Aspect : Node_Id) return Boolean is
+     (Get_Aspect_Id (Aspect) /= No_Aspect);
 
    ------------------
    -- Move_Aspects --
@@ -327,8 +334,7 @@ package body Aspects is
    begin
       if Has_Aspects (From) then
          Set_Aspect_Specifications (To, Aspect_Specifications (From));
-         Aspect_Specifications_Hash_Table.Remove (From);
-         Set_Has_Aspects (From, False);
+         Set_Aspect_Specifications (From, No_List);
       end if;
    end Move_Aspects;
 
@@ -356,7 +362,6 @@ package body Aspects is
          else
             Asps := New_List;
             Set_Aspect_Specifications (To, Asps);
-            Set_Has_Aspects (To);
          end if;
 
          --  Remove the aspect from its original owner and relocate it to node
@@ -409,9 +414,8 @@ package body Aspects is
             --  Note: It is better to use Is_Single_Concurrent_Type_Declaration
             --  here, but Aspects and Sem_Util have incompatible licenses.
 
-            elsif Nkind_In
-                    (Original_Node (From), N_Single_Protected_Declaration,
-                                           N_Single_Task_Declaration)
+            elsif Nkind (Original_Node (From)) in
+                    N_Single_Protected_Declaration | N_Single_Task_Declaration
             then
                Asp_Id := Get_Aspect_Id (Asp);
 
@@ -437,6 +441,20 @@ package body Aspects is
       end if;
    end Move_Or_Merge_Aspects;
 
+   -------------------
+   --  Copy_Aspects --
+   -------------------
+
+   procedure Copy_Aspects (From : Node_Id; To : Node_Id) is
+   begin
+      if not Has_Aspects (From) then
+         return;
+      end if;
+
+      Set_Aspect_Specifications
+         (To, New_Copy_List (Aspect_Specifications (From)));
+   end Copy_Aspects;
+
    -----------------------------------
    -- Permits_Aspect_Specifications --
    -----------------------------------
@@ -444,6 +462,7 @@ package body Aspects is
    Has_Aspect_Specifications_Flag : constant array (Node_Kind) of Boolean :=
      (N_Abstract_Subprogram_Declaration        => True,
       N_Component_Declaration                  => True,
+      N_Discriminant_Specification             => True,
       N_Entry_Body                             => True,
       N_Entry_Declaration                      => True,
       N_Exception_Declaration                  => True,
@@ -465,8 +484,9 @@ package body Aspects is
       N_Package_Body_Stub                      => True,
       N_Package_Declaration                    => True,
       N_Package_Instantiation                  => True,
-      N_Package_Specification                  => True,
       N_Package_Renaming_Declaration           => True,
+      N_Package_Specification                  => True,
+      N_Parameter_Specification                => True,
       N_Private_Extension_Declaration          => True,
       N_Private_Type_Declaration               => True,
       N_Procedure_Instantiation                => True,
@@ -487,6 +507,7 @@ package body Aspects is
 
    function Permits_Aspect_Specifications (N : Node_Id) return Boolean is
    begin
+      pragma Assert (Present (N));
       return Has_Aspect_Specifications_Flag (Nkind (N));
    end Permits_Aspect_Specifications;
 
@@ -497,8 +518,7 @@ package body Aspects is
    procedure Remove_Aspects (N : Node_Id) is
    begin
       if Has_Aspects (N) then
-         Aspect_Specifications_Hash_Table.Remove (N);
-         Set_Has_Aspects (N, False);
+         Set_Aspect_Specifications (N, No_List);
       end if;
    end Remove_Aspects;
 
@@ -508,201 +528,78 @@ package body Aspects is
 
    --  Table used for Same_Aspect, maps aspect to canonical aspect
 
-   Canonical_Aspect : constant array (Aspect_Id) of Aspect_Id :=
-   (No_Aspect                           => No_Aspect,
-    Aspect_Abstract_State               => Aspect_Abstract_State,
-    Aspect_Address                      => Aspect_Address,
-    Aspect_Alignment                    => Aspect_Alignment,
-    Aspect_All_Calls_Remote             => Aspect_All_Calls_Remote,
-    Aspect_Annotate                     => Aspect_Annotate,
-    Aspect_Async_Readers                => Aspect_Async_Readers,
-    Aspect_Async_Writers                => Aspect_Async_Writers,
-    Aspect_Asynchronous                 => Aspect_Asynchronous,
-    Aspect_Atomic                       => Aspect_Atomic,
-    Aspect_Atomic_Components            => Aspect_Atomic_Components,
-    Aspect_Attach_Handler               => Aspect_Attach_Handler,
-    Aspect_Bit_Order                    => Aspect_Bit_Order,
-    Aspect_Component_Size               => Aspect_Component_Size,
-    Aspect_Constant_After_Elaboration   => Aspect_Constant_After_Elaboration,
-    Aspect_Constant_Indexing            => Aspect_Constant_Indexing,
-    Aspect_Contract_Cases               => Aspect_Contract_Cases,
-    Aspect_Convention                   => Aspect_Convention,
-    Aspect_CPU                          => Aspect_CPU,
-    Aspect_Default_Component_Value      => Aspect_Default_Component_Value,
-    Aspect_Default_Initial_Condition    => Aspect_Default_Initial_Condition,
-    Aspect_Default_Iterator             => Aspect_Default_Iterator,
-    Aspect_Default_Storage_Pool         => Aspect_Default_Storage_Pool,
-    Aspect_Default_Value                => Aspect_Default_Value,
-    Aspect_Depends                      => Aspect_Depends,
-    Aspect_Dimension                    => Aspect_Dimension,
-    Aspect_Dimension_System             => Aspect_Dimension_System,
-    Aspect_Disable_Controlled           => Aspect_Disable_Controlled,
-    Aspect_Discard_Names                => Aspect_Discard_Names,
-    Aspect_Dispatching_Domain           => Aspect_Dispatching_Domain,
-    Aspect_Dynamic_Predicate            => Aspect_Predicate,
-    Aspect_Effective_Reads              => Aspect_Effective_Reads,
-    Aspect_Effective_Writes             => Aspect_Effective_Writes,
-    Aspect_Elaborate_Body               => Aspect_Elaborate_Body,
-    Aspect_Export                       => Aspect_Export,
-    Aspect_Extensions_Visible           => Aspect_Extensions_Visible,
-    Aspect_External_Name                => Aspect_External_Name,
-    Aspect_External_Tag                 => Aspect_External_Tag,
-    Aspect_Favor_Top_Level              => Aspect_Favor_Top_Level,
-    Aspect_Ghost                        => Aspect_Ghost,
-    Aspect_Global                       => Aspect_Global,
-    Aspect_Implicit_Dereference         => Aspect_Implicit_Dereference,
-    Aspect_Import                       => Aspect_Import,
-    Aspect_Independent                  => Aspect_Independent,
-    Aspect_Independent_Components       => Aspect_Independent_Components,
-    Aspect_Inline                       => Aspect_Inline,
-    Aspect_Inline_Always                => Aspect_Inline,
-    Aspect_Initial_Condition            => Aspect_Initial_Condition,
-    Aspect_Initializes                  => Aspect_Initializes,
-    Aspect_Input                        => Aspect_Input,
-    Aspect_Interrupt_Handler            => Aspect_Interrupt_Handler,
-    Aspect_Interrupt_Priority           => Aspect_Priority,
-    Aspect_Invariant                    => Aspect_Invariant,
-    Aspect_Iterable                     => Aspect_Iterable,
-    Aspect_Iterator_Element             => Aspect_Iterator_Element,
-    Aspect_Link_Name                    => Aspect_Link_Name,
-    Aspect_Linker_Section               => Aspect_Linker_Section,
-    Aspect_Lock_Free                    => Aspect_Lock_Free,
-    Aspect_Machine_Radix                => Aspect_Machine_Radix,
-    Aspect_Max_Entry_Queue_Depth        => Aspect_Max_Entry_Queue_Depth,
-    Aspect_Max_Queue_Length             => Aspect_Max_Queue_Length,
-    Aspect_No_Elaboration_Code_All      => Aspect_No_Elaboration_Code_All,
-    Aspect_No_Inline                    => Aspect_No_Inline,
-    Aspect_No_Return                    => Aspect_No_Return,
-    Aspect_No_Tagged_Streams            => Aspect_No_Tagged_Streams,
-    Aspect_Obsolescent                  => Aspect_Obsolescent,
-    Aspect_Object_Size                  => Aspect_Object_Size,
-    Aspect_Output                       => Aspect_Output,
-    Aspect_Pack                         => Aspect_Pack,
-    Aspect_Part_Of                      => Aspect_Part_Of,
-    Aspect_Persistent_BSS               => Aspect_Persistent_BSS,
-    Aspect_Post                         => Aspect_Post,
-    Aspect_Postcondition                => Aspect_Post,
-    Aspect_Pre                          => Aspect_Pre,
-    Aspect_Precondition                 => Aspect_Pre,
-    Aspect_Predicate                    => Aspect_Predicate,
-    Aspect_Predicate_Failure            => Aspect_Predicate_Failure,
-    Aspect_Preelaborate                 => Aspect_Preelaborate,
-    Aspect_Preelaborable_Initialization => Aspect_Preelaborable_Initialization,
-    Aspect_Priority                     => Aspect_Priority,
-    Aspect_Pure                         => Aspect_Pure,
-    Aspect_Pure_Function                => Aspect_Pure_Function,
-    Aspect_Refined_Depends              => Aspect_Refined_Depends,
-    Aspect_Refined_Global               => Aspect_Refined_Global,
-    Aspect_Refined_Post                 => Aspect_Refined_Post,
-    Aspect_Refined_State                => Aspect_Refined_State,
-    Aspect_Remote_Access_Type           => Aspect_Remote_Access_Type,
-    Aspect_Remote_Call_Interface        => Aspect_Remote_Call_Interface,
-    Aspect_Remote_Types                 => Aspect_Remote_Types,
-    Aspect_Read                         => Aspect_Read,
-    Aspect_Relative_Deadline            => Aspect_Relative_Deadline,
-    Aspect_Scalar_Storage_Order         => Aspect_Scalar_Storage_Order,
-    Aspect_Secondary_Stack_Size         => Aspect_Secondary_Stack_Size,
-    Aspect_Shared                       => Aspect_Atomic,
-    Aspect_Shared_Passive               => Aspect_Shared_Passive,
-    Aspect_Simple_Storage_Pool          => Aspect_Simple_Storage_Pool,
-    Aspect_Simple_Storage_Pool_Type     => Aspect_Simple_Storage_Pool_Type,
-    Aspect_Size                         => Aspect_Size,
-    Aspect_Small                        => Aspect_Small,
-    Aspect_SPARK_Mode                   => Aspect_SPARK_Mode,
-    Aspect_Static_Predicate             => Aspect_Predicate,
-    Aspect_Storage_Pool                 => Aspect_Storage_Pool,
-    Aspect_Storage_Size                 => Aspect_Storage_Size,
-    Aspect_Stream_Size                  => Aspect_Stream_Size,
-    Aspect_Suppress                     => Aspect_Suppress,
-    Aspect_Suppress_Debug_Info          => Aspect_Suppress_Debug_Info,
-    Aspect_Suppress_Initialization      => Aspect_Suppress_Initialization,
-    Aspect_Synchronization              => Aspect_Synchronization,
-    Aspect_Test_Case                    => Aspect_Test_Case,
-    Aspect_Thread_Local_Storage         => Aspect_Thread_Local_Storage,
-    Aspect_Type_Invariant               => Aspect_Invariant,
-    Aspect_Unchecked_Union              => Aspect_Unchecked_Union,
-    Aspect_Unimplemented                => Aspect_Unimplemented,
-    Aspect_Universal_Aliasing           => Aspect_Universal_Aliasing,
-    Aspect_Universal_Data               => Aspect_Universal_Data,
-    Aspect_Unmodified                   => Aspect_Unmodified,
-    Aspect_Unreferenced                 => Aspect_Unreferenced,
-    Aspect_Unreferenced_Objects         => Aspect_Unreferenced_Objects,
-    Aspect_Unsuppress                   => Aspect_Unsuppress,
-    Aspect_Variable_Indexing            => Aspect_Variable_Indexing,
-    Aspect_Value_Size                   => Aspect_Value_Size,
-    Aspect_Volatile                     => Aspect_Volatile,
-    Aspect_Volatile_Components          => Aspect_Volatile_Components,
-    Aspect_Volatile_Full_Access         => Aspect_Volatile_Full_Access,
-    Aspect_Volatile_Function            => Aspect_Volatile_Function,
-    Aspect_Warnings                     => Aspect_Warnings,
-    Aspect_Write                        => Aspect_Write);
+   type Aspect_To_Aspect_Mapping is array (Aspect_Id) of Aspect_Id;
+
+   function Init_Canonical_Aspect return Aspect_To_Aspect_Mapping;
+   --  Initialize the Canonical_Aspect mapping below
+
+   function Init_Canonical_Aspect return Aspect_To_Aspect_Mapping is
+      Result : Aspect_To_Aspect_Mapping;
+   begin
+      --  They all map to themselves...
+
+      for Aspect in Aspect_Id loop
+         Result (Aspect) := Aspect;
+      end loop;
+
+      --  ...except for these:
+
+      Result (Aspect_Dynamic_Predicate)  := Aspect_Predicate;
+      Result (Aspect_Ghost_Predicate)    := Aspect_Predicate;
+      Result (Aspect_Inline_Always)      := Aspect_Inline;
+      Result (Aspect_Interrupt_Priority) := Aspect_Priority;
+      Result (Aspect_Postcondition)      := Aspect_Post;
+      Result (Aspect_Precondition)       := Aspect_Pre;
+      Result (Aspect_Shared)             := Aspect_Atomic;
+      Result (Aspect_Static_Predicate)   := Aspect_Predicate;
+      Result (Aspect_Type_Invariant)     := Aspect_Invariant;
+
+      return Result;
+   end Init_Canonical_Aspect;
+
+   Canonical_Aspect : constant Aspect_To_Aspect_Mapping :=
+     Init_Canonical_Aspect;
 
    function Same_Aspect (A1 : Aspect_Id; A2 : Aspect_Id) return Boolean is
    begin
       return Canonical_Aspect (A1) = Canonical_Aspect (A2);
    end Same_Aspect;
 
-   -------------------------------
-   -- Set_Aspect_Specifications --
-   -------------------------------
+   package body User_Aspect_Support is
 
-   procedure Set_Aspect_Specifications (N : Node_Id; L : List_Id) is
-   begin
-      pragma Assert (Permits_Aspect_Specifications (N));
-      pragma Assert (not Has_Aspects (N));
-      pragma Assert (L /= No_List);
+      --  This is similar to the way that user-defined check names are
+      --  managed via package Checks.Check_Names; simple global state.
 
-      Set_Has_Aspects (N);
-      Set_Parent (L, N);
-      Aspect_Specifications_Hash_Table.Set (N, L);
-   end Set_Aspect_Specifications;
+      UAD_Pragma_Map_Size : constant := 511;
 
-   ----------------------------------------
-   -- Set_Aspect_Specifications_No_Check --
-   ----------------------------------------
+      subtype UAD_Pragma_Map_Header is
+        Integer range 0 .. UAD_Pragma_Map_Size - 1;
 
-   procedure Set_Aspect_Specifications_No_Check (N : Node_Id; L : List_Id) is
-   begin
-      pragma Assert (Permits_Aspect_Specifications (N));
-      pragma Assert (L /= No_List);
+      function UAD_Pragma_Map_Hash (Chars : Name_Id)
+        return UAD_Pragma_Map_Header
+      is (UAD_Pragma_Map_Header (Chars mod UAD_Pragma_Map_Size));
 
-      Set_Has_Aspects (N);
-      Set_Parent (L, N);
-      Aspect_Specifications_Hash_Table.Set (N, L);
-   end Set_Aspect_Specifications_No_Check;
+      package UAD_Pragma_Map is new GNAT.HTable.Simple_HTable
+        (Header_Num => UAD_Pragma_Map_Header,
+         Key        => Name_Id,
+         Element    => Opt_N_Pragma_Id,
+         No_Element => Empty,
+         Hash       => UAD_Pragma_Map_Hash,
+         Equal      => "=");
 
-   ---------------
-   -- Tree_Read --
-   ---------------
+      procedure Register_UAD_Pragma (UAD_Pragma : Node_Id) is
+         Aspect_Name : constant Name_Id :=
+           Chars (Expression
+                    (First (Pragma_Argument_Associations (UAD_Pragma))));
+      begin
+         UAD_Pragma_Map.Set (Aspect_Name, UAD_Pragma);
+      end Register_UAD_Pragma;
 
-   procedure Tree_Read is
-      Node : Node_Id;
-      List : List_Id;
-   begin
-      loop
-         Tree_Read_Int (Int (Node));
-         Tree_Read_Int (Int (List));
-         exit when List = No_List;
-         Set_Aspect_Specifications_No_Check (Node, List);
-      end loop;
-   end Tree_Read;
-
-   ----------------
-   -- Tree_Write --
-   ----------------
-
-   procedure Tree_Write is
-      Node : Node_Id := Empty;
-      List : List_Id;
-   begin
-      Aspect_Specifications_Hash_Table.Get_First (Node, List);
-      loop
-         Tree_Write_Int (Int (Node));
-         Tree_Write_Int (Int (List));
-         exit when List = No_List;
-         Aspect_Specifications_Hash_Table.Get_Next (Node, List);
-      end loop;
-   end Tree_Write;
+      function Registered_UAD_Pragma (Aspect_Name : Name_Id) return Node_Id is
+      begin
+         return UAD_Pragma_Map.Get (Aspect_Name);
+      end Registered_UAD_Pragma;
+   end User_Aspect_Support;
 
 --  Package initialization sets up Aspect Id hash table
 

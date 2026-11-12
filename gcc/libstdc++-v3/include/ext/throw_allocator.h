@@ -1,6 +1,6 @@
 // -*- C++ -*-
 
-// Copyright (C) 2005-2019 Free Software Foundation, Inc.
+// Copyright (C) 2005-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the terms
@@ -46,6 +46,8 @@
 #ifndef _THROW_ALLOCATOR_H
 #define _THROW_ALLOCATOR_H 1
 
+#include <bits/requires_hosted.h> // GNU extensions are currently omitted
+
 #include <cmath>
 #include <ctime>
 #include <map>
@@ -53,7 +55,8 @@
 #include <ostream>
 #include <stdexcept>
 #include <utility>
-#include <bits/functexcept.h>
+#include <bits/new_throw.h>
+#include <bits/stdexcept_throw.h>
 #include <bits/move.h>
 #if __cplusplus >= 201103L
 # include <functional>
@@ -62,13 +65,18 @@
 # include <tr1/functional>
 # include <tr1/random>
 #endif
+#include <ext/alloc_traits.h>
+
+#if !__has_builtin(__builtin_sprintf)
+# include <cstdio>
+#endif
 
 namespace __gnu_cxx _GLIBCXX_VISIBILITY(default)
 {
 _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
   /**
-   *  @brief Thown by exception safety machinery.
+   *  @brief Thrown by utilities for testing exception safety.
    *  @ingroup exceptions
    */
   struct forced_error : public std::exception
@@ -309,6 +317,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     static void
     log_to_string(std::string& s, const_reference ref)
     {
+#if ! __has_builtin(__builtin_sprintf)
+      __typeof__(&std::sprintf) __builtin_sprintf = &std::sprintf;
+#endif
+
       char buf[40];
       const char tab('\t');
       s += "label: ";
@@ -331,6 +343,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     static void
     log_to_string(std::string& s, const std::pair<const void*, size_t>& ref)
     {
+#if ! __has_builtin(__builtin_sprintf)
+      auto __builtin_sprintf = &std::sprintf;
+#endif
+
       char buf[40];
       const char tab('\t');
       s += "label: ";
@@ -385,7 +401,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       auto beg = __b.map_construct().begin();
       auto end = __b.map_construct().end();
       for (; beg != end; ++beg)
-	__b.log_to_string(error, *beg);      
+	__b.log_to_string(error, *beg);
     }
 #endif
     return os << error;
@@ -480,7 +496,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     }
   };
 
-#ifdef _GLIBCXX_USE_C99_STDINT_TR1
   /**
    *  @brief Base class for random probability control and throw.
    */
@@ -565,6 +580,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       static gen_t generator(engine(), distribution);
 #endif
 
+#if ! __has_builtin(__builtin_sprintf)
+      __typeof__(&std::sprintf) __builtin_sprintf = &std::sprintf;
+#endif
+
       double random = generator();
       if (random < distribution.min() || random > distribution.max())
 	{
@@ -594,7 +613,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       return _S_e;
     }
   };
-#endif // _GLIBCXX_USE_C99_STDINT_TR1
 
   /**
    *  @brief Class with exception generation control. Intended to be
@@ -750,7 +768,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 #endif
   };
 
-#ifdef _GLIBCXX_USE_C99_STDINT_TR1
   /// Type throwing via random condition.
   struct throw_value_random : public throw_value_base<random_condition>
   {
@@ -781,7 +798,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     operator=(throw_value_random&&) = default;
 #endif
   };
-#endif // _GLIBCXX_USE_C99_STDINT_TR1
 
   /**
    *  @brief Allocator class with logging and exception generation control.
@@ -795,8 +811,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     : public annotate_base, public _Cond
     {
     public:
-      typedef size_t 				size_type;
-      typedef ptrdiff_t 			difference_type;
+      typedef std::size_t 			size_type;
+      typedef std::ptrdiff_t 			difference_type;
       typedef _Tp 				value_type;
       typedef value_type* 			pointer;
       typedef const value_type* 		const_pointer;
@@ -814,12 +830,14 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
       std::allocator<value_type> 		_M_allocator;
 
+      typedef __gnu_cxx::__alloc_traits<std::allocator<value_type> > traits;
+
       using condition_type::throw_conditionally;
 
     public:
       size_type
       max_size() const _GLIBCXX_USE_NOEXCEPT
-      { return _M_allocator.max_size(); }
+      { return traits::max_size(_M_allocator); }
 
       pointer
       address(reference __x) const _GLIBCXX_NOEXCEPT
@@ -830,13 +848,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       { return std::__addressof(__x); }
 
       _GLIBCXX_NODISCARD pointer
-      allocate(size_type __n, std::allocator<void>::const_pointer hint = 0)
+      allocate(size_type __n, const void* __hint = 0)
       {
 	if (__n > this->max_size())
 	  std::__throw_bad_alloc();
 
 	throw_conditionally();
-	pointer const a = _M_allocator.allocate(__n, hint);
+	pointer const a = traits::allocate(_M_allocator, __n, __hint);
 	insert(a, sizeof(value_type) * __n);
 	return a;
       }
@@ -846,21 +864,21 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
         void
         construct(_Up* __p, _Args&&... __args)
 	{
-	  _M_allocator.construct(__p, std::forward<_Args>(__args)...);
+	  traits::construct(_M_allocator, __p, std::forward<_Args>(__args)...);
 	  insert_construct(__p);
 	}
 
       template<typename _Up>
-        void 
+        void
         destroy(_Up* __p)
         {
 	  erase_construct(__p);
-	  _M_allocator.destroy(__p);
+	  traits::destroy(_M_allocator, __p);
 	}
 #else
       void
-      construct(pointer __p, const value_type& val)
-      { return _M_allocator.construct(__p, val); }
+      construct(pointer __p, const value_type& __val)
+      { return _M_allocator.construct(__p, __val); }
 
       void
       destroy(pointer __p)
@@ -892,11 +910,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	       const throw_allocator_base<_Tp, _Cond>&)
     { return true; }
 
+#if __cpp_impl_three_way_comparison < 201907L
   template<typename _Tp, typename _Cond>
     inline bool
     operator!=(const throw_allocator_base<_Tp, _Cond>&,
 	       const throw_allocator_base<_Tp, _Cond>&)
     { return false; }
+#endif
 
   /// Allocator throwing via limit condition.
   template<typename _Tp>
@@ -917,9 +937,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	_GLIBCXX_USE_NOEXCEPT { }
 
       ~throw_allocator_limit() _GLIBCXX_USE_NOEXCEPT { }
+
+#if __cplusplus >= 201103L
+      throw_allocator_limit&
+      operator=(const throw_allocator_limit&) = default;
+#endif
     };
 
-#ifdef _GLIBCXX_USE_C99_STDINT_TR1
   /// Allocator throwing via random condition.
   template<typename _Tp>
     struct throw_allocator_random
@@ -939,8 +963,12 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	_GLIBCXX_USE_NOEXCEPT { }
 
       ~throw_allocator_random() _GLIBCXX_USE_NOEXCEPT { }
+
+#if __cplusplus >= 201103L
+      throw_allocator_random&
+      operator=(const throw_allocator_random&) = default;
+#endif
     };
-#endif // _GLIBCXX_USE_C99_STDINT_TR1
 
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace
@@ -951,6 +979,9 @@ _GLIBCXX_END_NAMESPACE_VERSION
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
   /// Explicit specialization of std::hash for __gnu_cxx::throw_value_limit.
   template<>
     struct hash<__gnu_cxx::throw_value_limit>
@@ -966,7 +997,6 @@ namespace std _GLIBCXX_VISIBILITY(default)
       }
     };
 
-#ifdef _GLIBCXX_USE_C99_STDINT_TR1
   /// Explicit specialization of std::hash for __gnu_cxx::throw_value_random.
   template<>
     struct hash<__gnu_cxx::throw_value_random>
@@ -981,7 +1011,8 @@ namespace std _GLIBCXX_VISIBILITY(default)
 	return __result;
       }
     };
-#endif
+
+#pragma GCC diagnostic pop
 } // end namespace std
 #endif
 

@@ -1,6 +1,6 @@
 /* Configuration file for ARM GNU/Linux EABI targets.
-   Copyright (C) 2004-2019 Free Software Foundation, Inc.
-   Contributed by CodeSourcery, LLC   
+   Copyright (C) 2004-2026 Free Software Foundation, Inc.
+   Contributed by CodeSourcery, LLC
 
    This file is part of GCC.
 
@@ -30,9 +30,6 @@
     }						\
   while (false)
 
-#define EXTRA_TARGET_D_OS_VERSIONS()		\
-  ANDROID_TARGET_D_OS_VERSIONS();
-
 /* We default to a soft-float ABI so that binaries can run on all
    target hardware.  If you override this to use the hard-float ABI then
    change the setting of GLIBC_DYNAMIC_LINKER_DEFAULT as well.  */
@@ -49,12 +46,15 @@
 #undef  TARGET_LINKER_EMULATION
 #if TARGET_BIG_ENDIAN_DEFAULT
 #define TARGET_LINKER_EMULATION "armelfb_linux_eabi"
+#define TARGET_FDPIC_LINKER_EMULATION "armelfb_linux_fdpiceabi"
 #else
 #define TARGET_LINKER_EMULATION "armelf_linux_eabi"
+#define TARGET_FDPIC_LINKER_EMULATION "armelf_linux_fdpiceabi"
 #endif
 
 #undef  SUBTARGET_EXTRA_LINK_SPEC
-#define SUBTARGET_EXTRA_LINK_SPEC " -m " TARGET_LINKER_EMULATION
+#define SUBTARGET_EXTRA_LINK_SPEC " -m %{mfdpic: " \
+  TARGET_FDPIC_LINKER_EMULATION ";:" TARGET_LINKER_EMULATION "}"
 
 /* GNU/Linux on ARM currently supports three dynamic linkers:
    - ld-linux.so.2 - for the legacy ABI
@@ -89,7 +89,7 @@
 #define MUSL_DYNAMIC_LINKER_E "%{mbig-endian:eb}"
 #endif
 #define MUSL_DYNAMIC_LINKER \
-  "/lib/ld-musl-arm" MUSL_DYNAMIC_LINKER_E "%{mfloat-abi=hard:hf}.so.1"
+  "/lib/ld-musl-arm" MUSL_DYNAMIC_LINKER_E "%{mfloat-abi=hard:hf}%{mfdpic:-fdpic}.so.1"
 
 /* At this point, bpabi.h will have clobbered LINK_SPEC.  We want to
    use the GNU/Linux version, not the generic BPABI version.  */
@@ -101,9 +101,12 @@
 #undef  ASAN_CC1_SPEC
 #define ASAN_CC1_SPEC "%{%:sanitize(address):-funwind-tables}"
 
+#define FDPIC_CC1_SPEC ""
+
 #undef  CC1_SPEC
 #define CC1_SPEC							\
-  LINUX_OR_ANDROID_CC (GNU_USER_TARGET_CC1_SPEC " " ASAN_CC1_SPEC,	\
+  LINUX_OR_ANDROID_CC (GNU_USER_TARGET_CC1_SPEC " " ASAN_CC1_SPEC " "	\
+		       FDPIC_CC1_SPEC,					\
 		       GNU_USER_TARGET_CC1_SPEC " " ASAN_CC1_SPEC " "	\
 		       ANDROID_CC1_SPEC)
 
@@ -121,7 +124,7 @@
 
 #undef	ENDFILE_SPEC
 #define ENDFILE_SPEC \
-  "%{Ofast|ffast-math|funsafe-math-optimizations:crtfastmath.o%s} "	\
+  "%{Ofast|ffast-math|funsafe-math-optimizations:%{!shared:crtfastmath.o%s}} "	\
   LINUX_OR_ANDROID_LD (GNU_USER_TARGET_ENDFILE_SPEC, ANDROID_ENDFILE_SPEC)
 
 /* Use the default LIBGCC_SPEC, not the version in linux-elf.h, as we

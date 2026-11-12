@@ -1,5 +1,5 @@
 /* { dg-do compile { target { ! ia32 } } } */
-/* { dg-options "-O2 -mno-avx2 -mavx -mtune=sandybridge" } */
+/* { dg-options "-O2 -mno-avx2 -mavx -mprefer-vector-width=128 -mtune=sandybridge" } */
 
 extern char *dst, *src;
 
@@ -9,5 +9,4 @@ foo (void)
   __builtin_memcpy (dst, src, 33);
 }
 
-/* { dg-final { scan-assembler-times "vmovdqu\[ \\t\]+\[^\n\]*%xmm" 2 } } */
-/* { dg-final { scan-assembler-times "vmovups\[ \\t\]+\[^\n\]*%xmm" 2 } } */
+/* { dg-final { scan-assembler-times "vmovdqu\[ \\t\]+\[^\n\]*%xmm" 4 } } */

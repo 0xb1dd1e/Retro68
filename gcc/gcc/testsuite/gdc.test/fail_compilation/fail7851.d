@@ -1,4 +1,12 @@
-// 7851
+// https://issues.dlang.org/show_bug.cgi?id=7851
+/*
+TEST_OUTPUT:
+---
+fail_compilation/fail7851.d(38): Error: accessing non-static variable `__mem_field_0` requires an instance of `Tuple`
+fail_compilation/fail7851.d(38): Error: accessing non-static variable `__mem_field_1` requires an instance of `Tuple`
+fail_compilation/fail7851.d(38): Error: accessing non-static variable `__mem_field_2` requires an instance of `Tuple`
+---
+*/
 
 
 template TypeTuple(TList...)
@@ -30,4 +38,3 @@ void main() {
   foreach (i; TL)
   { }
 }
-

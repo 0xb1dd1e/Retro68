@@ -1,4 +1,5 @@
 // { dg-do assemble  }
+// { dg-skip-if "requires hosted libstdc++ for map" { ! hostedlib } }
 #include<map>
 #include<iostream>
 #include<vector>
@@ -48,8 +49,8 @@ ostream& operator<<(ostream& os, Graph<VertexType,EdgeType>& G)
 
         // The compiler does not like this line!!!!!!
         typename Graph<VertexType, EdgeType>::Successor::iterator
-	  startN = G[i].second.begin(), // { dg-error "14:no match" } no index operator
-	  endN   = G[i].second.end();  // { dg-error "14:no match" } no index operator
+	  startN = G[i].second.begin(), // { dg-error "21:no match" } no index operator
+	  endN   = G[i].second.end();  // { dg-error "21:no match" } no index operator
 
         while(startN != endN)
         {

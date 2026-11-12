@@ -1,5 +1,5 @@
 /* Common subexpression elimination for GNU compiler.
-   Copyright (C) 1987-2019 Free Software Foundation, Inc.
+   Copyright (C) 1987-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -82,8 +82,9 @@ extern void cselib_finish (void);
 extern void cselib_process_insn (rtx_insn *);
 extern bool fp_setter_insn (rtx_insn *);
 extern machine_mode cselib_reg_set_mode (const_rtx);
-extern int rtx_equal_for_cselib_1 (rtx, rtx, machine_mode, int);
-extern int references_value_p (const_rtx, int);
+extern bool rtx_equal_for_cselib_1 (rtx, rtx, machine_mode, int);
+extern bool cselib_redundant_set_p (rtx);
+extern bool references_value_p (const_rtx, int);
 extern rtx cselib_expand_value_rtx (rtx, bitmap, int);
 typedef rtx (*cselib_expand_callback)(rtx, bitmap, int, void *);
 extern rtx cselib_expand_value_rtx_cb (rtx, bitmap, int,
@@ -92,7 +93,7 @@ extern bool cselib_dummy_expand_value_rtx_cb (rtx, bitmap, int,
 					      cselib_expand_callback, void *);
 extern rtx cselib_subst_to_values (rtx, machine_mode);
 extern rtx cselib_subst_to_values_from_insn (rtx, machine_mode, rtx_insn *);
-extern void cselib_invalidate_rtx (rtx, const_rtx = NULL);
+extern void cselib_invalidate_rtx (rtx);
 
 extern void cselib_reset_table (unsigned int);
 extern unsigned int cselib_get_next_uid (void);
@@ -104,13 +105,15 @@ extern void cselib_add_permanent_equiv (cselib_val *, rtx, rtx_insn *);
 extern bool cselib_have_permanent_equivalences (void);
 extern void cselib_set_value_sp_based (cselib_val *);
 extern bool cselib_sp_based_value_p (cselib_val *);
+extern void cselib_record_sp_cfa_base_equiv (HOST_WIDE_INT, rtx_insn *);
+extern bool cselib_sp_derived_value_p (cselib_val *);
 
 extern void dump_cselib_table (FILE *);
 
 /* Return the canonical value for VAL, following the equivalence chain
    towards the earliest (== lowest uid) equivalent value.  */
 
-static inline cselib_val *
+inline cselib_val *
 canonical_cselib_val (cselib_val *val)
 {
   cselib_val *canon;
@@ -125,14 +128,14 @@ canonical_cselib_val (cselib_val *val)
   return canon;
 }
 
-/* Return nonzero if we can prove that X and Y contain the same value, taking
+/* Return true if we can prove that X and Y contain the same value, taking
    our gathered information into account.  */
 
-static inline int
+inline bool
 rtx_equal_for_cselib_p (rtx x, rtx y)
 {
   if (x == y)
-    return 1;
+    return true;
 
   return rtx_equal_for_cselib_1 (x, y, VOIDmode, 0);
 }

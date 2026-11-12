@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 2001-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 2001-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -167,18 +167,18 @@ package Osint.C is
 
    procedure Create_C_File;
    procedure Create_H_File;
-   --  Creates the *.c or *.h file for the source file which is currently
-   --  being compiled (i.e. the file which was most recently returned by
+   --  Creates the *.c/*.h file for the source file which is currently being
+   --  compiled (i.e. the file which was most recently returned by
    --  Next_Main_Source).
 
    procedure Close_C_File;
    procedure Close_H_File;
-   --  Closes the file created by Create_C_File or Create_H file, flushing any
-   --  buffers etc. from writes by Write_C_File and Write_H_File;
+   --  Closes the file created by Create_C/H file, flushing any buffers, etc.
+   --  from writes by Write_C_File and Write_H_File;
 
    procedure Delete_C_File;
    procedure Delete_H_File;
-   --  Deletes the .c or .h file corresponding to the source file which is
+   --  Deletes the .c/.h file corresponding to the source file which is
    --  currently being compiled.
 
    ----------------------
@@ -196,17 +196,5 @@ package Osint.C is
 
    procedure Close_List_File;
    --  Close file previously opened by Create_List_File
-
-   --------------------------------
-   -- Semantic Tree Input-Output --
-   --------------------------------
-
-   procedure Tree_Create;
-   --  Creates the tree output file for the source file which is currently
-   --  being compiled (i.e. the file which was most recently returned by
-   --  Next_Main_Source), and initializes Tree_IO.Tree_Write for output.
-
-   procedure Tree_Close;
-   --  Closes the file previously opened by Tree_Create
 
 end Osint.C;

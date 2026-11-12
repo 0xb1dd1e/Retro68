@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -29,11 +29,415 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with System.Powten_Table;  use System.Powten_Table;
-with System.Val_Util;      use System.Val_Util;
+with System.Double_Real;
 with System.Float_Control;
+with System.Unsigned_Types; use System.Unsigned_Types;
+with System.Val_Util;       use System.Val_Util;
+with System.Value_R;
+
+pragma Warnings (Off, "non-static constant in preelaborated unit");
+--  Every constant is static given our instantiation model
 
 package body System.Val_Real is
+
+   pragma Assert (Num'Machine_Mantissa <= Uns'Size);
+   --  We need an unsigned type large enough to represent the mantissa
+
+   Is_Large_Type : constant Boolean := Num'Machine_Mantissa >= 53;
+   --  True if the floating-point type is at least IEEE Double
+
+   Precision_Limit : constant Uns := 2**Num'Machine_Mantissa - 1;
+   --  See below for the rationale
+
+   package Impl is new Value_R (Uns, 2, Precision_Limit);
+   --  We do not use the Extra digits for floating-point types
+
+   subtype Base_T is Unsigned range 2 .. 16;
+
+   --  The following tables compute the maximum exponent of the base that can
+   --  fit in the given floating-point format, that is to say the element at
+   --  index N is the largest K such that N**K <= Num'Last.
+
+   Maxexp32 : constant array (Base_T) of Positive :=
+     [2  => 127, 3 => 80,  4 => 63,  5 => 55,  6 => 49,
+      7  => 45,  8 => 42,  9 => 40, 10 => 55, 11 => 37,
+      12 => 35, 13 => 34, 14 => 33, 15 => 32, 16 => 31];
+   --  The actual value for 10 is 38 but we also use scaling for 10
+
+   Maxexp64 : constant array (Base_T) of Positive :=
+     [2  => 1023, 3 => 646,  4 => 511,  5 => 441,  6 => 396,
+      7  => 364,  8 => 341,  9 => 323, 10 => 441, 11 => 296,
+      12 => 285, 13 => 276, 14 => 268, 15 => 262, 16 => 255];
+   --  The actual value for 10 is 308 but we also use scaling for 10
+
+   Maxexp80 : constant array (Base_T) of Positive :=
+     [2  => 16383, 3 => 10337, 4 => 8191,  5 => 7056,  6 => 6338,
+      7  => 5836,  8 => 5461,  9 => 5168, 10 => 7056, 11 => 4736,
+      12 => 4570, 13 => 4427, 14 => 4303, 15 => 4193, 16 => 4095];
+   --  The actual value for 10 is 4932 but we also use scaling for 10
+
+   package Double_Real is new System.Double_Real (Num);
+   use type Double_Real.Double_T;
+
+   subtype Double_T is Double_Real.Double_T;
+   --  The double floating-point type
+
+   function Exact_Log2 (N : Unsigned) return Positive is
+     (case N is
+        when  2     => 1,
+        when  4     => 2,
+        when  8     => 3,
+        when 16     => 4,
+        when others => raise Program_Error);
+   --  Return the exponent of a power of 2
+
+   function Integer_To_Real
+     (Str   : String;
+      Val   : Impl.Value_Array;
+      Base  : Unsigned;
+      Scale : Impl.Scale_Array;
+      Minus : Boolean) return Num;
+   --  Convert the real value from integer to real representation
+
+   function Large_Powfive (Exp : Natural) return Double_T;
+   --  Return 5.0**Exp as a double number, where Exp > Maxpow
+
+   function Large_Powfive (Exp : Natural; S : out Natural) return Double_T;
+   --  Return Num'Scaling (5.0**Exp, -S) as a double number where Exp > Maxexp
+
+   ---------------------
+   -- Integer_To_Real --
+   ---------------------
+
+   function Integer_To_Real
+     (Str   : String;
+      Val   : Impl.Value_Array;
+      Base  : Unsigned;
+      Scale : Impl.Scale_Array;
+      Minus : Boolean) return Num
+   is
+      pragma Assert (Base in 2 .. 16);
+
+      pragma Assert (Num'Machine_Radix = 2);
+
+      pragma Unsuppress (Range_Check);
+
+      Maxexp : constant Positive :=
+                 (if    Num'Size = 32             then Maxexp32 (Base)
+                  elsif Num'Size = 64             then Maxexp64 (Base)
+                  elsif Num'Machine_Mantissa = 64 then Maxexp80 (Base)
+                  else  raise Program_Error);
+      --  Maximum exponent of the base that can fit in Num
+
+      D_Val : Double_T;
+      R_Val : Num;
+      S     : Integer;
+
+   begin
+      --  We call the floating-point processor reset routine so we can be sure
+      --  that the x87 FPU is properly set for conversions. This is especially
+      --  needed on Windows, where calls to the operating system randomly reset
+      --  the processor into 64-bit mode.
+
+      if Num'Machine_Mantissa = 64 then
+         System.Float_Control.Reset;
+      end if;
+
+      --  First convert the integer mantissa into a double real. The conversion
+      --  of each part is exact, given the precision limit we used above. Then,
+      --  if the contribution of the low part might be nonnull, scale the high
+      --  part appropriately and add the low part to the result.
+
+      if Val (2) = 0 then
+         D_Val := Double_Real.To_Double (Num (Val (1)));
+         S := Scale (1);
+
+      else
+         declare
+            V1 : constant Num := Num (Val (1));
+            V2 : constant Num := Num (Val (2));
+
+            DS : Positive;
+
+         begin
+            DS := Scale (1) - Scale (2);
+
+            case Base is
+               --  If the base is a power of two, we use the efficient Scaling
+               --  attribute up to an amount worth a double mantissa.
+
+               when 2 | 4 | 8 | 16 =>
+                  declare
+                     L : constant Positive := Exact_Log2 (Base);
+
+                  begin
+                     if DS <= 2 * Num'Machine_Mantissa / L then
+                        DS := DS * L;
+                        D_Val :=
+                          Double_Real.Quick_Two_Sum (Num'Scaling (V1, DS), V2);
+                        S := Scale (2);
+
+                     else
+                        D_Val := Double_Real.To_Double (V1);
+                        S := Scale (1);
+                     end if;
+                  end;
+
+               --  If the base is 10, we also scale up to an amount worth a
+               --  double mantissa.
+
+               when 10 =>
+                  declare
+                     Powfive : constant array (0 .. Maxpow) of Double_T;
+                     pragma Import (Ada, Powfive);
+                     for Powfive'Address use Powfive_Address;
+
+                  begin
+                     if DS <= Maxpow then
+                        D_Val := Powfive (DS) * Num'Scaling (V1, DS) + V2;
+                        S := Scale (2);
+
+                     else
+                        D_Val := Double_Real.To_Double (V1);
+                        S := Scale (1);
+                     end if;
+                  end;
+
+               --  Inaccurate implementation for other bases
+
+               when others =>
+                  D_Val := Double_Real.To_Double (V1);
+                  S := Scale (1);
+            end case;
+         end;
+      end if;
+
+      --  Compute the final value by applying the scaling, if any
+
+      if Val (1) = 0 or else S = 0 then
+         R_Val := Double_Real.To_Single (D_Val);
+
+      else
+         case Base is
+            --  If the base is a power of two, we use the efficient Scaling
+            --  attribute with an overflow check, if it is not 2, to catch
+            --  ludicrous exponents that would result in an infinity or zero.
+
+            when 2 | 4 | 8 | 16 =>
+               declare
+                  L : constant Positive := Exact_Log2 (Base);
+
+               begin
+                  if Integer'First / L <= S and then S <= Integer'Last / L then
+                     S := S * L;
+                  end if;
+
+                  R_Val := Num'Scaling (Double_Real.To_Single (D_Val), S);
+               end;
+
+            --  If the base is 10, we use a double implementation for the sake
+            --  of accuracy combining powers of 5 and scaling attribute. Using
+            --  this combination is better than using powers of 10 only because
+            --  the Large_Powfive function may overflow only if the final value
+            --  will also either overflow or underflow, thus making it possible
+            --  to use a single division for the case of negative powers of 10.
+
+            when 10 =>
+               declare
+                  Powfive : constant array (0 .. Maxpow) of Double_T;
+                  pragma Import (Ada, Powfive);
+                  for Powfive'Address use Powfive_Address;
+
+                  RS : Natural;
+
+               begin
+                  if S > 0 then
+                     if S <= Maxpow then
+                        D_Val := D_Val * Powfive (S);
+                     else
+                        D_Val := D_Val * Large_Powfive (S);
+                     end if;
+
+                  else
+                     if S >= -Maxpow then
+                        D_Val := D_Val / Powfive (-S);
+
+                     --  For small types, typically IEEE Single, the trick
+                     --  described above does not fully work.
+
+                     elsif not Is_Large_Type and then S < -Maxexp then
+                        D_Val := D_Val / Large_Powfive (-S, RS);
+                        S := S - RS;
+
+                     else
+                        D_Val := D_Val / Large_Powfive (-S);
+                     end if;
+                  end if;
+
+                  R_Val := Num'Scaling (Double_Real.To_Single (D_Val), S);
+               end;
+
+            --  Implementation for other bases with exponentiation
+
+            --  When the exponent is positive, we can do the computation
+            --  directly because, if the exponentiation overflows, then
+            --  the final value overflows as well. But when the exponent
+            --  is negative, we may need to do it in two steps to avoid
+            --  an artificial underflow.
+
+            when others =>
+               declare
+                  B : constant Num := Num (Base);
+
+               begin
+                  R_Val := Double_Real.To_Single (D_Val);
+
+                  if S > 0 then
+                     R_Val := R_Val * B ** S;
+
+                  else
+                     if S < -Maxexp then
+                        R_Val := R_Val / B ** Maxexp;
+                        S := S + Maxexp;
+                     end if;
+
+                     R_Val := R_Val / B ** (-S);
+                  end if;
+               end;
+         end case;
+      end if;
+
+      --  Finally deal with initial minus sign, note that this processing is
+      --  done even if Uval is zero, so that -0.0 is correctly interpreted.
+
+      return (if Minus then -R_Val else R_Val);
+
+   exception
+      when Constraint_Error => Bad_Value (Str);
+   end Integer_To_Real;
+
+   -------------------
+   -- Large_Powfive --
+   -------------------
+
+   function Large_Powfive (Exp : Natural) return Double_T is
+      Powfive : constant array (0 .. Maxpow) of Double_T;
+      pragma Import (Ada, Powfive);
+      for Powfive'Address use Powfive_Address;
+
+      Powfive_100 : constant Double_T;
+      pragma Import (Ada, Powfive_100);
+      for Powfive_100'Address use Powfive_100_Address;
+
+      Powfive_200 : constant Double_T;
+      pragma Import (Ada, Powfive_200);
+      for Powfive_200'Address use Powfive_200_Address;
+
+      Powfive_300 : constant Double_T;
+      pragma Import (Ada, Powfive_300);
+      for Powfive_300'Address use Powfive_300_Address;
+
+      H : Double_T;
+      R : Double_T;
+      E : Natural;
+
+   begin
+      pragma Assert (Exp > Maxpow);
+
+      if Is_Large_Type and then Exp >= 300 then
+         R := Powfive_300;
+         E := Exp - 300;
+
+      elsif Is_Large_Type and then Exp >= 200 then
+         R := Powfive_200;
+         E := Exp - 200;
+
+      elsif Is_Large_Type and then Exp >= 100 then
+         R := Powfive_100;
+         E := Exp - 100;
+
+      else
+         R := Powfive (Maxpow);
+         E := Exp - Maxpow;
+      end if;
+
+      --  Accumulate 5**Maxpow into R until E <= Maxpow or R saturates to +Inf
+
+      while E > Maxpow loop
+         H := R;
+         R := R * Powfive (Maxpow);
+         if R = H then
+            E := Maxpow;
+            exit;
+         end if;
+         E := E - Maxpow;
+      end loop;
+
+      R := R * Powfive (E);
+
+      return R;
+   end Large_Powfive;
+
+   function Large_Powfive (Exp : Natural; S : out Natural) return Double_T is
+      Maxexp : constant Positive :=
+        (if    Num'Size = 32             then Maxexp32 (5)
+         elsif Num'Size = 64             then Maxexp64 (5)
+         elsif Num'Machine_Mantissa = 64 then Maxexp80 (5)
+         else  raise Program_Error);
+      --  Maximum exponent of 5 that can fit in Num
+
+      Powfive : constant array (0 .. Maxpow) of Double_T;
+      pragma Import (Ada, Powfive);
+      for Powfive'Address use Powfive_Address;
+
+      H : Double_T;
+      R : Double_T;
+      E : Natural;
+
+   begin
+      pragma Assert (Exp > Maxexp);
+
+      --  This routine supports any type but it is not necessary to invoke it
+      --  for large types because the above one is sufficient for them.
+
+      pragma Warnings (Off, "-gnatw.a");
+      pragma Assert (not Is_Large_Type);
+      pragma Warnings (On, "-gnatw.a");
+
+      R := Powfive (Maxpow);
+      E := Exp - Maxpow;
+
+      --  If the exponent is not too large, then scale down the result so that
+      --  its final value does not overflow but, if it's too large, then do not
+      --  bother doing it since overflow is just fine. The scaling factor is -3
+      --  for every power of 5 above the maximum, in other words division by 8.
+      --  Note that Maxpow is an upper bound of the span of exponents for which
+      --  scaling is needed, but it's OK to apply it even if it is not needed.
+
+      if Exp - Maxexp <= Maxpow then
+         S := 3 * (Exp - Maxexp);
+         R.Hi := Num'Scaling (R.Hi, -S);
+         R.Lo := Num'Scaling (R.Lo, -S);
+      else
+         S := 0;
+      end if;
+
+      --  Accumulate 5**Maxpow into R until E <= Maxpow or R saturates to +Inf
+
+      while E > Maxpow loop
+         H := R;
+         R := R * Powfive (Maxpow);
+         if R = H then
+            E := Maxpow;
+            exit;
+         end if;
+         E := E - Maxpow;
+      end loop;
+
+      R := R * Powfive (E);
+
+      return R;
+   end Large_Powfive;
 
    ---------------
    -- Scan_Real --
@@ -42,377 +446,35 @@ package body System.Val_Real is
    function Scan_Real
      (Str : String;
       Ptr : not null access Integer;
-      Max : Integer) return Long_Long_Float
+      Max : Integer) return Num
    is
-      P : Integer;
-      --  Local copy of string pointer
-
-      Base : Long_Long_Float;
-      --  Base value
-
-      Uval : Long_Long_Float;
-      --  Accumulated float result
-
-      subtype Digs is Character range '0' .. '9';
-      --  Used to check for decimal digit
-
-      Scale : Integer := 0;
-      --  Power of Base to multiply result by
-
-      Start : Positive;
-      --  Position of starting non-blank character
-
+      Base  : Unsigned;
+      Scale : Impl.Scale_Array;
+      Extra : Unsigned;
       Minus : Boolean;
-      --  Set to True if minus sign is present, otherwise to False
-
-      Bad_Base : Boolean := False;
-      --  Set True if Base out of range or if out of range digit
-
-      After_Point : Natural := 0;
-      --  Set to 1 after the point
-
-      Num_Saved_Zeroes : Natural := 0;
-      --  This counts zeroes after the decimal point. A non-zero value means
-      --  that this number of previously scanned digits are zero. If the end
-      --  of the number is reached, these zeroes are simply discarded, which
-      --  ensures that trailing zeroes after the point never affect the value
-      --  (which might otherwise happen as a result of rounding). With this
-      --  processing in place, we can ensure that, for example, we get the
-      --  same exact result from 1.0E+49 and 1.0000000E+49. This is not
-      --  necessarily required in a case like this where the result is not
-      --  a machine number, but it is certainly a desirable behavior.
-
-      procedure Scanf;
-      --  Scans integer literal value starting at current character position.
-      --  For each digit encountered, Uval is multiplied by 10.0, and the new
-      --  digit value is incremented. In addition Scale is decremented for each
-      --  digit encountered if we are after the point (After_Point = 1). The
-      --  longest possible syntactically valid numeral is scanned out, and on
-      --  return P points past the last character. On entry, the current
-      --  character is known to be a digit, so a numeral is definitely present.
-
-      -----------
-      -- Scanf --
-      -----------
-
-      procedure Scanf is
-         Digit : Natural;
-
-      begin
-         loop
-            Digit := Character'Pos (Str (P)) - Character'Pos ('0');
-            P := P + 1;
-
-            --  Save up trailing zeroes after the decimal point
-
-            if Digit = 0 and then After_Point = 1 then
-               Num_Saved_Zeroes := Num_Saved_Zeroes + 1;
-
-            --  Here for a non-zero digit
-
-            else
-               --  First deal with any previously saved zeroes
-
-               if Num_Saved_Zeroes /= 0 then
-                  while Num_Saved_Zeroes > Maxpow loop
-                     Uval := Uval * Powten (Maxpow);
-                     Num_Saved_Zeroes := Num_Saved_Zeroes - Maxpow;
-                     Scale := Scale - Maxpow;
-                  end loop;
-
-                  Uval := Uval * Powten (Num_Saved_Zeroes);
-                  Scale := Scale - Num_Saved_Zeroes;
-
-                  Num_Saved_Zeroes := 0;
-               end if;
-
-               --  Accumulate new digit
-
-               Uval := Uval * 10.0 + Long_Long_Float (Digit);
-               Scale := Scale - After_Point;
-            end if;
-
-            --  Done if end of input field
-
-            if P > Max then
-               return;
-
-            --  Check next character
-
-            elsif Str (P) not in Digs then
-               if Str (P) = '_' then
-                  Scan_Underscore (Str, P, Ptr, Max, False);
-               else
-                  return;
-               end if;
-            end if;
-         end loop;
-      end Scanf;
-
-   --  Start of processing for System.Scan_Real
+      Val   : Impl.Value_Array;
 
    begin
-      --  We do not tolerate strings with Str'Last = Positive'Last
+      Val := Impl.Scan_Raw_Real (Str, Ptr, Max, Base, Scale, Extra, Minus);
 
-      if Str'Last = Positive'Last then
-         raise Program_Error with
-           "string upper bound is Positive'Last, not supported";
-      end if;
-
-      --  We call the floating-point processor reset routine so that we can
-      --  be sure the floating-point processor is properly set for conversion
-      --  calls. This is notably need on Windows, where calls to the operating
-      --  system randomly reset the processor into 64-bit mode.
-
-      System.Float_Control.Reset;
-
-      Scan_Sign (Str, Ptr, Max, Minus, Start);
-      P := Ptr.all;
-      Ptr.all := Start;
-
-      --  If digit, scan numeral before point
-
-      if Str (P) in Digs then
-         Uval := 0.0;
-         Scanf;
-
-      --  Initial point, allowed only if followed by digit (RM 3.5(47))
-
-      elsif Str (P) = '.'
-        and then P < Max
-        and then Str (P + 1) in Digs
-      then
-         Uval := 0.0;
-
-      --  Any other initial character is an error
-
-      else
-         Bad_Value (Str);
-      end if;
-
-      --  Deal with based case. We reognize either the standard '#' or the
-      --  allowed alternative replacement ':' (see RM J.2(3)).
-
-      if P < Max and then (Str (P) = '#' or else Str (P) = ':') then
-         declare
-            Base_Char : constant Character := Str (P);
-            Digit     : Natural;
-            Fdigit    : Long_Long_Float;
-
-         begin
-            --  Set bad base if out of range, and use safe base of 16.0,
-            --  to guard against division by zero in the loop below.
-
-            if Uval < 2.0 or else Uval > 16.0 then
-               Bad_Base := True;
-               Uval := 16.0;
-            end if;
-
-            Base := Uval;
-            Uval := 0.0;
-            P := P + 1;
-
-            --  Special check to allow initial point (RM 3.5(49))
-
-            if Str (P) = '.' then
-               After_Point := 1;
-               P := P + 1;
-            end if;
-
-            --  Loop to scan digits of based number. On entry to the loop we
-            --  must have a valid digit. If we don't, then we have an illegal
-            --  floating-point value, and we raise Constraint_Error, note that
-            --  Ptr at this stage was reset to the proper (Start) value.
-
-            loop
-               if P > Max then
-                  Bad_Value (Str);
-
-               elsif Str (P) in Digs then
-                  Digit := Character'Pos (Str (P)) - Character'Pos ('0');
-
-               elsif Str (P) in 'A' .. 'F' then
-                  Digit :=
-                    Character'Pos (Str (P)) - (Character'Pos ('A') - 10);
-
-               elsif Str (P) in 'a' .. 'f' then
-                  Digit :=
-                    Character'Pos (Str (P)) - (Character'Pos ('a') - 10);
-
-               else
-                  Bad_Value (Str);
-               end if;
-
-               --  Save up trailing zeroes after the decimal point
-
-               if Digit = 0 and then After_Point = 1 then
-                  Num_Saved_Zeroes := Num_Saved_Zeroes + 1;
-
-               --  Here for a non-zero digit
-
-               else
-                  --  First deal with any previously saved zeroes
-
-                  if Num_Saved_Zeroes /= 0 then
-                     Uval := Uval * Base ** Num_Saved_Zeroes;
-                     Scale := Scale - Num_Saved_Zeroes;
-                     Num_Saved_Zeroes := 0;
-                  end if;
-
-                  --  Now accumulate the new digit
-
-                  Fdigit := Long_Long_Float (Digit);
-
-                  if Fdigit >= Base then
-                     Bad_Base := True;
-                  else
-                     Scale := Scale - After_Point;
-                     Uval := Uval * Base + Fdigit;
-                  end if;
-               end if;
-
-               P := P + 1;
-
-               if P > Max then
-                  Bad_Value (Str);
-
-               elsif Str (P) = '_' then
-                  Scan_Underscore (Str, P, Ptr, Max, True);
-
-               else
-                  --  Skip past period after digit. Note that the processing
-                  --  here will permit either a digit after the period, or the
-                  --  terminating base character, as allowed in (RM 3.5(48))
-
-                  if Str (P) = '.' and then After_Point = 0 then
-                     P := P + 1;
-                     After_Point := 1;
-
-                     if P > Max then
-                        Bad_Value (Str);
-                     end if;
-                  end if;
-
-                  exit when Str (P) = Base_Char;
-               end if;
-            end loop;
-
-            --  Based number successfully scanned out (point was found)
-
-            Ptr.all := P + 1;
-         end;
-
-      --  Non-based case, check for being at decimal point now. Note that
-      --  in Ada 95, we do not insist on a decimal point being present
-
-      else
-         Base := 10.0;
-         After_Point := 1;
-
-         if P <= Max and then Str (P) = '.' then
-            P := P + 1;
-
-            --  Scan digits after point if any are present (RM 3.5(46))
-
-            if P <= Max and then Str (P) in Digs then
-               Scanf;
-            end if;
-         end if;
-
-         Ptr.all := P;
-      end if;
-
-      --  At this point, we have Uval containing the digits of the value as
-      --  an integer, and Scale indicates the negative of the number of digits
-      --  after the point. Base contains the base value (an integral value in
-      --  the range 2.0 .. 16.0). Test for exponent, must be at least one
-      --  character after the E for the exponent to be valid.
-
-      Scale := Scale + Scan_Exponent (Str, Ptr, Max, Real => True);
-
-      --  At this point the exponent has been scanned if one is present and
-      --  Scale is adjusted to include the exponent value. Uval contains the
-      --  the integral value which is to be multiplied by Base ** Scale.
-
-      --  If base is not 10, use exponentiation for scaling
-
-      if Base /= 10.0 then
-         Uval := Uval * Base ** Scale;
-
-      --  For base 10, use power of ten table, repeatedly if necessary
-
-      elsif Scale > 0 then
-         while Scale > Maxpow and then Uval'Valid loop
-            Uval := Uval * Powten (Maxpow);
-            Scale := Scale - Maxpow;
-         end loop;
-
-         --  Note that we still know that Scale > 0, since the loop
-         --  above leaves Scale in the range 1 .. Maxpow.
-
-         if Uval'Valid then
-            Uval := Uval * Powten (Scale);
-         end if;
-
-      elsif Scale < 0 then
-         while (-Scale) > Maxpow and then Uval'Valid loop
-            Uval := Uval / Powten (Maxpow);
-            Scale := Scale + Maxpow;
-         end loop;
-
-         --  Note that we still know that Scale < 0, since the loop
-         --  above leaves Scale in the range -Maxpow .. -1.
-         if Uval'Valid then
-            Uval := Uval / Powten (-Scale);
-         end if;
-      end if;
-
-      --  Here is where we check for a bad based number
-
-      if Bad_Base then
-         Bad_Value (Str);
-
-      --  If OK, then deal with initial minus sign, note that this processing
-      --  is done even if Uval is zero, so that -0.0 is correctly interpreted.
-
-      else
-         if Minus then
-            return -Uval;
-         else
-            return Uval;
-         end if;
-      end if;
+      return Integer_To_Real (Str, Val, Base, Scale, Minus);
    end Scan_Real;
 
    ----------------
    -- Value_Real --
    ----------------
 
-   function Value_Real (Str : String) return Long_Long_Float is
+   function Value_Real (Str : String) return Num is
+      Base  : Unsigned;
+      Scale : Impl.Scale_Array;
+      Extra : Unsigned;
+      Minus : Boolean;
+      Val   : Impl.Value_Array;
+
    begin
-      --  We have to special case Str'Last = Positive'Last because the normal
-      --  circuit ends up setting P to Str'Last + 1 which is out of bounds. We
-      --  deal with this by converting to a subtype which fixes the bounds.
+      Val := Impl.Value_Raw_Real (Str, Base, Scale, Extra, Minus);
 
-      if Str'Last = Positive'Last then
-         declare
-            subtype NT is String (1 .. Str'Length);
-         begin
-            return Value_Real (NT (Str));
-         end;
-
-      --  Normal case where Str'Last < Positive'Last
-
-      else
-         declare
-            V : Long_Long_Float;
-            P : aliased Integer := Str'First;
-         begin
-            V := Scan_Real (Str, P'Access, Str'Last);
-            Scan_Trailing_Blanks (Str, P);
-            return V;
-         end;
-      end if;
+      return Integer_To_Real (Str, Val, Base, Scale, Minus);
    end Value_Real;
 
 end System.Val_Real;

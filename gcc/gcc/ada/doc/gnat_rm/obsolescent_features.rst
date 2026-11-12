@@ -5,9 +5,18 @@ Obsolescent Features
 ********************
 
 This chapter describes features that are provided by GNAT, but are
-considered obsolescent since there are preferred ways of achieving
-the same effect. These features are provided solely for historical
-compatibility purposes.
+considered obsolescent since there are other, more appropriate, ways
+of achieving the same effect. These features are provided solely for
+historical compatibility purposes.
+
+.. _polyORB:
+
+PolyORB
+========
+
+PolyORB is a deprecated product. It will be baselined with the GNAT Pro
+release 28. After this release, there will be no new versions of this
+product. Contact AdaCore support to get recommendations for replacements.
 
 .. _pragma_No_Run_Time:
 
@@ -49,7 +58,7 @@ pragma Task_Info
 The functionality provided by pragma ``Task_Info`` is now part of the
 Ada language. The ``CPU`` aspect and the package
 ``System.Multiprocessors`` offer a less system-dependent way to specify
-task affinity or to query the number of processsors.
+task affinity or to query the number of processors.
 
 Syntax
 

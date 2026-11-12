@@ -6,7 +6,7 @@
 --                                                                          --
 --                                  B o d y                                 --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -40,37 +40,28 @@
 --  For configurations where SCHED_FIFO and priority ceiling are not a
 --  requirement, this file can also be used (e.g AiX threads)
 
-pragma Polling (Off);
---  Turn off polling, we do not want ATC polling to take place during tasking
---  operations. It causes infinite loops and other problems.
-
 with Ada.Unchecked_Conversion;
 
 with Interfaces.C;
 
-with System.Tasking.Debug;
 with System.Interrupt_Management;
 with System.OS_Constants;
 with System.OS_Primitives;
 with System.Task_Info;
-
-with System.Soft_Links;
---  We use System.Soft_Links instead of System.Tasking.Initialization
---  because the later is a higher level package that we shouldn't depend on.
---  For example when using the restricted run time, it is replaced by
---  System.Tasking.Restricted.Stages.
+with System.Tasking.Debug;
 
 package body System.Task_Primitives.Operations is
 
    package OSC renames System.OS_Constants;
-   package SSL renames System.Soft_Links;
 
-   use System.Tasking.Debug;
-   use System.Tasking;
    use Interfaces.C;
+
    use System.OS_Interface;
-   use System.Parameters;
+   use System.OS_Locks;
    use System.OS_Primitives;
+   use System.Parameters;
+   use System.Tasking;
+   use System.Tasking.Debug;
 
    ----------------
    -- Local Data --
@@ -82,12 +73,12 @@ package body System.Task_Primitives.Operations is
    Single_RTS_Lock : aliased RTS_Lock;
    --  This is a lock to allow only one thread of control in the RTS at
    --  a time; it is used to execute in mutual exclusion from all other tasks.
-   --  Used mainly in Single_Lock mode, but also to protect All_Tasks_List
+   --  Used to protect All_Tasks_List
 
    Environment_Task_Id : Task_Id;
    --  A variable to hold Task_Id for the environment task
 
-   Locking_Policy : Character;
+   Locking_Policy : constant Character;
    pragma Import (C, Locking_Policy, "__gl_locking_policy");
    --  Value of the pragma Locking_Policy:
    --    'C' for Ceiling_Locking
@@ -103,10 +94,10 @@ package body System.Task_Primitives.Operations is
    --  We start at 100, to reserve some special values for
    --  using in error checking.
 
-   Time_Slice_Val : Integer;
+   Time_Slice_Val : constant Integer;
    pragma Import (C, Time_Slice_Val, "__gl_time_slice_val");
 
-   Dispatching_Policy : Character;
+   Dispatching_Policy : constant Character;
    pragma Import (C, Dispatching_Policy, "__gl_task_dispatching_policy");
 
    Foreign_Task_Elaborated : aliased Boolean := True;
@@ -211,9 +202,14 @@ package body System.Task_Primitives.Operations is
      new Ada.Unchecked_Conversion (Task_Id, System.Address);
 
    function GNAT_pthread_condattr_setup
-     (attr : access pthread_condattr_t) return int;
+     (attr : access pthread_condattr_t) return Interfaces.C.int;
    pragma Import (C,
      GNAT_pthread_condattr_setup, "__gnat_pthread_condattr_setup");
+
+   procedure Initialize_Lock
+     (L    : not null access RTS_Lock;
+      Prio : System.Any_Priority);
+   --  Initialize an RTS_Lock with the specified priority
 
    -------------------
    -- Abort_Handler --
@@ -291,7 +287,7 @@ package body System.Task_Primitives.Operations is
          Res :=
            mprotect
              (Stack_Base - (Stack_Base mod Page_Size) + Page_Size,
-              size_t (Page_Size),
+              Interfaces.C.size_t (Page_Size),
               prot => (if On then PROT_ON else PROT_OFF));
          pragma Assert (Res = 0);
       end if;
@@ -323,11 +319,11 @@ package body System.Task_Primitives.Operations is
    --  routines should be able to be handled safely.
 
    procedure Initialize_Lock
-     (Prio : System.Any_Priority;
-      L    : not null access Lock)
+     (L    : not null access RTS_Lock;
+      Prio : System.Any_Priority)
    is
       Attributes : aliased pthread_mutexattr_t;
-      Result : Interfaces.C.int;
+      Result     : Interfaces.C.int;
 
    begin
       Result := pthread_mutexattr_init (Attributes'Access);
@@ -352,7 +348,7 @@ package body System.Task_Primitives.Operations is
          pragma Assert (Result = 0);
       end if;
 
-      Result := pthread_mutex_init (L.WO'Access, Attributes'Access);
+      Result := pthread_mutex_init (L, Attributes'Access);
       pragma Assert (Result = 0 or else Result = ENOMEM);
 
       if Result = ENOMEM then
@@ -365,46 +361,20 @@ package body System.Task_Primitives.Operations is
    end Initialize_Lock;
 
    procedure Initialize_Lock
-     (L : not null access RTS_Lock; Level : Lock_Level)
+     (Prio : System.Any_Priority;
+      L    : not null access Lock)
+   is
+   begin
+      Initialize_Lock (L.WO'Access, Prio);
+   end Initialize_Lock;
+
+   procedure Initialize_Lock
+     (L     : not null access RTS_Lock;
+      Level : Lock_Level)
    is
       pragma Unreferenced (Level);
-
-      Attributes : aliased pthread_mutexattr_t;
-      Result     : Interfaces.C.int;
-
    begin
-      Result := pthread_mutexattr_init (Attributes'Access);
-      pragma Assert (Result = 0 or else Result = ENOMEM);
-
-      if Result = ENOMEM then
-         raise Storage_Error;
-      end if;
-
-      if Locking_Policy = 'C' then
-         Result := pthread_mutexattr_setprotocol
-           (Attributes'Access, PTHREAD_PRIO_PROTECT);
-         pragma Assert (Result = 0);
-
-         Result := pthread_mutexattr_setprioceiling
-            (Attributes'Access, Interfaces.C.int (System.Any_Priority'Last));
-         pragma Assert (Result = 0);
-
-      elsif Locking_Policy = 'I' then
-         Result := pthread_mutexattr_setprotocol
-           (Attributes'Access, PTHREAD_PRIO_INHERIT);
-         pragma Assert (Result = 0);
-      end if;
-
-      Result := pthread_mutex_init (L, Attributes'Access);
-      pragma Assert (Result = 0 or else Result = ENOMEM);
-
-      if Result = ENOMEM then
-         Result := pthread_mutexattr_destroy (Attributes'Access);
-         raise Storage_Error;
-      end if;
-
-      Result := pthread_mutexattr_destroy (Attributes'Access);
-      pragma Assert (Result = 0);
+      Initialize_Lock (L, System.Any_Priority'Last);
    end Initialize_Lock;
 
    -------------------
@@ -443,25 +413,18 @@ package body System.Task_Primitives.Operations is
       pragma Assert (Result = 0 or else Ceiling_Violation);
    end Write_Lock;
 
-   procedure Write_Lock
-     (L           : not null access RTS_Lock;
-      Global_Lock : Boolean := False)
-   is
+   procedure Write_Lock (L : not null access RTS_Lock) is
       Result : Interfaces.C.int;
    begin
-      if not Single_Lock or else Global_Lock then
-         Result := pthread_mutex_lock (L);
-         pragma Assert (Result = 0);
-      end if;
+      Result := pthread_mutex_lock (L);
+      pragma Assert (Result = 0);
    end Write_Lock;
 
    procedure Write_Lock (T : Task_Id) is
       Result : Interfaces.C.int;
    begin
-      if not Single_Lock then
-         Result := pthread_mutex_lock (T.Common.LL.L'Access);
-         pragma Assert (Result = 0);
-      end if;
+      Result := pthread_mutex_lock (T.Common.LL.L'Access);
+      pragma Assert (Result = 0);
    end Write_Lock;
 
    ---------------
@@ -485,24 +448,18 @@ package body System.Task_Primitives.Operations is
       pragma Assert (Result = 0);
    end Unlock;
 
-   procedure Unlock
-     (L : not null access RTS_Lock; Global_Lock : Boolean := False)
-   is
+   procedure Unlock (L : not null access RTS_Lock) is
       Result : Interfaces.C.int;
    begin
-      if not Single_Lock or else Global_Lock then
-         Result := pthread_mutex_unlock (L);
-         pragma Assert (Result = 0);
-      end if;
+      Result := pthread_mutex_unlock (L);
+      pragma Assert (Result = 0);
    end Unlock;
 
    procedure Unlock (T : Task_Id) is
       Result : Interfaces.C.int;
    begin
-      if not Single_Lock then
-         Result := pthread_mutex_unlock (T.Common.LL.L'Access);
-         pragma Assert (Result = 0);
-      end if;
+      Result := pthread_mutex_unlock (T.Common.LL.L'Access);
+      pragma Assert (Result = 0);
    end Unlock;
 
    -----------------
@@ -536,9 +493,7 @@ package body System.Task_Primitives.Operations is
       Result :=
         pthread_cond_wait
           (cond  => Self_ID.Common.LL.CV'Access,
-           mutex => (if Single_Lock
-                     then Single_RTS_Lock'Access
-                     else Self_ID.Common.LL.L'Access));
+           mutex => Self_ID.Common.LL.L'Access);
 
       --  EINTR is not considered a failure
 
@@ -674,7 +629,6 @@ package body System.Task_Primitives.Operations is
 
    procedure Enter_Task (Self_ID : Task_Id) is
    begin
-      Self_ID.Common.LL.Thread := pthread_self;
       Self_ID.Common.LL.LWP := lwp_self;
 
       Specific.Set (Self_ID);
@@ -728,47 +682,45 @@ package body System.Task_Primitives.Operations is
       Next_Serial_Number := Next_Serial_Number + 1;
       pragma Assert (Next_Serial_Number /= 0);
 
-      if not Single_Lock then
-         Result := pthread_mutexattr_init (Mutex_Attr'Access);
-         pragma Assert (Result = 0 or else Result = ENOMEM);
+      Result := pthread_mutexattr_init (Mutex_Attr'Access);
+      pragma Assert (Result = 0 or else Result = ENOMEM);
 
-         if Result = 0 then
-            if Locking_Policy = 'C' then
-               Result :=
-                 pthread_mutexattr_setprotocol
-                   (Mutex_Attr'Access,
-                    PTHREAD_PRIO_PROTECT);
-               pragma Assert (Result = 0);
-
-               Result :=
-                 pthread_mutexattr_setprioceiling
-                   (Mutex_Attr'Access,
-                    Interfaces.C.int (System.Any_Priority'Last));
-               pragma Assert (Result = 0);
-
-            elsif Locking_Policy = 'I' then
-               Result :=
-                 pthread_mutexattr_setprotocol
-                   (Mutex_Attr'Access,
-                    PTHREAD_PRIO_INHERIT);
-               pragma Assert (Result = 0);
-            end if;
+      if Result = 0 then
+         if Locking_Policy = 'C' then
+            Result :=
+              pthread_mutexattr_setprotocol
+                (Mutex_Attr'Access,
+                 PTHREAD_PRIO_PROTECT);
+            pragma Assert (Result = 0);
 
             Result :=
-              pthread_mutex_init
+              pthread_mutexattr_setprioceiling
+                (Mutex_Attr'Access,
+                 Interfaces.C.int (System.Any_Priority'Last));
+            pragma Assert (Result = 0);
+
+         elsif Locking_Policy = 'I' then
+            Result :=
+              pthread_mutexattr_setprotocol
+                (Mutex_Attr'Access,
+                 PTHREAD_PRIO_INHERIT);
+            pragma Assert (Result = 0);
+         end if;
+
+         Result :=
+           pthread_mutex_init
                 (Self_ID.Common.LL.L'Access,
-                 Mutex_Attr'Access);
-            pragma Assert (Result = 0 or else Result = ENOMEM);
-         end if;
-
-         if Result /= 0 then
-            Succeeded := False;
-            return;
-         end if;
-
-         Result := pthread_mutexattr_destroy (Mutex_Attr'Access);
-         pragma Assert (Result = 0);
+              Mutex_Attr'Access);
+         pragma Assert (Result = 0 or else Result = ENOMEM);
       end if;
+
+      if Result /= 0 then
+         Succeeded := False;
+         return;
+      end if;
+
+      Result := pthread_mutexattr_destroy (Mutex_Attr'Access);
+      pragma Assert (Result = 0);
 
       Result := pthread_condattr_init (Cond_Attr'Access);
       pragma Assert (Result = 0 or else Result = ENOMEM);
@@ -786,11 +738,8 @@ package body System.Task_Primitives.Operations is
       if Result = 0 then
          Succeeded := True;
       else
-         if not Single_Lock then
-            Result := pthread_mutex_destroy (Self_ID.Common.LL.L'Access);
-            pragma Assert (Result = 0);
-         end if;
-
+         Result := pthread_mutex_destroy (Self_ID.Common.LL.L'Access);
+         pragma Assert (Result = 0);
          Succeeded := False;
       end if;
 
@@ -884,14 +833,14 @@ package body System.Task_Primitives.Operations is
       --  do not need to manipulate caller's signal mask at this point.
       --  All tasks in RTS will have All_Tasks_Mask initially.
 
-      --  Note: the use of Unrestricted_Access in the following call is needed
-      --  because otherwise we have an error of getting a access-to-volatile
-      --  value which points to a non-volatile object. But in this case it is
-      --  safe to do this, since we know we have no problems with aliasing and
-      --  Unrestricted_Access bypasses this check.
+      --  The write to T.Common.LL.Thread is not racy with regard to the
+      --  created thread because the created thread will not access it until
+      --  we release the RTS lock (or the current task's lock when
+      --  Restricted.Stages is used). One can verify that by inspecting the
+      --  Task_Wrapper procedures.
 
       Result := pthread_create
-        (T.Common.LL.Thread'Unrestricted_Access,
+        (T.Common.LL.Thread'Access,
          Attributes'Access,
          Thread_Body_Access (Wrapper),
          To_Address (T));
@@ -915,10 +864,8 @@ package body System.Task_Primitives.Operations is
       Result : Interfaces.C.int;
 
    begin
-      if not Single_Lock then
-         Result := pthread_mutex_destroy (T.Common.LL.L'Access);
-         pragma Assert (Result = 0);
-      end if;
+      Result := pthread_mutex_destroy (T.Common.LL.L'Access);
+      pragma Assert (Result = 0);
 
       Result := pthread_cond_destroy (T.Common.LL.CV'Access);
       pragma Assert (Result = 0);
@@ -959,223 +906,6 @@ package body System.Task_Primitives.Operations is
    end Abort_Task;
 
    ----------------
-   -- Initialize --
-   ----------------
-
-   procedure Initialize (S : in out Suspension_Object) is
-      Mutex_Attr : aliased pthread_mutexattr_t;
-      Cond_Attr  : aliased pthread_condattr_t;
-      Result     : Interfaces.C.int;
-
-   begin
-      --  Initialize internal state (always to False (RM D.10 (6)))
-
-      S.State := False;
-      S.Waiting := False;
-
-      --  Initialize internal mutex
-
-      Result := pthread_mutexattr_init (Mutex_Attr'Access);
-      pragma Assert (Result = 0 or else Result = ENOMEM);
-
-      if Result = ENOMEM then
-         raise Storage_Error;
-      end if;
-
-      Result := pthread_mutex_init (S.L'Access, Mutex_Attr'Access);
-      pragma Assert (Result = 0 or else Result = ENOMEM);
-
-      if Result = ENOMEM then
-         Result := pthread_mutexattr_destroy (Mutex_Attr'Access);
-         pragma Assert (Result = 0);
-
-         raise Storage_Error;
-      end if;
-
-      Result := pthread_mutexattr_destroy (Mutex_Attr'Access);
-      pragma Assert (Result = 0);
-
-      --  Initialize internal condition variable
-
-      Result := pthread_condattr_init (Cond_Attr'Access);
-      pragma Assert (Result = 0 or else Result = ENOMEM);
-
-      if Result /= 0 then
-         Result := pthread_mutex_destroy (S.L'Access);
-         pragma Assert (Result = 0);
-
-         --  Storage_Error is propagated as intended if the allocation of the
-         --  underlying OS entities fails.
-
-         raise Storage_Error;
-
-      else
-         Result := GNAT_pthread_condattr_setup (Cond_Attr'Access);
-         pragma Assert (Result = 0);
-      end if;
-
-      Result := pthread_cond_init (S.CV'Access, Cond_Attr'Access);
-      pragma Assert (Result = 0 or else Result = ENOMEM);
-
-      if Result /= 0 then
-         Result := pthread_mutex_destroy (S.L'Access);
-         pragma Assert (Result = 0);
-
-         Result := pthread_condattr_destroy (Cond_Attr'Access);
-         pragma Assert (Result = 0);
-
-         --  Storage_Error is propagated as intended if the allocation of the
-         --  underlying OS entities fails.
-
-         raise Storage_Error;
-      end if;
-
-      Result := pthread_condattr_destroy (Cond_Attr'Access);
-      pragma Assert (Result = 0);
-   end Initialize;
-
-   --------------
-   -- Finalize --
-   --------------
-
-   procedure Finalize (S : in out Suspension_Object) is
-      Result : Interfaces.C.int;
-
-   begin
-      --  Destroy internal mutex
-
-      Result := pthread_mutex_destroy (S.L'Access);
-      pragma Assert (Result = 0);
-
-      --  Destroy internal condition variable
-
-      Result := pthread_cond_destroy (S.CV'Access);
-      pragma Assert (Result = 0);
-   end Finalize;
-
-   -------------------
-   -- Current_State --
-   -------------------
-
-   function Current_State (S : Suspension_Object) return Boolean is
-   begin
-      --  We do not want to use lock on this read operation. State is marked
-      --  as Atomic so that we ensure that the value retrieved is correct.
-
-      return S.State;
-   end Current_State;
-
-   ---------------
-   -- Set_False --
-   ---------------
-
-   procedure Set_False (S : in out Suspension_Object) is
-      Result : Interfaces.C.int;
-
-   begin
-      SSL.Abort_Defer.all;
-
-      Result := pthread_mutex_lock (S.L'Access);
-      pragma Assert (Result = 0);
-
-      S.State := False;
-
-      Result := pthread_mutex_unlock (S.L'Access);
-      pragma Assert (Result = 0);
-
-      SSL.Abort_Undefer.all;
-   end Set_False;
-
-   --------------
-   -- Set_True --
-   --------------
-
-   procedure Set_True (S : in out Suspension_Object) is
-      Result : Interfaces.C.int;
-
-   begin
-      SSL.Abort_Defer.all;
-
-      Result := pthread_mutex_lock (S.L'Access);
-      pragma Assert (Result = 0);
-
-      --  If there is already a task waiting on this suspension object then
-      --  we resume it, leaving the state of the suspension object to False,
-      --  as it is specified in (RM D.10(9)). Otherwise, it just leaves
-      --  the state to True.
-
-      if S.Waiting then
-         S.Waiting := False;
-         S.State := False;
-
-         Result := pthread_cond_signal (S.CV'Access);
-         pragma Assert (Result = 0);
-
-      else
-         S.State := True;
-      end if;
-
-      Result := pthread_mutex_unlock (S.L'Access);
-      pragma Assert (Result = 0);
-
-      SSL.Abort_Undefer.all;
-   end Set_True;
-
-   ------------------------
-   -- Suspend_Until_True --
-   ------------------------
-
-   procedure Suspend_Until_True (S : in out Suspension_Object) is
-      Result : Interfaces.C.int;
-
-   begin
-      SSL.Abort_Defer.all;
-
-      Result := pthread_mutex_lock (S.L'Access);
-      pragma Assert (Result = 0);
-
-      if S.Waiting then
-
-         --  Program_Error must be raised upon calling Suspend_Until_True
-         --  if another task is already waiting on that suspension object
-         --  (RM D.10(10)).
-
-         Result := pthread_mutex_unlock (S.L'Access);
-         pragma Assert (Result = 0);
-
-         SSL.Abort_Undefer.all;
-
-         raise Program_Error;
-
-      else
-         --  Suspend the task if the state is False. Otherwise, the task
-         --  continues its execution, and the state of the suspension object
-         --  is set to False (ARM D.10 par. 9).
-
-         if S.State then
-            S.State := False;
-         else
-            S.Waiting := True;
-
-            loop
-               --  Loop in case pthread_cond_wait returns earlier than expected
-               --  (e.g. in case of EINTR caused by a signal).
-
-               Result := pthread_cond_wait (S.CV'Access, S.L'Access);
-               pragma Assert (Result = 0 or else Result = EINTR);
-
-               exit when not S.Waiting;
-            end loop;
-         end if;
-
-         Result := pthread_mutex_unlock (S.L'Access);
-         pragma Assert (Result = 0);
-
-         SSL.Abort_Undefer.all;
-      end if;
-   end Suspend_Until_True;
-
-   ----------------
    -- Check_Exit --
    ----------------
 
@@ -1212,7 +942,7 @@ package body System.Task_Primitives.Operations is
 
    procedure Lock_RTS is
    begin
-      Write_Lock (Single_RTS_Lock'Access, Global_Lock => True);
+      Write_Lock (Single_RTS_Lock'Access);
    end Lock_RTS;
 
    ----------------
@@ -1221,7 +951,7 @@ package body System.Task_Primitives.Operations is
 
    procedure Unlock_RTS is
    begin
-      Unlock (Single_RTS_Lock'Access, Global_Lock => True);
+      Unlock (Single_RTS_Lock'Access);
    end Unlock_RTS;
 
    ------------------
@@ -1305,6 +1035,7 @@ package body System.Task_Primitives.Operations is
 
    begin
       Environment_Task_Id := Environment_Task;
+      Environment_Task.Common.LL.Thread := pthread_self;
 
       Interrupt_Management.Initialize;
 
@@ -1372,4 +1103,12 @@ package body System.Task_Primitives.Operations is
       null;
    end Set_Task_Affinity;
 
+   ---------------------
+   -- Is_Task_Context --
+   ---------------------
+
+   function Is_Task_Context return Boolean is
+   begin
+      return True;
+   end Is_Task_Context;
 end System.Task_Primitives.Operations;

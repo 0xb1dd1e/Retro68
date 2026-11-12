@@ -1,3 +1,6 @@
+/* { dg-require-effective-target indirect_calls } */
+/* { dg-additional-options "-fpermissive" } */
+
 typedef unsigned char __u8;
 typedef unsigned short __u16;
 typedef unsigned int __u32;

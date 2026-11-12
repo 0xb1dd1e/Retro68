@@ -1,5 +1,8 @@
 .. role:: switch(samp)
 
+.. role:: ada(code)
+   :language: ada
+
 .. _Representation_Clauses_and_Pragmas:
 
 **********************************
@@ -30,16 +33,18 @@ Alignment Clauses
 
 .. index:: Alignment Clause
 
-GNAT requires that all alignment clauses specify a power of 2, and all
-default alignments are always a power of 2.  The default alignment
-values are as follows:
+GNAT requires that all alignment clauses specify 0 or a power of 2, and
+all default alignments are always a power of 2. Specifying 0 is the
+same as specifying 1.
+
+The default alignment values are as follows:
 
 * *Elementary Types*.
 
   For elementary types, the alignment is the minimum of the actual size of
   objects of the type divided by ``Storage_Unit``,
-  and the maximum alignment supported by the target.
-  (This maximum alignment is given by the GNAT-specific attribute
+  and the maximum default alignment supported by the target.
+  (This maximum default alignment is given by the GNAT-specific attribute
   ``Standard'Maximum_Alignment``; see :ref:`Attribute_Maximum_Alignment`.)
 
   .. index:: Maximum_Alignment attribute
@@ -94,8 +99,7 @@ values are as follows:
   strict alignment.
 
 An alignment clause may specify a larger alignment than the default value
-up to some maximum value dependent on the target (obtainable by using the
-attribute reference ``Standard'Maximum_Alignment``). It may also specify
+up to some maximum value dependent on the target. It may also specify
 a smaller alignment than the default value for enumeration, integer and
 fixed point types, as well as for record types, for example
 
@@ -193,12 +197,12 @@ increasing it.  For example, if we have:
      type My_Boolean is new Boolean;
      for My_Boolean'Size use 32;
 
-then values of this type will always be 32 bits long.  In the case of
-discrete types, the size can be increased up to 64 bits, with the effect
-that the entire specified field is used to hold the value, sign- or
-zero-extended as appropriate.  If more than 64 bits is specified, then
-padding space is allocated after the value, and a warning is issued that
-there are unused bits.
+then values of this type will always be 32-bit long.  In the case of discrete
+types, the size can be increased up to 64 bits on 32-bit targets and 128 bits
+on 64-bit targets, with the effect that the entire specified field is used to
+hold the value, sign- or zero-extended as appropriate.  If more than 64 bits
+or 128 bits resp. is specified, then padding space is allocated after the
+value, and a warning is issued that there are unused bits.
 
 Similarly the size of records and arrays may be increased, and the effect
 is to add padding bits after the value.  This also causes a warning message
@@ -455,14 +459,14 @@ from Ada 83 to Ada 95 or Ada 2005.  For example, consider:
 
 .. code-block:: ada
 
-     type Rec is record;
+     type Rec is record
         A : Natural;
         B : Natural;
      end record;
 
      for Rec use record
-        at 0  range 0 .. Natural'Size - 1;
-        at 0  range Natural'Size .. 2 * Natural'Size - 1;
+        A at 0 range 0 .. Natural'Size - 1;
+        B at 0 range Natural'Size .. 2 * Natural'Size - 1;
      end record;
 
 In the above code, since the typical size of ``Natural`` objects
@@ -523,7 +527,7 @@ The default rules for the value of ``Value_Size`` are as follows:
 
 *
   If a subtype statically matches the first subtype of a given type, then it has
-  by default the same ``Value_Size`` as the first subtype.  This is a
+  by default the same ``Value_Size`` as the first subtype.  (This is a
   consequence of RM 13.1(14): "if two subtypes statically match,
   then their subtype-specific aspects are the same".)
 
@@ -559,28 +563,28 @@ description of the ``Object_Size`` attribute.
 To get a feel for the difference, consider the following examples (note
 that in each case the base is ``Short_Short_Integer`` with a size of 8):
 
-+---------------------------------------------+-------------+-------------+
-|Type or subtype declaration                  | Object_Size |   Value_Size|
-+=============================================+=============+=============+
-|``type x1 is range 0 .. 5;``                 |  8          |    3        |
-+---------------------------------------------+-------------+-------------+
-|``type x2 is range 0 .. 5;``                 | 16          |   12        |
-|``for x2'size use 12;``                      |             |             |
-+---------------------------------------------+-------------+-------------+
-|``subtype x3 is x2 range 0 .. 3;``           | 16          |    2        |
-+---------------------------------------------+-------------+-------------+
-|``subtype x4 is x2'base range 0 .. 10;``     |  8          |    4        |
-+---------------------------------------------+-------------+-------------+
-|``dynamic : x2'Base range -64 .. +63;``      |             |             |
-+---------------------------------------------+-------------+-------------+
-|``subtype x5 is x2 range 0 .. dynamic;``     | 16          |    3*       |
-+---------------------------------------------+-------------+-------------+
-|``subtype x6 is x2'base range 0 .. dynamic;``|  8          |    7*       |
-+---------------------------------------------+-------------+-------------+
++------------------------------------------------+-------------+-------------+
+|Type or subtype declaration                     | Object_Size |   Value_Size|
++================================================+=============+=============+
+|:ada:`type X1 is range 0 .. 5;`                 |  8          |    3        |
++------------------------------------------------+-------------+-------------+
+|:ada:`type X2 is range 0 .. 5;                  | 16          |   12        |
+|for X2'Size use 12;`                            |             |             |
++------------------------------------------------+-------------+-------------+
+|:ada:`subtype X3 is X2 range 0 .. 3;`           | 16          |    2        |
++------------------------------------------------+-------------+-------------+
+|:ada:`subtype X4 is X2'Base range 0 .. 10;`     |  8          |    4        |
++------------------------------------------------+-------------+-------------+
+|:ada:`Dynamic : X2'Base range -64 .. +63;`      |             |             |
++------------------------------------------------+-------------+-------------+
+|:ada:`subtype X5 is X2 range 0 .. Dynamic;`     | 16          |    3*       |
++------------------------------------------------+-------------+-------------+
+|:ada:`subtype X6 is X2'Base range 0 .. Dynamic;`|  8          |    7*       |
++------------------------------------------------+-------------+-------------+
 
 Note: the entries marked '*' are not actually specified by the Ada
 Reference Manual, which has nothing to say about size in the dynamic
-case. What GNAT does is to allocate sufficient bits to accomodate any
+case. What GNAT does is to allocate sufficient bits to accommodate any
 possible dynamic values for the bounds at run-time.
 
 So far, so good, but GNAT has to obey the RM rules, so the question is
@@ -610,14 +614,23 @@ alignment of the type (this is true for all types). In some cases the
      end record;
 
 
-On a typical 32-bit architecture, the X component will be four bytes, and
-require four-byte alignment, and the Y component will be one byte. In this
-case ``R'Value_Size`` will be 40 (bits) since this is the minimum size
-required to store a value of this type, and for example, it is permissible
-to have a component of type R in an outer array whose component size is
-specified to be 48 bits. However, ``R'Object_Size`` will be 64 (bits),
-since it must be rounded up so that this value is a multiple of the
-alignment (4 bytes = 32 bits).
+On a typical 32-bit architecture, the X component will occupy four bytes
+and the Y component will occupy one byte, for a total of 5 bytes. As a
+result ``R'Value_Size`` will be 40 (bits) since this is the minimum size
+required to store a value of this type. For example, it is permissible
+to have a component of type R in an array whose component size is
+specified to be 40 bits.
+
+However, ``R'Object_Size`` will be 64 (bits). The difference is due to
+the alignment requirement for objects of the record type. The X
+component will require four-byte alignment because that is what type
+Integer requires, whereas the Y component, a Character, will only
+require 1-byte alignment. Since the alignment required for X is the
+greatest of all the components' alignments, that is the alignment
+required for the enclosing record type, i.e., 4 bytes or 32 bits. As
+indicated above, the actual object size must be rounded up so that it is
+a multiple of the alignment value. Therefore, 40 bits rounded up to the
+next multiple of 32 yields 64 bits.
 
 For all other types, the ``Object_Size``
 and ``Value_Size`` are the same (and equivalent to the RM attribute ``Size``).
@@ -667,8 +680,9 @@ of this subtype, and must be a multiple of the alignment value.
 
 In addition, component size clauses are allowed which cause the array
 to be packed, by specifying a smaller value.  A first case is for
-component size values in the range 1 through 63.  The value specified
-must not be smaller than the Size of the subtype.  GNAT will accurately
+component size values in the range 1 through 63 on 32-bit targets,
+and 1 through 127 on 64-bit targets.  The value specified may not
+be smaller than the Size of the subtype.  GNAT will accurately
 honor all packing requests in this range.  For example, if we have:
 
 
@@ -861,7 +875,7 @@ Suppose that we have an external device which presents two bytes, the first
 byte presented, which is the first (low addressed byte) of the two byte
 record is called Master, and the second byte is called Slave.
 
-The left most (most significant bit is called Control for each byte, and
+The left most (most significant) bit is called Control for each byte, and
 the remaining 7 bits are called V1, V2, ... V7, where V7 is the rightmost
 (least significant) bit.
 
@@ -1083,7 +1097,8 @@ be one of the following cases:
 * Any small simple record type with a static size.
 
 For all these cases, if the component subtype size is in the range
-1 through 64, then the effect of the pragma ``Pack`` is exactly as though a
+1 through 63 on 32-bit targets, and 1 through 127 on 64-bit targets,
+then the effect of the pragma ``Pack`` is exactly as though a
 component size were specified giving the component subtype size.
 
 All other types are non-packable, they occupy an integral number of storage
@@ -1113,11 +1128,13 @@ using an explicit ``Component_Size`` setting instead, which never generates
 a warning, since the intention of the programmer is clear in this case.
 
 GNAT treats packed arrays in one of two ways.  If the size of the array is
-known at compile time and is less than 64 bits, then internally the array
-is represented as a single modular type, of exactly the appropriate number
-of bits.  If the length is greater than 63 bits, or is not known at compile
-time, then the packed array is represented as an array of bytes, and the
-length is always a multiple of 8 bits.
+known at compile time and is at most 64 bits on 32-bit targets, and at most
+128 bits on 64-bit targets, then internally the array is represented as a
+single modular type, of exactly the appropriate number of bits.  If the
+length is greater than 64 bits on 32-bit targets, and greater than 128
+bits on 64-bit targets, or is not known at compile time, then the packed
+array is represented as an array of bytes, and its length is always a
+multiple of 8 bits.
 
 Note that to represent a packed array as a modular type, the alignment must
 be suitable for the modular type involved. For example, on typical machines
@@ -1189,17 +1206,17 @@ taken by components.  We distinguish between *packable* components and
 Components of the following types are considered packable:
 
 * Components of an elementary type are packable unless they are aliased,
-  independent, or of an atomic type.
+  independent or atomic.
 
 * Small packed arrays, where the size is statically known, are represented
   internally as modular integers, and so they are also packable.
 
 * Small simple records, where the size is statically known, are also packable.
 
-For all these cases, if the ``'Size`` value is in the range 1 through 64, the
-components occupy the exact number of bits corresponding to this value
-and are packed with no padding bits, i.e. they can start on an arbitrary
-bit boundary.
+For all these cases, if the ``'Size`` value is in the range 1 through 64 on
+32-bit targets, and 1 through 128 on 64-bit targets, the components occupy
+the exact number of bits corresponding to this value and are packed with no
+padding bits, i.e. they can start on an arbitrary bit boundary.
 
 All other types are non-packable, they occupy an integral number of storage
 units and the only effect of pragma ``Pack`` is to remove alignment gaps.
@@ -1226,7 +1243,7 @@ For example, consider the record
      end record;
      pragma Pack (X2);
 
-The representation for the record ``X2`` is as follows:
+The representation for the record ``X2`` is as follows on 32-bit targets:
 
 .. code-block:: ada
 
@@ -1241,17 +1258,16 @@ The representation for the record ``X2`` is as follows:
   end record;
 
 Studying this example, we see that the packable fields ``L1``
-and ``L2`` are
-of length equal to their sizes, and placed at specific bit boundaries (and
-not byte boundaries) to
-eliminate padding.  But ``L3`` is of a non-packable float type (because
+and ``L2`` are of length equal to their sizes, and placed at
+specific bit boundaries (and not byte boundaries) to eliminate
+padding.  But ``L3`` is of a non-packable float type (because
 it is aliased), so it is on the next appropriate alignment boundary.
 
 The next two fields are fully packable, so ``L4`` and ``L5`` are
 minimally packed with no gaps.  However, type ``Rb2`` is a packed
-array that is longer than 64 bits, so it is itself non-packable.  Thus
-the ``L6`` field is aligned to the next byte boundary, and takes an
-integral number of bytes, i.e., 72 bits.
+array that is longer than 64 bits, so it is itself non-packable on
+32-bit targets.  Thus the ``L6`` field is aligned to the next byte
+boundary, and takes an integral number of bytes, i.e., 72 bits.
 
 .. _Record_Representation_Clauses:
 
@@ -1272,7 +1288,8 @@ clauses is that the size must be at least the ``'Size`` value of the type
 (actually the Value_Size).  There are no restrictions due to alignment,
 and such components may freely cross storage boundaries.
 
-Packed arrays with a size up to and including 64 bits are represented
+Packed arrays with a size up to and including 64 bits on 32-bit targets,
+and up to and including 128 bits on 64-bit targets, are represented
 internally using a modular type with the appropriate number of bits, and
 thus the same lack of restriction applies.  For example, if you declare:
 
@@ -1285,30 +1302,30 @@ thus the same lack of restriction applies.  For example, if you declare:
 then a component clause for a component of type ``R`` may start on any
 specified bit boundary, and may specify a value of 49 bits or greater.
 
-For packed bit arrays that are longer than 64 bits, there are two
-cases. If the component size is a power of 2 (1,2,4,8,16,32 bits),
-including the important case of single bits or boolean values, then
-there are no limitations on placement of such components, and they
-may start and end at arbitrary bit boundaries.
+For packed bit arrays that are longer than 64 bits on 32-bit targets,
+and longer than 128 bits on 64-bit targets, there are two cases. If the
+component size is a power of 2 (1,2,4,8,16,32,64 bits), including the
+important case of single bits or boolean values, then there are no
+limitations on placement of such components, and they may start and
+end at arbitrary bit boundaries.
 
-If the component size is not a power of 2 (e.g., 3 or 5), then
-an array of this type longer than 64 bits must always be placed on
-on a storage unit (byte) boundary and occupy an integral number
-of storage units (bytes). Any component clause that does not
-meet this requirement will be rejected.
+If the component size is not a power of 2 (e.g., 3 or 5), then an array
+of this type must always be placed on on a storage unit (byte) boundary
+and occupy an integral number of storage units (bytes). Any component
+clause that does not meet this requirement will be rejected.
 
-Any aliased component, or component of an aliased type, must
-have its normal alignment and size. A component clause that
-does not meet this requirement will be rejected.
+Any aliased component, or component of an aliased type, must have its
+normal alignment and size. A component clause that does not meet this
+requirement will be rejected.
 
 The tag field of a tagged type always occupies an address sized field at
 the start of the record.  No component clause may attempt to overlay this
 tag. When a tagged type appears as a component, the tag field must have
 proper alignment
 
-In the case of a record extension ``T1``, of a type ``T``, no component clause applied
-to the type ``T1`` can specify a storage location that would overlap the first
-``T'Size`` bytes of the record.
+In the case of a record extension ``T1``, of a type ``T``, no component
+clause applied to the type ``T1`` can specify a storage location that
+would overlap the first ``T'Object_Size`` bits of the record.
 
 For all other component types, including non-bit-packed arrays,
 the component can be placed at an arbitrary bit boundary,
@@ -1339,8 +1356,7 @@ Handling of Records with Holes
 .. index:: Handling of Records with Holes
 
 As a result of alignment considerations, records may contain "holes"
-or gaps
-which do not correspond to the data bits of any of the components.
+or gaps which do not correspond to the data bits of any of the components.
 Record representation clauses can also result in holes in records.
 
 GNAT does not attempt to clear these holes, so in record objects,
@@ -1566,14 +1582,24 @@ machines with strict alignment requirements, GNAT
 checks (at compile time if possible, generating a warning, or at execution
 time with a run-time check) that the alignment is appropriate.  If the
 run-time check fails, then ``Program_Error`` is raised.  This run-time
-check is suppressed if range checks are suppressed, or if the special GNAT
-check Alignment_Check is suppressed, or if
+check is suppressed if the GNAT check Alignment_Check is suppressed, or if
 ``pragma Restrictions (No_Elaboration_Code)`` is in effect. It is also
 suppressed by default on non-strict alignment machines (such as the x86).
 
-Finally, GNAT does not permit overlaying of objects of class-wide types. In
-most cases, the compiler can detect an attempt at such overlays and will
-generate a warning at compile time and a Program_Error exception at run time.
+In some cases, GNAT does not support an address specification (using either
+form of aspect specification syntax) for the declaration of an object that has
+an indefinite nominal subtype. An object declaration has an indefinite
+nominal subtype if it takes its bounds (for an array type), discriminant
+values (for a discriminated type whose discriminants lack defaults), or tag
+(for a class-wide type) from its initial value, as in
+
+.. code-block:: ada
+
+    X : String := Some_Function_Call;
+    -- String has no constraint, so bounds for X come from function call
+
+This restriction does not apply if the size of the object's initial value is
+known at compile time and the type of the object is not class-wide.
 
 .. index:: Export
 
@@ -1724,7 +1750,7 @@ of the use of this pragma. This may cause an overlay to have this
 unintended clobbering effect. The compiler avoids this for scalar
 types, but not for composite objects (where in general the effect
 of ``Initialize_Scalars`` is part of the initialization routine
-for the composite object:
+for the composite object):
 
 ::
 
@@ -1847,7 +1873,7 @@ conventions, and for example records are laid out in a manner that is
 consistent with C.  This means that specifying convention C (for example)
 has no effect.
 
-There are four exceptions to this general rule:
+There are three exceptions to this general rule:
 
 * *Convention Fortran and array subtypes*.
 

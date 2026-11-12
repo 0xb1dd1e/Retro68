@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1982, 1986, 1990, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
  * (c) UNIX System Laboratories, Inc.
@@ -32,29 +34,19 @@
  * SUCH DAMAGE.
  *
  *	@(#)ttycom.h	8.1 (Berkeley) 3/28/94
- * $FreeBSD: head/sys/sys/ttycom.h 314436 2017-02-28 23:42:47Z imp $
+ * $FreeBSD$
  */
 
 #ifndef	_SYS_TTYCOM_H_
 #define	_SYS_TTYCOM_H_
 
 #include <sys/ioccom.h>
+#include <sys/_winsize.h>
 
 /*
  * Tty ioctl's except for those supported only for backwards compatibility
  * with the old tty driver.
  */
-
-/*
- * Window/terminal size structure.  This information is stored by the kernel
- * in order to provide a consistent interface, but is not used by the kernel.
- */
-struct winsize {
-	unsigned short	ws_row;		/* rows, in characters */
-	unsigned short	ws_col;		/* columns, in characters */
-	unsigned short	ws_xpixel;	/* horizontal size, pixels */
-	unsigned short	ws_ypixel;	/* vertical size, pixels */
-};
 
 						/* 0-2 compat */
 						/* 3-7 unused */

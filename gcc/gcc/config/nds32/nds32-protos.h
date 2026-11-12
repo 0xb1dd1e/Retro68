@@ -1,5 +1,5 @@
 /* Prototypes for exported functions of Andes NDS32 cpu for GNU compiler
-   Copyright (C) 2012-2019 Free Software Foundation, Inc.
+   Copyright (C) 2012-2026 Free Software Foundation, Inc.
    Contributed by Andes Technology Corporation.
 
    This file is part of GCC.
@@ -65,7 +65,7 @@ extern void nds32_emit_v3pop_fpr_callee_saved (int);
 
 /* Controlling Debugging Information Format.  */
 
-extern unsigned int nds32_dbx_register_number (unsigned int);
+extern unsigned int nds32_debugger_regno (unsigned int);
 
 /* ------------------------------------------------------------------------ */
 
@@ -78,7 +78,7 @@ extern rtx nds32_di_low_part_subreg(rtx);
 
 extern rtx nds32_expand_load_multiple (int, int, rtx, rtx, bool, rtx *);
 extern rtx nds32_expand_store_multiple (int, int, rtx, rtx, bool, rtx *);
-extern bool nds32_expand_movmemsi (rtx, rtx, rtx, rtx);
+extern bool nds32_expand_cpymemsi (rtx, rtx, rtx, rtx);
 extern bool nds32_expand_setmem (rtx, rtx, rtx, rtx, rtx, rtx);
 extern bool nds32_expand_strlen (rtx, rtx, rtx, rtx);
 

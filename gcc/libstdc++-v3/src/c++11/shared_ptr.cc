@@ -1,6 +1,6 @@
 // Support for pointer abstractions -*- C++ -*-
 
-// Copyright (C) 2011-2019 Free Software Foundation, Inc.
+// Copyright (C) 2011-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -34,7 +34,17 @@ namespace __gnu_internal _GLIBCXX_VISIBILITY(hidden)
   __gnu_cxx::__mutex&
   get_mutex(unsigned char i)
   {
-    static __gnu_cxx::__mutex m[mask + 1];
+#ifdef _GLIBCXX_CAN_ALIGNAS_DESTRUCTIVE_SIZE
+    // Increase alignment to put each lock on a separate cache line.
+    struct alignas(__GCC_DESTRUCTIVE_SIZE) M : __gnu_cxx::__mutex { };
+#else
+    using M = __gnu_cxx::__mutex;
+#endif
+    // Use a static buffer, so that the mutexes are not destructed
+    // before potential users (or at all)
+    static __attribute__ ((aligned(__alignof__(M))))
+      char buffer[(sizeof (M)) * (mask + 1)];
+    static M *m = new (buffer) M[mask + 1];
     return m[i];
   }
 }
@@ -95,7 +105,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 #endif
 
   bool
-  _Sp_make_shared_tag::_S_eq(const type_info& ti) noexcept
+  _Sp_make_shared_tag::_S_eq(const type_info& ti [[gnu::unused]]) noexcept
   {
 #if __cpp_rtti
     return ti == typeid(_Sp_make_shared_tag);

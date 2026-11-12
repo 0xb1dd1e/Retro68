@@ -1,5 +1,5 @@
 /* Select disassembly routine for specified architecture.
-   Copyright (C) 1994-2018 Free Software Foundation, Inc.
+   Copyright (C) 1994-2026 Free Software Foundation, Inc.
 
    This file is part of the GNU opcodes library.
 
@@ -21,11 +21,22 @@
 #include "sysdep.h"
 #include "disassemble.h"
 #include "safe-ctype.h"
-#include <assert.h>
+#include "opintl.h"
 
 #ifdef ARCH_all
+#ifdef BFD64
 #define ARCH_aarch64
 #define ARCH_alpha
+#define ARCH_bpf
+#define ARCH_ia64
+#define ARCH_loongarch
+#define ARCH_mips
+#define ARCH_mmix
+#define ARCH_nfp
+#define ARCH_riscv
+#define ARCH_score
+#define ARCH_tilegx
+#endif
 #define ARCH_arc
 #define ARCH_arm
 #define ARCH_avr
@@ -33,6 +44,7 @@
 #define ARCH_cr16
 #define ARCH_cris
 #define ARCH_crx
+#define ARCH_csky
 #define ARCH_d10v
 #define ARCH_d30v
 #define ARCH_dlx
@@ -43,9 +55,9 @@
 #define ARCH_h8300
 #define ARCH_hppa
 #define ARCH_i386
-#define ARCH_ia64
 #define ARCH_ip2k
 #define ARCH_iq2000
+#define ARCH_kvx
 #define ARCH_lm32
 #define ARCH_m32c
 #define ARCH_m32r
@@ -56,28 +68,23 @@
 #define ARCH_mep
 #define ARCH_metag
 #define ARCH_microblaze
-#define ARCH_mips
-#define ARCH_mmix
 #define ARCH_mn10200
 #define ARCH_mn10300
 #define ARCH_moxie
 #define ARCH_mt
 #define ARCH_msp430
 #define ARCH_nds32
-#define ARCH_nfp
-#define ARCH_nios2
 #define ARCH_ns32k
 #define ARCH_or1k
 #define ARCH_pdp11
 #define ARCH_pj
 #define ARCH_powerpc
 #define ARCH_pru
-#define ARCH_riscv
 #define ARCH_rs6000
 #define ARCH_rl78
 #define ARCH_rx
+#define ARCH_s12z
 #define ARCH_s390
-#define ARCH_score
 #define ARCH_sh
 #define ARCH_sparc
 #define ARCH_spu
@@ -85,15 +92,12 @@
 #define ARCH_tic4x
 #define ARCH_tic54x
 #define ARCH_tic6x
-#define ARCH_tic80
-#define ARCH_tilegx
 #define ARCH_tilepro
 #define ARCH_v850
 #define ARCH_vax
 #define ARCH_visium
 #define ARCH_wasm32
 #define ARCH_xstormy16
-#define ARCH_xc16x
 #define ARCH_xgate
 #define ARCH_xtensa
 #define ARCH_z80
@@ -106,7 +110,7 @@
 
 disassembler_ftype
 disassembler (enum bfd_architecture a,
-	      bfd_boolean big ATTRIBUTE_UNUSED,
+	      bool big ATTRIBUTE_UNUSED,
 	      unsigned long mach ATTRIBUTE_UNUSED,
 	      bfd *abfd ATTRIBUTE_UNUSED)
 {
@@ -164,6 +168,12 @@ disassembler (enum bfd_architecture a,
       disassemble = print_insn_crx;
       break;
 #endif
+#ifdef ARCH_csky
+    case bfd_arch_csky:
+      disassemble = csky_get_disassembler (abfd);
+      break;
+#endif
+
 #ifdef ARCH_d10v
     case bfd_arch_d10v:
       disassemble = print_insn_d10v;
@@ -201,8 +211,6 @@ disassembler (enum bfd_architecture a,
 #ifdef ARCH_i386
     case bfd_arch_i386:
     case bfd_arch_iamcu:
-    case bfd_arch_l1om:
-    case bfd_arch_k1om:
       disassemble = print_insn_i386;
       break;
 #endif
@@ -216,6 +224,11 @@ disassembler (enum bfd_architecture a,
       disassemble = print_insn_ip2k;
       break;
 #endif
+#ifdef ARCH_bpf
+    case bfd_arch_bpf:
+      disassemble = print_insn_bpf;
+      break;
+#endif
 #ifdef ARCH_epiphany
     case bfd_arch_epiphany:
       disassemble = print_insn_epiphany;
@@ -224,6 +237,11 @@ disassembler (enum bfd_architecture a,
 #ifdef ARCH_fr30
     case bfd_arch_fr30:
       disassemble = print_insn_fr30;
+      break;
+#endif
+#ifdef ARCH_kvx
+    case bfd_arch_kvx:
+      disassemble = print_insn_kvx;
       break;
 #endif
 #ifdef ARCH_lm32
@@ -329,14 +347,6 @@ disassembler (enum bfd_architecture a,
       disassemble = print_insn_mn10300;
       break;
 #endif
-#ifdef ARCH_nios2
-    case bfd_arch_nios2:
-      if (big)
-	disassemble = print_insn_big_nios2;
-      else
-	disassemble = print_insn_little_nios2;
-      break;
-#endif
 #ifdef ARCH_or1k
     case bfd_arch_or1k:
       disassemble = print_insn_or1k;
@@ -433,11 +443,6 @@ disassembler (enum bfd_architecture a,
       disassemble = print_insn_tic6x;
       break;
 #endif
-#ifdef ARCH_tic80
-    case bfd_arch_tic80:
-      disassemble = print_insn_tic80;
-      break;
-#endif
 #ifdef ARCH_ft32
     case bfd_arch_ft32:
       disassemble = print_insn_ft32;
@@ -462,11 +467,6 @@ disassembler (enum bfd_architecture a,
 #ifdef ARCH_xstormy16
     case bfd_arch_xstormy16:
       disassemble = print_insn_xstormy16;
-      break;
-#endif
-#ifdef ARCH_xc16x
-    case bfd_arch_xc16x:
-      disassemble = print_insn_xc16x;
       break;
 #endif
 #ifdef ARCH_xtensa
@@ -527,6 +527,11 @@ disassembler (enum bfd_architecture a,
       disassemble = print_insn_tilepro;
       break;
 #endif
+#ifdef ARCH_loongarch
+    case bfd_arch_loongarch:
+      disassemble = print_insn_loongarch;
+      break;
+#endif
     default:
       return 0;
     }
@@ -560,13 +565,21 @@ disassembler_usage (FILE *stream ATTRIBUTE_UNUSED)
 #ifdef ARCH_i386
   print_i386_disassembler_options (stream);
 #endif
+#ifdef ARCH_kvx
+  print_kvx_disassembler_options (stream);
+#endif
 #ifdef ARCH_s390
   print_s390_disassembler_options (stream);
 #endif
 #ifdef ARCH_wasm32
   print_wasm32_disassembler_options (stream);
 #endif
-
+#ifdef ARCH_loongarch
+  print_loongarch_disassembler_options (stream);
+#endif
+#ifdef ARCH_bpf
+  print_bpf_disassembler_options (stream);
+#endif
   return;
 }
 
@@ -581,13 +594,37 @@ disassemble_init_for_target (struct disassemble_info * info)
 #ifdef ARCH_aarch64
     case bfd_arch_aarch64:
       info->symbol_is_valid = aarch64_symbol_is_valid;
-      info->disassembler_needs_relocs = TRUE;
+      info->disassembler_needs_relocs = true;
+      info->created_styled_output = true;
+      break;
+#endif
+#ifdef ARCH_arc
+    case bfd_arch_arc:
+      info->created_styled_output = true;
       break;
 #endif
 #ifdef ARCH_arm
     case bfd_arch_arm:
       info->symbol_is_valid = arm_symbol_is_valid;
-      info->disassembler_needs_relocs = TRUE;
+      info->disassembler_needs_relocs = true;
+      info->created_styled_output = true;
+      break;
+#endif
+#ifdef ARCH_avr
+    case bfd_arch_avr:
+      info->created_styled_output = true;
+      break;
+#endif
+#ifdef ARCH_csky
+    case bfd_arch_csky:
+      info->symbol_is_valid = csky_symbol_is_valid;
+      info->disassembler_needs_relocs = true;
+      break;
+#endif
+#ifdef ARCH_i386
+    case bfd_arch_i386:
+    case bfd_arch_iamcu:
+      info->created_styled_output = true;
       break;
 #endif
 #ifdef ARCH_ia64
@@ -595,9 +632,19 @@ disassemble_init_for_target (struct disassemble_info * info)
       info->skip_zeroes = 16;
       break;
 #endif
+#ifdef ARCH_loongarch
+    case bfd_arch_loongarch:
+      info->created_styled_output = true;
+      break;
+#endif
 #ifdef ARCH_tic4x
     case bfd_arch_tic4x:
       info->skip_zeroes = 32;
+      break;
+#endif
+#ifdef ARCH_m68k
+    case bfd_arch_m68k:
+      info->created_styled_output = true;
       break;
 #endif
 #ifdef ARCH_mep
@@ -608,7 +655,12 @@ disassemble_init_for_target (struct disassemble_info * info)
 #endif
 #ifdef ARCH_metag
     case bfd_arch_metag:
-      info->disassembler_needs_relocs = TRUE;
+      info->disassembler_needs_relocs = true;
+      break;
+#endif
+#ifdef ARCH_mips
+    case bfd_arch_mips:
+      info->created_styled_output = true;
       break;
 #endif
 #ifdef ARCH_m32c
@@ -616,19 +668,24 @@ disassemble_init_for_target (struct disassemble_info * info)
       /* This processor in fact is little endian.  The value set here
 	 reflects the way opcodes are written in the cgen description.  */
       info->endian = BFD_ENDIAN_BIG;
-      if (! info->insn_sets)
+      if (!info->private_data)
 	{
-	  info->insn_sets = cgen_bitset_create (ISA_MAX);
+	  info->private_data = cgen_bitset_create (ISA_MAX);
 	  if (info->mach == bfd_mach_m16c)
-	    cgen_bitset_set (info->insn_sets, ISA_M16C);
+	    cgen_bitset_set (info->private_data, ISA_M16C);
 	  else
-	    cgen_bitset_set (info->insn_sets, ISA_M32C);
+	    cgen_bitset_set (info->private_data, ISA_M32C);
 	}
+      break;
+#endif
+#ifdef ARCH_bpf
+    case bfd_arch_bpf:
+      info->created_styled_output = true;
       break;
 #endif
 #ifdef ARCH_pru
     case bfd_arch_pru:
-      info->disassembler_needs_relocs = TRUE;
+      info->disassembler_needs_relocs = true;
       break;
 #endif
 #ifdef ARCH_powerpc
@@ -639,6 +696,13 @@ disassemble_init_for_target (struct disassemble_info * info)
 #endif
 #if defined (ARCH_powerpc) || defined (ARCH_rs6000)
       disassemble_init_powerpc (info);
+      info->created_styled_output = true;
+      break;
+#endif
+#ifdef ARCH_riscv
+    case bfd_arch_riscv:
+      info->symbol_is_valid = riscv_symbol_is_valid;
+      info->created_styled_output = true;
       break;
 #endif
 #ifdef ARCH_wasm32
@@ -649,11 +713,75 @@ disassemble_init_for_target (struct disassemble_info * info)
 #ifdef ARCH_s390
     case bfd_arch_s390:
       disassemble_init_s390 (info);
+      info->created_styled_output = true;
       break;
 #endif
+#ifdef ARCH_nds32
+    case bfd_arch_nds32:
+      disassemble_init_nds32 (info);
+      break;
+ #endif
     default:
       break;
     }
+}
+
+void
+disassemble_free_target (struct disassemble_info *info)
+{
+  if (info == NULL)
+    return;
+
+  switch (info->arch)
+    {
+    default:
+      return;
+
+#ifdef ARCH_m32c
+    case bfd_arch_m32c:
+#endif
+#if defined ARCH_m32c
+      if (info->private_data)
+	{
+	  CGEN_BITSET *mask = info->private_data;
+	  free (mask->bits);
+	}
+      break;
+#endif
+
+#ifdef ARCH_arc
+    case bfd_arch_arc:
+      break;
+#endif
+#ifdef ARCH_cris
+    case bfd_arch_cris:
+      break;
+#endif
+#ifdef ARCH_mmix
+    case bfd_arch_mmix:
+      break;
+#endif
+#ifdef ARCH_nfp
+    case bfd_arch_nfp:
+      break;
+#endif
+#ifdef ARCH_powerpc
+    case bfd_arch_powerpc:
+      disassemble_free_powerpc (info);
+      break;
+#endif
+#ifdef ARCH_riscv
+    case bfd_arch_riscv:
+      disassemble_free_riscv (info);
+      break;
+#endif
+#ifdef ARCH_rs6000
+    case bfd_arch_rs6000:
+      break;
+#endif
+    }
+
+  free (info->private_data);
 }
 
 /* Remove whitespace and consecutive commas from OPTIONS.  */
@@ -696,26 +824,49 @@ remove_whitespace_and_extra_commas (char *options)
   return (strlen (options) != 0) ? options : NULL;
 }
 
-/* Like STRCMP, but treat ',' the same as '\0' so that we match
-   strings like "foobar" against "foobar,xxyyzz,...".  */
+/* Call FUNC for each comma separated option in INFO->disassembler_options,
+   passing a zero terminated option and DATA.  The iteration terminates
+   should FUNC return false.  */
 
-int
-disassembler_options_cmp (const char *s1, const char *s2)
+bool
+for_each_disassembler_option (struct disassemble_info *info,
+			      bool (*func) (const char *, void *),
+			      void *data)
 {
-  unsigned char c1, c2;
+  char *opt = (char *) info->disassembler_options;
+  bool ok = true;
+  if (opt != NULL)
+    while (ok)
+      {
+	char *opt_end = strchr (opt, ',');
+	if (opt_end != NULL)
+	  *opt_end = 0;
+	ok = func (opt, data);
+	if (opt_end == NULL)
+	  break;
+	*opt_end = ',';
+	opt = opt_end + 1;
+      }
+  return ok;
+}
 
-  do
-    {
-      c1 = (unsigned char) *s1++;
-      if (c1 == ',')
-	c1 = '\0';
-      c2 = (unsigned char) *s2++;
-      if (c2 == ',')
-	c2 = '\0';
-      if (c1 == '\0')
-	return c1 - c2;
-    }
-  while (c1 == c2);
+void
+opcodes_assert (const char *file, int line)
+{
+  opcodes_error_handler (_("assertion fail %s:%d"), file, line);
+  opcodes_error_handler (_("Please report this bug"));
+  abort ();
+}
 
-  return c1 - c2;
+/* Set the stream, and the styled and unstyled printf functions within
+   INFO.  */
+
+void
+disassemble_set_printf (struct disassemble_info *info, void *stream,
+			fprintf_ftype unstyled_printf,
+			fprintf_styled_ftype styled_printf)
+{
+  info->stream = stream;
+  info->fprintf_func = unstyled_printf;
+  info->fprintf_styled_func = styled_printf;
 }

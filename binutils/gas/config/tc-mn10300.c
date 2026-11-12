@@ -1,5 +1,5 @@
 /* tc-mn10300.c -- Assembler code for the Matsushita 10300
-   Copyright (C) 1996-2018 Free Software Foundation, Inc.
+   Copyright (C) 1996-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -107,21 +107,21 @@ static int fc;
    verify that certain registers do not match.  */
 int mn10300_reg_operands[MN10300_MAX_OPERANDS];
 
-const char *md_shortopts = "";
+const char md_shortopts[] = "";
 
-struct option md_longopts[] =
+const struct option md_longopts[] =
 {
   {NULL, no_argument, NULL, 0}
 };
 
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 #define HAVE_AM33_2 (current_machine == AM33_2)
 #define HAVE_AM33   (current_machine == AM33 || HAVE_AM33_2)
 #define HAVE_AM30   (current_machine == AM30)
 
 /* Opcode hash table.  */
-static struct hash_control *mn10300_hash;
+static htab_t mn10300_hash;
 
 /* This table is sorted. Suitable for searching by a binary search.  */
 static const struct reg_name data_registers[] =
@@ -323,7 +323,7 @@ reg_name_search (const struct reg_name *regs,
    the name and the function returns TRUE.  Otherwise the input pointer
    is left alone and the function returns FALSE.  */
 
-static bfd_boolean
+static bool
 get_register_name (expressionS *           expressionP,
 		   const struct reg_name * table,
 		   size_t                  table_length)
@@ -352,52 +352,52 @@ get_register_name (expressionS *           expressionP,
       expressionP->X_add_symbol = NULL;
       expressionP->X_op_symbol = NULL;
 
-      return TRUE;
+      return true;
     }
 
   /* Reset the line as if we had not done anything.  */
   input_line_pointer = start;
-  return FALSE;
+  return false;
 }
 
-static bfd_boolean
+static bool
 r_register_name (expressionS *expressionP)
 {
   return get_register_name (expressionP, r_registers, ARRAY_SIZE (r_registers));
 }
 
 
-static bfd_boolean
+static bool
 xr_register_name (expressionS *expressionP)
 {
   return get_register_name (expressionP, xr_registers, ARRAY_SIZE (xr_registers));
 }
 
-static bfd_boolean
+static bool
 data_register_name (expressionS *expressionP)
 {
   return get_register_name (expressionP, data_registers, ARRAY_SIZE (data_registers));
 }
 
-static bfd_boolean
+static bool
 address_register_name (expressionS *expressionP)
 {
   return get_register_name (expressionP, address_registers, ARRAY_SIZE (address_registers));
 }
 
-static bfd_boolean
+static bool
 float_register_name (expressionS *expressionP)
 {
   return get_register_name (expressionP, float_registers, ARRAY_SIZE (float_registers));
 }
 
-static bfd_boolean
+static bool
 double_register_name (expressionS *expressionP)
 {
   return get_register_name (expressionP, double_registers, ARRAY_SIZE (double_registers));
 }
 
-static bfd_boolean
+static bool
 other_register_name (expressionS *expressionP)
 {
   int reg_number;
@@ -425,12 +425,12 @@ other_register_name (expressionS *expressionP)
       expressionP->X_add_symbol = NULL;
       expressionP->X_op_symbol = NULL;
 
-      return TRUE;
+      return true;
     }
 
   /* Reset the line as if we had not done anything.  */
   input_line_pointer = start;
-  return FALSE;
+  return false;
 }
 
 void
@@ -455,7 +455,7 @@ md_undefined_symbol (char *name ATTRIBUTE_UNUSED)
 const char *
 md_atof (int type, char *litp, int *sizep)
 {
-  return ieee_md_atof (type, litp, sizep, FALSE);
+  return ieee_md_atof (type, litp, sizep, false);
 }
 
 void
@@ -466,7 +466,6 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED,
   static unsigned long label_count = 0;
   char buf[40];
 
-  subseg_change (sec, 0);
   if (fragP->fr_subtype == 0)
     {
       fix_new (fragP, fragP->fr_fix + 1, 1, fragP->fr_symbol,
@@ -520,7 +519,7 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED,
       /* Create a fixup for the reversed conditional branch.  */
       sprintf (buf, ".%s_%ld", FAKE_LABEL_NAME, label_count++);
       fix_new (fragP, fragP->fr_fix + 1, 1,
-	       symbol_new (buf, sec, 0, fragP->fr_next),
+	       symbol_new (buf, sec, fragP->fr_next, 0),
 	       fragP->fr_offset + 1, 1, BFD_RELOC_8_PCREL);
 
       /* Now create the unconditional branch + fixup to the
@@ -577,7 +576,7 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED,
       /* Create a fixup for the reversed conditional branch.  */
       sprintf (buf, ".%s_%ld", FAKE_LABEL_NAME, label_count++);
       fix_new (fragP, fragP->fr_fix + 1, 1,
-	       symbol_new (buf, sec, 0, fragP->fr_next),
+	       symbol_new (buf, sec, fragP->fr_next, 0),
 	       fragP->fr_offset + 1, 1, BFD_RELOC_8_PCREL);
 
       /* Now create the unconditional branch + fixup to the
@@ -623,7 +622,7 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED,
       /* Create a fixup for the reversed conditional branch.  */
       sprintf (buf, ".%s_%ld", FAKE_LABEL_NAME, label_count++);
       fix_new (fragP, fragP->fr_fix + 2, 1,
-	       symbol_new (buf, sec, 0, fragP->fr_next),
+	       symbol_new (buf, sec, fragP->fr_next, 0),
 	       fragP->fr_offset + 2, 1, BFD_RELOC_8_PCREL);
 
       /* Now create the unconditional branch + fixup to the
@@ -659,7 +658,7 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED,
       /* Create a fixup for the reversed conditional branch.  */
       sprintf (buf, ".%s_%ld", FAKE_LABEL_NAME, label_count++);
       fix_new (fragP, fragP->fr_fix + 2, 1,
-	       symbol_new (buf, sec, 0, fragP->fr_next),
+	       symbol_new (buf, sec, fragP->fr_next, 0),
 	       fragP->fr_offset + 2, 1, BFD_RELOC_8_PCREL);
 
       /* Now create the unconditional branch + fixup to the
@@ -813,7 +812,7 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED,
       /* Create a fixup for the reversed conditional branch.  */
       sprintf (buf, ".%s_%ld", FAKE_LABEL_NAME, label_count++);
       fix_new (fragP, fragP->fr_fix + 2, 1,
-	       symbol_new (buf, sec, 0, fragP->fr_next),
+	       symbol_new (buf, sec, fragP->fr_next, 0),
 	       fragP->fr_offset + 2, 1, BFD_RELOC_8_PCREL);
 
       /* Now create the unconditional branch + fixup to the
@@ -882,7 +881,7 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED,
       /* Create a fixup for the reversed conditional branch.  */
       sprintf (buf, ".%s_%ld", FAKE_LABEL_NAME, label_count++);
       fix_new (fragP, fragP->fr_fix + 2, 1,
-	       symbol_new (buf, sec, 0, fragP->fr_next),
+	       symbol_new (buf, sec, fragP->fr_next, 0),
 	       fragP->fr_offset + 2, 1, BFD_RELOC_8_PCREL);
 
       /* Now create the unconditional branch + fixup to the
@@ -900,9 +899,9 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED,
 valueT
 md_section_align (asection *seg, valueT addr)
 {
-  int align = bfd_get_section_alignment (stdoutput, seg);
+  int align = bfd_section_alignment (seg);
 
-  return ((addr + (1 << align) - 1) & -(1 << align));
+  return (addr + ((valueT) 1 << align) - 1) & -((valueT) 1 << align);
 }
 
 void
@@ -911,7 +910,7 @@ md_begin (void)
   const char *prev_name = "";
   const struct mn10300_opcode *op;
 
-  mn10300_hash = hash_new ();
+  mn10300_hash = str_htab_create ();
 
   /* Insert unique names into hash table.  The MN10300 instruction set
      has many identical opcode names that have different opcodes based
@@ -923,8 +922,8 @@ md_begin (void)
     {
       if (strcmp (prev_name, op->name))
 	{
-	  prev_name = (char *) op->name;
-	  hash_insert (mn10300_hash, op->name, (char *) op);
+	  prev_name = op->name;
+	  str_hash_insert (mn10300_hash, op->name, op, 0);
 	}
       op++;
     }
@@ -1073,7 +1072,7 @@ mn10300_cons_fix_new (fragS *frag, int off, int size, expressionS *exp,
   fix_new_exp (frag, off, size, &fixup.exp, 0, fixup.reloc);
 }
 
-static bfd_boolean
+static bool
 check_operand (const struct mn10300_operand *operand,
 	       offsetT val)
 {
@@ -1103,10 +1102,10 @@ check_operand (const struct mn10300_operand *operand,
 
       test = val;
 
-      if (test < (offsetT) min || test > (offsetT) max)
-	return FALSE;
+      if (test < min || test > max)
+	return false;
     }
-  return TRUE;
+  return true;
 }
 
 /* Insert an operand value into an instruction.  */
@@ -1146,8 +1145,9 @@ mn10300_insert_operand (unsigned long *insnp,
 
       test = val;
 
-      if (test < (offsetT) min || test > (offsetT) max)
-	as_warn_value_out_of_range (_("operand"), test, (offsetT) min, (offsetT) max, file, line);
+      if (test < min || test > max)
+	as_warn_value_out_of_range (_("operand"), test, (offsetT) min,
+				    (offsetT) max, file, line);
     }
 
   if ((operand->flags & MN10300_OPERAND_SPLIT) != 0)
@@ -1209,20 +1209,20 @@ mn10300_insert_operand (unsigned long *insnp,
     }
   else if ((operand->flags & MN10300_OPERAND_EXTENDED) == 0)
     {
-      *insnp |= (((long) val & ((1 << operand->bits) - 1))
+      *insnp |= ((val & ((1 << operand->bits) - 1))
 		 << (operand->shift + shift));
 
       if ((operand->flags & MN10300_OPERAND_REPEATED) != 0)
-	*insnp |= (((long) val & ((1 << operand->bits) - 1))
+	*insnp |= ((val & ((1 << operand->bits) - 1))
 		   << (operand->shift + shift + operand->bits));
     }
   else
     {
-      *extensionp |= (((long) val & ((1 << operand->bits) - 1))
+      *extensionp |= ((val & ((1 << operand->bits) - 1))
 		      << (operand->shift + shift));
 
       if ((operand->flags & MN10300_OPERAND_REPEATED) != 0)
-	*extensionp |= (((long) val & ((1 << operand->bits) - 1))
+	*extensionp |= ((val & ((1 << operand->bits) - 1))
 			<< (operand->shift + shift + operand->bits));
     }
 }
@@ -1241,13 +1241,13 @@ md_assemble (char *str)
   int match;
 
   /* Get the opcode.  */
-  for (s = str; *s != '\0' && !ISSPACE (*s); s++)
+  for (s = str; !is_end_of_stmt (*s) && !is_whitespace (*s); s++)
     ;
   if (*s != '\0')
     *s++ = '\0';
 
   /* Find the first opcode with the proper name.  */
-  opcode = (struct mn10300_opcode *) hash_find (mn10300_hash, str);
+  opcode = str_hash_find (mn10300_hash, str);
   if (opcode == NULL)
     {
       as_bad (_("Unrecognized opcode: `%s'"), str);
@@ -1255,7 +1255,7 @@ md_assemble (char *str)
     }
 
   str = s;
-  while (ISSPACE (*str))
+  while (is_whitespace (*str))
     ++str;
 
   input_line_pointer = str;
@@ -1304,7 +1304,7 @@ md_assemble (char *str)
 	      next_opindex = 0;
 	    }
 
-	  while (*str == ' ' || *str == ',')
+	  while (is_whitespace (*str) || *str == ',')
 	    ++str;
 
 	  if (operand->flags & MN10300_OPERAND_RELAX)
@@ -1669,6 +1669,7 @@ md_assemble (char *str)
 	  else
 	    {
 	      expression (&ex);
+	      resolve_register (&ex);
 	    }
 
 	  switch (ex.X_op)
@@ -1759,11 +1760,11 @@ md_assemble (char *str)
 	      break;
 	    }
 
-keep_going:
+	keep_going:
 	  str = input_line_pointer;
 	  input_line_pointer = hold;
 
-	  while (*str == ' ' || *str == ',')
+	  while (is_whitespace (*str) || *str == ',')
 	    ++str;
 	}
 
@@ -1814,10 +1815,10 @@ keep_going:
       break;
     }
 
-  while (ISSPACE (*str))
+  while (is_whitespace (*str))
     ++str;
 
-  if (*str != '\0')
+  if (!is_end_of_stmt (*str))
     as_bad (_("junk at end of line: `%s'"), str);
 
   input_line_pointer = str;
@@ -2144,7 +2145,7 @@ keep_going:
 
 	      fixP = fix_new_exp (frag_now, f - frag_now->fr_literal + offset,
 				  reloc_size / 8, &fixups[i].exp, pcrel,
-				  ((bfd_reloc_code_real_type) reloc));
+				  reloc);
 
 	      if (pcrel)
 		fixP->fx_offset += offset;
@@ -2155,7 +2156,7 @@ keep_going:
     }
 
   /* Label this frag as one that contains instructions.  */
-  frag_now->tc_frag_data = TRUE;
+  frag_now->tc_frag_data = true;
 }
 
 /* If while processing a fixup, a reloc really needs to be created
@@ -2168,7 +2169,7 @@ tc_gen_reloc (asection *seg ATTRIBUTE_UNUSED, fixS *fixp)
   static arelent * relocs[MAX_RELOC_EXPANSION + 1];
   arelent *reloc;
 
-  reloc = XNEW (arelent);
+  reloc = notes_alloc (sizeof (arelent));
 
   reloc->howto = bfd_reloc_type_lookup (stdoutput, fixp->fx_r_type);
   if (reloc->howto == NULL)
@@ -2176,8 +2177,7 @@ tc_gen_reloc (asection *seg ATTRIBUTE_UNUSED, fixS *fixp)
       as_bad_where (fixp->fx_file, fixp->fx_line,
 		    _("reloc %d not supported by object file format"),
 		    (int) fixp->fx_r_type);
-      free (reloc);
-      return & no_relocs;
+      return &no_relocs;
     }
 
   reloc->address = fixp->fx_frag->fr_address + fixp->fx_where;
@@ -2204,7 +2204,7 @@ tc_gen_reloc (asection *seg ATTRIBUTE_UNUSED, fixS *fixp)
 	 even local symbols defined in the same section.  */
       if (ssec != absolute_section || asec != absolute_section)
 	{
-	  arelent * reloc2 = XNEW (arelent);
+	  arelent *reloc2 = notes_alloc (sizeof (arelent));
 
 	  relocs[0] = reloc2;
 	  relocs[1] = reloc;
@@ -2212,18 +2212,18 @@ tc_gen_reloc (asection *seg ATTRIBUTE_UNUSED, fixS *fixp)
 	  reloc2->address = reloc->address;
 	  reloc2->howto = bfd_reloc_type_lookup (stdoutput, BFD_RELOC_MN10300_SYM_DIFF);
 	  reloc2->addend = - S_GET_VALUE (fixp->fx_subsy);
-	  reloc2->sym_ptr_ptr = XNEW (asymbol *);
+	  reloc2->sym_ptr_ptr = notes_alloc (sizeof (asymbol *));
 	  *reloc2->sym_ptr_ptr = symbol_get_bfdsym (fixp->fx_subsy);
 
 	  reloc->addend = fixp->fx_offset;
 	  if (asec == absolute_section)
 	    {
 	      reloc->addend += S_GET_VALUE (fixp->fx_addsy);
-	      reloc->sym_ptr_ptr = bfd_abs_section_ptr->symbol_ptr_ptr;
+	      reloc->sym_ptr_ptr = &bfd_abs_section_ptr->symbol;
 	    }
 	  else
 	    {
-	      reloc->sym_ptr_ptr = XNEW (asymbol *);
+	      reloc->sym_ptr_ptr = notes_alloc (sizeof (asymbol *));
 	      *reloc->sym_ptr_ptr = symbol_get_bfdsym (fixp->fx_addsy);
 	    }
 
@@ -2257,18 +2257,16 @@ tc_gen_reloc (asection *seg ATTRIBUTE_UNUSED, fixS *fixp)
 	      break;
 
 	    default:
-	      reloc->sym_ptr_ptr
-		= (asymbol **) bfd_abs_section_ptr->symbol_ptr_ptr;
+	      reloc->sym_ptr_ptr = &bfd_abs_section_ptr->symbol;
 	      return relocs;
 	    }
 
-	  free (reloc);
-	  return & no_relocs;
+	  return &no_relocs;
 	}
     }
   else
     {
-      reloc->sym_ptr_ptr = XNEW (asymbol *);
+      reloc->sym_ptr_ptr = notes_alloc (sizeof (asymbol *));
       *reloc->sym_ptr_ptr = symbol_get_bfdsym (fixp->fx_addsy);
       reloc->addend = fixp->fx_offset;
     }
@@ -2278,7 +2276,7 @@ tc_gen_reloc (asection *seg ATTRIBUTE_UNUSED, fixS *fixp)
 /* Returns true iff the symbol attached to the frag is at a known location
    in the given section, (and hence the relocation to it can be relaxed by
    the assembler).  */
-static inline bfd_boolean
+static inline bool
 has_known_symbol_location (fragS * fragp, asection * sec)
 {
   symbolS * sym = fragp->fr_symbol;
@@ -2314,7 +2312,7 @@ md_estimate_size_before_relax (fragS *fragp, asection *seg)
 long
 md_pcrel_from (fixS *fixp)
 {
-  if (fixp->fx_addsy != (symbolS *) NULL
+  if (fixp->fx_addsy != NULL
       && (!S_IS_DEFINED (fixp->fx_addsy) || S_IS_WEAK (fixp->fx_addsy)))
     /* The symbol is undefined or weak.  Let the linker figure it out.  */
     return 0;
@@ -2327,7 +2325,7 @@ md_apply_fix (fixS * fixP, valueT * valP, segT seg)
 {
   char * fixpos = fixP->fx_where + fixP->fx_frag->fr_literal;
   int size = 0;
-  int value = (int) * valP;
+  int value = *valP;
 
   gas_assert (fixP->fx_r_type < BFD_RELOC_UNUSED);
 
@@ -2400,37 +2398,37 @@ md_apply_fix (fixS * fixP, valueT * valP, segT seg)
 /* Return zero if the fixup in fixp should be left alone and not
    adjusted.  */
 
-bfd_boolean
+bool
 mn10300_fix_adjustable (struct fix *fixp)
 {
   if (fixp->fx_pcrel)
     {
       if (TC_FORCE_RELOCATION_LOCAL (fixp))
-	return FALSE;
+	return false;
     }
   /* Non-relative relocs can (and must) be adjusted if they do
      not meet the criteria below, or the generic criteria.  */
   else if (TC_FORCE_RELOCATION (fixp))
-    return FALSE;
+    return false;
 
   /* Do not adjust relocations involving symbols in code sections,
      because it breaks linker relaxations.  This could be fixed in the
      linker, but this fix is simpler, and it pretty much only affects
      object size a little bit.  */
   if (S_GET_SEGMENT (fixp->fx_addsy)->flags & SEC_CODE)
-    return FALSE;
+    return false;
 
   /* Likewise, do not adjust symbols that won't be merged, or debug
      symbols, because they too break relaxation.  We do want to adjust
      other mergeable symbols, like .rodata, because code relaxations
      need section-relative symbols to properly relax them.  */
   if (! (S_GET_SEGMENT (fixp->fx_addsy)->flags & SEC_MERGE))
-    return FALSE;
+    return false;
 
-  if (strncmp (S_GET_SEGMENT (fixp->fx_addsy)->name, ".debug", 6) == 0)
-    return FALSE;
+  if (startswith (S_GET_SEGMENT (fixp->fx_addsy)->name, ".debug"))
+    return false;
 
-  return TRUE;
+  return true;
 }
 
 static void
@@ -2447,7 +2445,7 @@ mn10300_end_of_match (char *cont, const char *what)
 {
   int len = strlen (what);
 
-  if (strncmp (cont, what, strlen (what)) == 0
+  if (startswith (cont, what)
       && ! is_part_of_name (cont[len]))
     return cont + len;
 
@@ -2477,13 +2475,13 @@ mn10300_parse_name (char const *name,
       /* If we have an absolute symbol or a reg,
 	 then we know its value now.  */
       segment = S_GET_SEGMENT (exprP->X_add_symbol);
-      if (mode != expr_defer && segment == absolute_section)
+      if (!expr_defer_p (mode) && segment == absolute_section)
 	{
 	  exprP->X_op = O_constant;
 	  exprP->X_add_number = S_GET_VALUE (exprP->X_add_symbol);
 	  exprP->X_add_symbol = NULL;
 	}
-      else if (mode != expr_defer && segment == reg_section)
+      else if (!expr_defer_p (mode) && segment == reg_section)
 	{
 	  exprP->X_op = O_register;
 	  exprP->X_add_number = S_GET_VALUE (exprP->X_add_symbol);
@@ -2549,10 +2547,10 @@ const pseudo_typeS md_pseudo_table[] =
    subtraction of two same-section symbols cannot be computed by
    the assembler.  */
 
-bfd_boolean
+bool
 mn10300_allow_local_subtract (expressionS * left, expressionS * right, segT section)
 {
-  bfd_boolean result;
+  bool result;
   fragS * left_frag;
   fragS * right_frag;
   fragS * frag;
@@ -2560,11 +2558,11 @@ mn10300_allow_local_subtract (expressionS * left, expressionS * right, segT sect
   /* If we are not performing linker relaxation then we have nothing
      to worry about.  */
   if (linkrelax == 0)
-    return TRUE;
+    return true;
 
   /* If the symbols are not in a code section then they are OK.  */
   if ((section->flags & SEC_CODE) == 0)
-    return TRUE;
+    return true;
 
   /* Otherwise we have to scan the fragments between the two symbols.
      If any instructions are found then we have to assume that linker
@@ -2576,11 +2574,11 @@ mn10300_allow_local_subtract (expressionS * left, expressionS * right, segT sect
   if (left_frag == right_frag)
     return ! left_frag->tc_frag_data;
 
-  result = TRUE;
+  result = true;
   for (frag = left_frag; frag != NULL; frag = frag->fr_next)
     {
       if (frag->tc_frag_data)
-	result = FALSE;
+	result = false;
       if (frag == right_frag)
 	break;
     }
@@ -2589,7 +2587,7 @@ mn10300_allow_local_subtract (expressionS * left, expressionS * right, segT sect
     for (frag = right_frag; frag != NULL; frag = frag->fr_next)
       {
 	if (frag->tc_frag_data)
-	  result = FALSE;
+	  result = false;
 	if (frag == left_frag)
 	  break;
       }
@@ -2597,7 +2595,7 @@ mn10300_allow_local_subtract (expressionS * left, expressionS * right, segT sect
   if (frag == NULL)
     /* The two symbols are on disjoint fragment chains
        - we cannot possibly compute their difference.  */
-    return FALSE;
+    return false;
 
   return result;
 }
@@ -2616,23 +2614,23 @@ mn10300_handle_align (fragS *frag)
       && now_seg != bss_section
       /* Do not create relocs for the merging sections - such
 	 relocs will prevent the contents from being merged.  */
-      && (bfd_get_section_flags (now_seg->owner, now_seg) & SEC_MERGE) == 0)
+      && (bfd_section_flags (now_seg) & SEC_MERGE) == 0)
     /* Create a new fixup to record the alignment request.  The symbol is
        irrelevant but must be present so we use the absolute section symbol.
        The offset from the symbol is used to record the power-of-two alignment
        value.  The size is set to 0 because the frag may already be aligned,
        thus causing cvt_frag_to_fill to reduce the size of the frag to zero.  */
-    fix_new (frag, frag->fr_fix, 0, & abs_symbol, frag->fr_offset, FALSE,
+    fix_new (frag, frag->fr_fix, 0, & abs_symbol, frag->fr_offset, false,
 	     BFD_RELOC_MN10300_ALIGN);
 }
 
-bfd_boolean
+bool
 mn10300_force_relocation (struct fix * fixp)
 {
   if (linkrelax
       && (fixp->fx_pcrel
 	  || fixp->fx_r_type == BFD_RELOC_MN10300_ALIGN))
-    return TRUE;
+    return true;
 
   return generic_force_reloc (fixp);
 }

@@ -56,6 +56,7 @@ int main (void)
 
   foo (A);
 
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
       if (dst[i] != A * i
@@ -66,5 +67,5 @@ int main (void)
   return 0;
 }
 
-/* { dg-final { scan-tree-dump-times "basic block vectorized" 1 "slp2" { target { vect_int_mult &&  { vect_pack_trunc && vect_unpack } } } } } */
+/* { dg-final { scan-tree-dump-times "optimized: basic block" 2 "slp2" { target { vect_int_mult &&  { vect_pack_trunc && vect_unpack } } } } } */
 

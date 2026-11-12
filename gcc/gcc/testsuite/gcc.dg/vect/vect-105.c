@@ -1,4 +1,5 @@
 /* { dg-require-effective-target vect_int } */
+/* { dg-additional-options "-fdump-tree-optimized-details-blocks" } */
 
 #include <stdlib.h>
 #include <stdarg.h>
@@ -35,6 +36,7 @@ int main1 (int x) {
   /* Vectorizable: distance > number of iterations.  */
   for (i = 1; i < N; i++)
   {
+#pragma GCC unroll 0
     for (j = 0; j < N; j++)
     {
        *((int *)p + x + i + j) = *((int *)p + x + i + j + 5);
@@ -44,6 +46,7 @@ int main1 (int x) {
   /* check results: */
   for (i = 0; i < N; i++)
    {
+#pragma GCC novector
     for (j = 0; j < N; j++)
      {
        if (p->a[i][j] != c[i][j])
@@ -64,3 +67,4 @@ int main (void)
 /* { dg-final { scan-tree-dump-times "Alignment of access forced using versioning" 2 "vect" { target { vect_no_align && { ! vect_hw_misalign } } } } } */
 /* { dg-final { scan-tree-dump-times "possible dependence between data-refs" 0 "vect" } } */
 
+/* { dg-final { scan-tree-dump-not "Invalid sum" "optimized" } } */

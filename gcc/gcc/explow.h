@@ -1,5 +1,5 @@
-/* Export function prototypes from explow.c.
-   Copyright (C) 2015-2019 Free Software Foundation, Inc.
+/* Export function prototypes from explow.cc.
+   Copyright (C) 2015-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -42,6 +42,10 @@ extern rtx copy_to_suggested_reg (rtx, rtx, machine_mode);
    Args are mode (in case value is a constant) and the value.  */
 extern rtx force_reg (machine_mode, rtx);
 
+extern rtx force_subreg (machine_mode, rtx, machine_mode, poly_uint64);
+extern rtx force_lowpart_subreg (machine_mode, rtx, machine_mode);
+extern rtx force_highpart_subreg (machine_mode, rtx, machine_mode);
+
 /* Return given rtx, copied into a new temp reg if it was in memory.  */
 extern rtx force_not_mem (rtx);
 
@@ -68,6 +72,10 @@ extern void anti_adjust_stack (rtx);
 
 /* Add some bytes to the stack while probing it.  An rtx says how many. */
 extern void anti_adjust_stack_and_probe (rtx, bool);
+
+/* Add some bytes to the stack while probing it.  An rtx says how
+   many.  Add additional probes to prevent stack clashing attacks.  */
+extern void anti_adjust_stack_and_probe_stack_clash (rtx);
 
 /* Support for building allocation/probing loops for stack-clash
    protection of dyamically allocated stack space.  */
@@ -102,7 +110,7 @@ extern rtx allocate_dynamic_stack_space (rtx, unsigned, unsigned,
 extern void get_dynamic_stack_size (rtx *, unsigned, unsigned, HOST_WIDE_INT *);
 
 /* Returns the address of the dynamic stack space without allocating it.  */
-extern rtx get_dynamic_stack_base (poly_int64, unsigned);
+extern rtx get_dynamic_stack_base (poly_int64, unsigned, rtx);
 
 /* Return an rtx doing runtime alignment to REQUIRED_ALIGN on TARGET.  */
 extern rtx align_dynamic_address (rtx, unsigned);

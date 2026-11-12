@@ -1,7 +1,8 @@
 //===-- asan_flags.h -------------------------------------------*- C++ -*-===//
 //
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -18,12 +19,12 @@
 
 // ASan flag values can be defined in four ways:
 // 1) initialized with default values at startup.
-// 2) overriden during compilation of ASan runtime by providing
+// 2) overridden during compilation of ASan runtime by providing
 //    compile definition ASAN_DEFAULT_OPTIONS.
-// 3) overriden from string returned by user-specified function
+// 3) overridden from string returned by user-specified function
 //    __asan_default_options().
-// 4) overriden from env variable ASAN_OPTIONS.
-// 5) overriden during ASan activation (for now used on Android only).
+// 4) overridden from env variable ASAN_OPTIONS.
+// 5) overridden during ASan activation (for now used on Android only).
 
 namespace __asan {
 

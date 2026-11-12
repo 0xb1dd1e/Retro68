@@ -3,7 +3,11 @@
 # RISC-V doesn't support .sleb operands that are the difference of two symbols
 # because symbol values are not known until after linker relaxation has been
 # performed.
-#not-target : riscv*-*-*
+#notarget : riscv*-*-*
+# LoongArch doesn't resolve .uleb operands that are the difference of two
+# symbols because gas write zero to object file and generate add_uleb128 and
+# sub_uleb128 reloc pair.
+#xfail: loongarch*-*-*
 
 .*: .*
 

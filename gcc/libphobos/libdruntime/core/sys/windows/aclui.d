@@ -5,20 +5,20 @@
  *
  * Authors: Stewart Gordon
  * License: $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source: $(DRUNTIMESRC src/core/sys/windows/_aclui.d)
+ * Source: $(DRUNTIMESRC core/sys/windows/_aclui.d)
  */
 module core.sys.windows.aclui;
 version (Windows):
 pragma(lib, "aclui");
 
-private import core.sys.windows.w32api;
+import core.sys.windows.w32api;
 /*
 static assert (_WIN32_WINNT >= 0x500,
     "core.sys.windows.aclui is available only if version Windows2000, WindowsXP, Windows2003 "
     "or WindowsVista is set");
 */
 import core.sys.windows.accctrl, core.sys.windows.commctrl, core.sys.windows.objbase;
-private import core.sys.windows.basetyps, core.sys.windows.prsht, core.sys.windows.unknwn, core.sys.windows.windef,
+import core.sys.windows.basetyps, core.sys.windows.prsht, core.sys.windows.unknwn, core.sys.windows.windef,
   core.sys.windows.winuser;
 
 
@@ -30,7 +30,7 @@ struct SI_OBJECT_INFO {
     LPWSTR    pszPageTitle;
     GUID      guidObjectType;
 }
-alias SI_OBJECT_INFO* PSI_OBJECT_INFO;
+alias PSI_OBJECT_INFO = SI_OBJECT_INFO*;
 
 // values for SI_OBJECT_INFO.dwFlags
 enum DWORD
@@ -66,7 +66,7 @@ const(GUID)* pguid;
     LPCWSTR      pszName;
     DWORD        dwFlags;
 }
-alias SI_ACCESS* PSI_ACCESS;
+alias PSI_ACCESS = SI_ACCESS*;
 
 // values for SI_ACCESS.dwFlags
 enum DWORD
@@ -81,7 +81,7 @@ const(GUID)* pguid;
     ULONG        dwFlags;
     LPCWSTR      pszName;
 }
-alias SI_INHERIT_TYPE* PSI_INHERIT_TYPE;
+alias PSI_INHERIT_TYPE = SI_INHERIT_TYPE*;
 
 /* values for SI_INHERIT_TYPE.dwFlags
    INHERIT_ONLY_ACE, CONTAINER_INHERIT_ACE, OBJECT_INHERIT_ACE
@@ -105,7 +105,7 @@ interface ISecurityInformation : IUnknown {
     HRESULT GetInheritTypes(PSI_INHERIT_TYPE*, ULONG*);
     HRESULT PropertySheetPageCallback(HWND, UINT, SI_PAGE_TYPE);
 }
-alias ISecurityInformation LPSECURITYINFO;
+alias LPSECURITYINFO = ISecurityInformation;
 
 /* Comment from MinGW
  * TODO: ISecurityInformation2, IEffectivePermission, ISecurityObjectTypeInfo
@@ -114,7 +114,7 @@ alias ISecurityInformation LPSECURITYINFO;
 // FIXME: linkage attribute?
 extern (C) /+DECLSPEC_IMPORT+/ extern const IID IID_ISecurityInformation;
 
-extern (Windows) {
+extern (Windows) nothrow @nogc {
     HPROPSHEETPAGE CreateSecurityPage(LPSECURITYINFO psi);
     BOOL EditSecurity(HWND hwndOwner, LPSECURITYINFO psi);
 }

@@ -1,5 +1,5 @@
 /* tc-mips.h -- header file for tc-mips.c.
-   Copyright (C) 1993-2018 Free Software Foundation, Inc.
+   Copyright (C) 1993-2026 Free Software Foundation, Inc.
    Contributed by the OSF and Ralph Campbell.
    Written by Keith Knowles and Ralph Campbell, working independently.
    Modified for ECOFF support by Ian Lance Taylor of Cygnus Support.
@@ -59,9 +59,9 @@ extern char mips_nop_opcode (void);
 #define NOP_OPCODE (mips_nop_opcode ())
 
 extern void mips_handle_align (struct frag *);
-#define HANDLE_ALIGN(fragp)  mips_handle_align (fragp)
+#define HANDLE_ALIGN(sec, fragp)  mips_handle_align (fragp)
 
-#define MAX_MEM_FOR_RS_ALIGN_CODE  (3 + 4)
+#define MAX_MEM_FOR_RS_ALIGN_CODE(p2align, max) (3 + 4)
 
 struct insn_label_list;
 struct mips_segment_info {
@@ -126,6 +126,11 @@ extern void mips_frob_file (void);
 extern void mips_frob_file_after_relocs (void);
 #endif
 
+#ifdef TE_IRIX
+#define tc_frob_symbol(sym, punt) mips_frob_symbol (sym)
+extern void mips_frob_symbol (symbolS *);
+#endif
+
 #define tc_fix_adjustable(fixp) mips_fix_adjustable (fixp)
 extern int mips_fix_adjustable (struct fix *);
 
@@ -144,7 +149,7 @@ extern int mips_force_relocation (struct fix *);
    || mips_force_relocation (FIX))
 
 #define TC_FORCE_RELOCATION_ABS(FIX) mips_force_relocation_abs (FIX)
-extern bfd_boolean mips_force_relocation_abs (struct fix *);
+extern bool mips_force_relocation_abs (struct fix *);
 
 /* Register mask variables.  These are set by the MIPS assembly code
    and used by ECOFF and possibly other object file formats.  */
@@ -158,8 +163,8 @@ extern void mips_elf_final_processing (void);
 
 #endif
 
-extern void md_mips_end (void);
-#define md_end()	md_mips_end()
+extern void mips_md_finish (void);
+#define md_finish()	mips_md_finish()
 
 extern void mips_pop_insert (void);
 #define md_pop_insert()		mips_pop_insert()
@@ -211,5 +216,8 @@ extern bfd_reloc_code_real_type mips_cfi_reloc_for_encoding (int encoding);
 
 #define CONVERT_SYMBOLIC_ATTRIBUTE(name) mips_convert_symbolic_attribute (name)
 extern int mips_convert_symbolic_attribute (const char *);
+
+/* The target supports Object Attributes v1.  */
+#define TC_OBJ_ATTR_v1 1
 
 #endif /* TC_MIPS */

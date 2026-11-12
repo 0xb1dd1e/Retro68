@@ -5,15 +5,18 @@
  *
  * Authors: Stewart Gordon
  * License: $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source: $(DRUNTIMESRC src/core/sys/windows/_winver.d)
+ * Source: $(DRUNTIMESRC core/sys/windows/_winver.d)
  */
 module core.sys.windows.winver;
 version (Windows):
+import core.sys.windows.w32api;
+import core.sys.windows.winbase;
+import core.sys.windows.sdkddkver;
 
 version (ANSI) {} else version = Unicode;
 pragma(lib, "version");
 
-private import core.sys.windows.windef;
+import core.sys.windows.windef;
 
 // FIXME: type weirdness
 enum {
@@ -136,7 +139,7 @@ struct VS_FIXEDFILEINFO {
     DWORD dwFileDateLS;
 }
 
-extern (Windows) {
+extern (Windows) nothrow @nogc {
     DWORD VerFindFileA(DWORD, LPCSTR, LPCSTR, LPCSTR, LPSTR, PUINT, LPSTR,
       PUINT);
     DWORD VerFindFileW(DWORD, LPCWSTR, LPCWSTR, LPCWSTR, LPWSTR, PUINT, LPWSTR,
@@ -156,19 +159,105 @@ extern (Windows) {
 }
 
 version (Unicode) {
-    alias VerFindFileW VerFindFile;
-    alias VerQueryValueW VerQueryValue;
-    alias VerInstallFileW VerInstallFile;
-    alias GetFileVersionInfoSizeW GetFileVersionInfoSize;
-    alias GetFileVersionInfoW GetFileVersionInfo;
-    alias VerLanguageNameW VerLanguageName;
-    alias VerQueryValueW VerQueryValue;
+    alias VerFindFile = VerFindFileW;
+    alias VerQueryValue = VerQueryValueW;
+    alias VerInstallFile = VerInstallFileW;
+    alias GetFileVersionInfoSize = GetFileVersionInfoSizeW;
+    alias GetFileVersionInfo = GetFileVersionInfoW;
+    alias VerLanguageName = VerLanguageNameW;
+    alias VerQueryValue = VerQueryValueW;
 } else {
-    alias VerQueryValueA VerQueryValue;
-    alias VerFindFileA VerFindFile;
-    alias VerInstallFileA VerInstallFile;
-    alias GetFileVersionInfoSizeA GetFileVersionInfoSize;
-    alias GetFileVersionInfoA GetFileVersionInfo;
-    alias VerLanguageNameA VerLanguageName;
-    alias VerQueryValueA VerQueryValue;
+    alias VerQueryValue = VerQueryValueA;
+    alias VerFindFile = VerFindFileA;
+    alias VerInstallFile = VerInstallFileA;
+    alias GetFileVersionInfoSize = GetFileVersionInfoSizeA;
+    alias GetFileVersionInfo = GetFileVersionInfoA;
+    alias VerLanguageName = VerLanguageNameA;
+    alias VerQueryValue = VerQueryValueA;
+}
+
+alias VERSIONHELPERAPI = BOOL;
+VERSIONHELPERAPI IsWindowsVersionOrGreater(WORD wMajorVersion, WORD wMinorVersion, WORD wServicePackMajor)
+{
+    OSVERSIONINFOEXW osvi;
+    const DWORDLONG dwlConditionMask = VerSetConditionMask(
+        VerSetConditionMask(
+            VerSetConditionMask(0, VER_MAJORVERSION, VER_GREATER_EQUAL),
+            VER_MINORVERSION,
+            VER_GREATER_EQUAL),
+        VER_SERVICEPACKMAJOR, VER_GREATER_EQUAL
+    );
+    osvi.dwMajorVersion = wMajorVersion;
+    osvi.dwMinorVersion = wMinorVersion;
+    osvi.wServicePackMajor = wServicePackMajor;
+
+    return VerifyVersionInfoW(&osvi, VER_MAJORVERSION | VER_MINORVERSION | VER_SERVICEPACKMAJOR, dwlConditionMask) != FALSE;
+}
+
+VERSIONHELPERAPI IsWindowsXPOrGreater()
+{
+    return IsWindowsVersionOrGreater(HIBYTE(_WIN32_WINNT_WINXP), LOBYTE(_WIN32_WINNT_WINXP), 0);
+}
+
+VERSIONHELPERAPI IsWindowsXPSP1OrGreater()
+{
+    return IsWindowsVersionOrGreater(HIBYTE(_WIN32_WINNT_WINXP), LOBYTE(_WIN32_WINNT_WINXP), 1);
+}
+
+VERSIONHELPERAPI IsWindowsXPSP2OrGreater()
+{
+    return IsWindowsVersionOrGreater(HIBYTE(_WIN32_WINNT_WINXP), LOBYTE(_WIN32_WINNT_WINXP), 2);
+}
+
+VERSIONHELPERAPI IsWindowsXPSP3OrGreater()
+{
+    return IsWindowsVersionOrGreater(HIBYTE(_WIN32_WINNT_WINXP), LOBYTE(_WIN32_WINNT_WINXP), 3);
+}
+
+VERSIONHELPERAPI IsWindowsVistaOrGreater()
+{
+    return IsWindowsVersionOrGreater(HIBYTE(_WIN32_WINNT_VISTA), LOBYTE(_WIN32_WINNT_VISTA), 0);
+}
+
+VERSIONHELPERAPI IsWindowsVistaSP1OrGreater()
+{
+    return IsWindowsVersionOrGreater(HIBYTE(_WIN32_WINNT_VISTA), LOBYTE(_WIN32_WINNT_VISTA), 1);
+}
+
+VERSIONHELPERAPI IsWindowsVistaSP2OrGreater()
+{
+    return IsWindowsVersionOrGreater(HIBYTE(_WIN32_WINNT_VISTA), LOBYTE(_WIN32_WINNT_VISTA), 2);
+}
+
+VERSIONHELPERAPI IsWindows7OrGreater()
+{
+    return IsWindowsVersionOrGreater(HIBYTE(_WIN32_WINNT_WIN7), LOBYTE(_WIN32_WINNT_WIN7), 0);
+}
+
+VERSIONHELPERAPI IsWindows7SP1OrGreater()
+{
+    return IsWindowsVersionOrGreater(HIBYTE(_WIN32_WINNT_WIN7), LOBYTE(_WIN32_WINNT_WIN7), 1);
+}
+
+VERSIONHELPERAPI IsWindows8OrGreater()
+{
+    return IsWindowsVersionOrGreater(HIBYTE(_WIN32_WINNT_WIN8), LOBYTE(_WIN32_WINNT_WIN8), 0);
+}
+
+VERSIONHELPERAPI IsWindows8Point1OrGreater()
+{
+    return IsWindowsVersionOrGreater(HIBYTE(_WIN32_WINNT_WINBLUE), LOBYTE(_WIN32_WINNT_WINBLUE), 0);
+}
+
+VERSIONHELPERAPI IsWindows10OrGreater()
+{
+    return IsWindowsVersionOrGreater(HIBYTE(_WIN32_WINNT_WIN10), LOBYTE(_WIN32_WINNT_WIN10), 0);
+}
+
+VERSIONHELPERAPI IsWindowsServer()
+{
+    OSVERSIONINFOEXW osvi = { OSVERSIONINFOEXW.sizeof, 0, 0, 0, 0, [0], 0, 0, 0, VER_NT_WORKSTATION };
+    const DWORDLONG dwlConditionMask = VerSetConditionMask( 0, VER_PRODUCT_TYPE, VER_EQUAL );
+
+    return !VerifyVersionInfoW(&osvi, VER_PRODUCT_TYPE, dwlConditionMask);
 }

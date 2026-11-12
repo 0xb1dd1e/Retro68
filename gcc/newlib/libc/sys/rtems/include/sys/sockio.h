@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1982, 1986, 1990, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -27,7 +29,7 @@
  * SUCH DAMAGE.
  *
  *	@(#)sockio.h	8.1 (Berkeley) 3/28/94
- * $FreeBSD: head/sys/sys/sockio.h 318160 2017-05-10 22:13:47Z rpokala $
+ * $FreeBSD$
  */
 
 #ifndef _SYS_SOCKIO_H_
@@ -81,6 +83,8 @@
 #define	SIOCSIFDESCR	 _IOW('i', 41, struct ifreq)	/* set ifnet descr */ 
 #define	SIOCGIFDESCR	_IOWR('i', 42, struct ifreq)	/* get ifnet descr */ 
 #define	SIOCAIFADDR	 _IOW('i', 43, struct ifaliasreq)/* add/chg IF alias */
+#define	SIOCGIFDATA	 _IOW('i', 44, struct ifreq)	/* get if_data */
+#define	SIOCGIFALIAS	_IOWR('i', 45, struct ifaliasreq)/* get IF alias */
 
 #define	SIOCADDMULTI	 _IOW('i', 49, struct ifreq)	/* add m'cast addr */
 #define	SIOCDELMULTI	 _IOW('i', 50, struct ifreq)	/* del m'cast addr */
@@ -133,5 +137,17 @@
 #define	SIOCDIFGROUP	 _IOW('i', 137, struct ifgroupreq) /* delete ifgroup */
 #define	SIOCGIFGMEMB	_IOWR('i', 138, struct ifgroupreq) /* get members */
 #define	SIOCGIFXMEDIA	_IOWR('i', 139, struct ifmediareq) /* get net xmedia */
+
+#define	SIOCGIFRSSKEY	_IOWR('i', 150, struct ifrsskey)/* get RSS key */
+#define	SIOCGIFRSSHASH	_IOWR('i', 151, struct ifrsshash)/* get the current RSS
+							type/func settings */
+
+#define	SIOCGLANPCP	_IOWR('i', 152, struct ifreq)	/* Get (V)LAN PCP */
+#define	SIOCSLANPCP	 _IOW('i', 153, struct ifreq)	/* Set (V)LAN PCP */
+
+#define	SIOCGIFDOWNREASON	_IOWR('i', 154, struct ifdownreason)
+
+#define	SIOCSIFCAPNV	_IOW('i', 155, struct ifreq)	/* set IF features */
+#define	SIOCGIFCAPNV	_IOWR('i', 156, struct ifreq)	/* get IF features */
 
 #endif /* !_SYS_SOCKIO_H_ */

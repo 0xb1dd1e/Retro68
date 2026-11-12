@@ -2,10 +2,10 @@
 // { dg-options "-fconcepts" }
 
 template<typename T>
-  concept bool C() { return __is_class(T); }
+  concept C = __is_class(T);
 
 template<typename T>
-  concept bool D() { return C<T>() and __is_empty(T); }
+  concept D = C<T> and __is_empty(T);
 
 struct S1 { } s1;
 struct S2 { int n; } s2;

@@ -1,6 +1,6 @@
 // Types used in iterator implementation -*- C++ -*-
 
-// Copyright (C) 2001-2019 Free Software Foundation, Inc.
+// Copyright (C) 2001-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -59,12 +59,18 @@
 #ifndef _STL_ITERATOR_BASE_TYPES_H
 #define _STL_ITERATOR_BASE_TYPES_H 1
 
+#ifdef _GLIBCXX_SYSHDR
 #pragma GCC system_header
+#endif
 
 #include <bits/c++config.h>
 
 #if __cplusplus >= 201103L
 # include <type_traits>  // For __void_t, is_convertible
+#endif
+
+#if __cplusplus > 201703L && __cpp_concepts >= 201907L
+# include <bits/iterator_concepts.h>
 #endif
 
 namespace std _GLIBCXX_VISIBILITY(default)
@@ -75,7 +81,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
    *  @defgroup iterators Iterators
    *  Abstractions for uniform iterating through various underlying types.
   */
-  //@{ 
+  ///@{
 
   /**
    *  @defgroup iterator_tags Iterator Tags
@@ -84,7 +90,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
    *  are.  Different underlying algorithms can then be used based on the
    *  different operations supported by different iterator types.
   */
-  //@{ 
+  ///@{
   ///  Marking input iterators.
   struct input_iterator_tag { };
 
@@ -101,7 +107,12 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   /// Random-access iterators support a superset of bidirectional
   /// iterator operations.
   struct random_access_iterator_tag : public bidirectional_iterator_tag { };
-  //@}
+
+#if __cplusplus > 201703L
+  /// Contiguous iterators point to objects stored contiguously in memory.
+  struct contiguous_iterator_tag : public random_access_iterator_tag { };
+#endif
+  ///@}
 
   /**
    *  @brief  Common %iterator class.
@@ -115,7 +126,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   */
   template<typename _Category, typename _Tp, typename _Distance = ptrdiff_t,
            typename _Pointer = _Tp*, typename _Reference = _Tp&>
-    struct iterator
+    struct _GLIBCXX17_DEPRECATED iterator
     {
       /// One of the @link iterator_tags tag types@endlink.
       typedef _Category  iterator_category;
@@ -137,11 +148,16 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
    *  argument.  Specialized versions for pointers and pointers-to-const
    *  provide tighter, more correct semantics.
   */
+  template<typename _Iterator>
+    struct iterator_traits;
+
 #if __cplusplus >= 201103L
   // _GLIBCXX_RESOLVE_LIB_DEFECTS
   // 2408. SFINAE-friendly common_type/iterator_traits is missing in C++14
   template<typename _Iterator, typename = __void_t<>>
     struct __iterator_traits { };
+
+#if ! __cpp_lib_concepts
 
   template<typename _Iterator>
     struct __iterator_traits<_Iterator,
@@ -157,11 +173,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       typedef typename _Iterator::pointer           pointer;
       typedef typename _Iterator::reference         reference;
     };
+#endif // ! concepts
 
   template<typename _Iterator>
     struct iterator_traits
     : public __iterator_traits<_Iterator> { };
-#else
+
+#else // ! C++11
   template<typename _Iterator>
     struct iterator_traits
     {
@@ -171,8 +189,24 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       typedef typename _Iterator::pointer           pointer;
       typedef typename _Iterator::reference         reference;
     };
-#endif
+#endif // C++11
 
+#if __cplusplus > 201703L
+  /// Partial specialization for object pointer types.
+  template<typename _Tp>
+#if __cpp_concepts >= 201907L
+    requires is_object_v<_Tp>
+#endif
+    struct iterator_traits<_Tp*>
+    {
+      using iterator_concept  = contiguous_iterator_tag;
+      using iterator_category = random_access_iterator_tag;
+      using value_type	      = remove_cv_t<_Tp>;
+      using difference_type   = ptrdiff_t;
+      using pointer	      = _Tp*;
+      using reference	      = _Tp&;
+    };
+#else
   /// Partial specialization for pointer types.
   template<typename _Tp>
     struct iterator_traits<_Tp*>
@@ -194,49 +228,69 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       typedef const _Tp*                  pointer;
       typedef const _Tp&                  reference;
     };
+#endif
 
   /**
    *  This function is not a part of the C++ standard but is syntactic
    *  sugar for internal library use only.
   */
   template<typename _Iter>
+    __attribute__((__always_inline__))
     inline _GLIBCXX_CONSTEXPR
     typename iterator_traits<_Iter>::iterator_category
     __iterator_category(const _Iter&)
     { return typename iterator_traits<_Iter>::iterator_category(); }
 
-  //@}
-
-#if __cplusplus < 201103L
-  // If _Iterator has a base returns it otherwise _Iterator is returned
-  // untouched
-  template<typename _Iterator, bool _HasBase>
-    struct _Iter_base
-    {
-      typedef _Iterator iterator_type;
-      static iterator_type _S_base(_Iterator __it)
-      { return __it; }
-    };
-
-  template<typename _Iterator>
-    struct _Iter_base<_Iterator, true>
-    {
-      typedef typename _Iterator::iterator_type iterator_type;
-      static iterator_type _S_base(_Iterator __it)
-      { return __it.base(); }
-    };
-#endif
+  ///@}
 
 #if __cplusplus >= 201103L
+  template<typename _Iter>
+    using __iter_category_t
+      = typename iterator_traits<_Iter>::iterator_category;
+
   template<typename _InIter>
-    using _RequireInputIter = typename
-      enable_if<is_convertible<typename
-		iterator_traits<_InIter>::iterator_category,
-			       input_iterator_tag>::value>::type;
+    using _RequireInputIter =
+      __enable_if_t<is_convertible<__iter_category_t<_InIter>,
+				   input_iterator_tag>::value>;
+
+#if __cpp_concepts
+  template<typename _InIter>
+    concept __has_input_iter_cat
+      = is_convertible_v<__iter_category_t<_InIter>, input_iterator_tag>;
+
+#ifdef __cpp_lib_concepts
+  // Is a Cpp17InputIterator or satisfies std::input_iterator.
+  template<typename _InIterator>
+    concept __any_input_iterator
+      = input_iterator<_InIterator> || __has_input_iter_cat<_InIterator>;
+#endif
+#endif
+
+  template<typename _It,
+	   typename _Cat = __iter_category_t<_It>>
+    struct __is_random_access_iter
+      : is_base_of<random_access_iterator_tag, _Cat>
+    {
+      typedef is_base_of<random_access_iterator_tag, _Cat> _Base;
+      enum { __value = _Base::value };
+    };
+#else
+  template<typename _It, typename _Traits = iterator_traits<_It>,
+	   typename _Cat = typename _Traits::iterator_category>
+    struct __is_random_access_iter
+    { enum { __value = __is_base_of(random_access_iterator_tag, _Cat) }; };
 #endif
 
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace
 
-#endif /* _STL_ITERATOR_BASE_TYPES_H */
+#if __glibcxx_algorithm_default_value_type // C++ >= 26
+# define _GLIBCXX26_DEF_VAL_T(T) = T
+# define _GLIBCXX26_ALGO_DEF_VAL_T(_Iterator) \
+     = typename iterator_traits<_Iterator>::value_type
+#else
+# define _GLIBCXX26_DEF_VAL_T(T)
+# define _GLIBCXX26_ALGO_DEF_VAL_T(_Iterator)
+#endif
 
+#endif /* _STL_ITERATOR_BASE_TYPES_H */

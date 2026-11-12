@@ -4,7 +4,7 @@
 #source: tls-gd-1.s
 #source: tls-ldgd-14.s
 #source: tls-hx1x2.s
-#as: --pic --no-underscore --em=criself
+#as: --pic --no-underscore --emulation=criself
 #ld: -m crislinux tmpdir/tls-dso-xz-1.so --hash-style=sysv
 #objdump: -s -h -t -T -R -r -p
 
@@ -37,7 +37,7 @@ DYNAMIC SYMBOL TABLE:
 0+      D  \*UND\*	0+ z
 #...
 DYNAMIC RELOCATION RECORDS
-OFFSET   TYPE              VALUE 
+OFFSET +TYPE +VALUE
 000822b0 R_CRIS_DTP        x
 000822b8 R_CRIS_DTP        z
 

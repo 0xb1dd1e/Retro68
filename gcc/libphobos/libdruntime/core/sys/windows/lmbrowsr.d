@@ -4,12 +4,12 @@
  * Translated from MinGW Windows headers
  *
  * License: $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source: $(DRUNTIMESRC src/core/sys/windows/_lmbrowsr.d)
+ * Source: $(DRUNTIMESRC core/sys/windows/_lmbrowsr.d)
  */
 module core.sys.windows.lmbrowsr;
 version (Windows):
 
-private import core.sys.windows.lmcons, core.sys.windows.windef;
+import core.sys.windows.lmcons, core.sys.windows.windef;
 
 enum BROWSER_ROLE_PDC = 1;
 enum BROWSER_ROLE_BDC = 2;
@@ -35,7 +35,7 @@ struct BROWSER_STATISTICS {
     ULONG NumberOfDuplicateMasterAnnouncements;
     LARGE_INTEGER NumberOfIllegalDatagrams;
 }
-alias BROWSER_STATISTICS* PBROWSER_STATISTICS, LPBROWSER_STATISTICS;
+alias PBROWSER_STATISTICS = BROWSER_STATISTICS*, LPBROWSER_STATISTICS = BROWSER_STATISTICS*;
 
 struct BROWSER_STATISTICS_100 {
     LARGE_INTEGER StartTime;
@@ -46,7 +46,7 @@ struct BROWSER_STATISTICS_100 {
     ULONG NumberOfGetBrowserServerListRequests;
     LARGE_INTEGER NumberOfIllegalDatagrams;
 }
-alias BROWSER_STATISTICS_100* PBROWSER_STATISTICS_100;
+alias PBROWSER_STATISTICS_100 = BROWSER_STATISTICS_100*;
 
 struct BROWSER_STATISTICS_101 {
     LARGE_INTEGER StartTime;
@@ -66,7 +66,7 @@ struct BROWSER_STATISTICS_101 {
     ULONG NumberOfFailedMailslotOpens;
     ULONG NumberOfDuplicateMasterAnnouncements;
 }
-alias BROWSER_STATISTICS_101* PBROWSER_STATISTICS_101;
+alias PBROWSER_STATISTICS_101 = BROWSER_STATISTICS_101*;
 
 extern (Windows) {
     NET_API_STATUS I_BrowserServerEnum(LPCWSTR, LPCWSTR, LPCWSTR, DWORD,

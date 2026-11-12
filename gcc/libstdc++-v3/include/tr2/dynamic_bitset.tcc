@@ -1,6 +1,6 @@
 // TR2 <dynamic_bitset> -*- C++ -*-
 
-// Copyright (C) 2009-2019 Free Software Foundation, Inc.
+// Copyright (C) 2009-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -30,7 +30,9 @@
 #ifndef _GLIBCXX_TR2_DYNAMIC_BITSET_TCC
 #define _GLIBCXX_TR2_DYNAMIC_BITSET_TCC 1
 
+#ifdef _GLIBCXX_SYSHDR
 #pragma GCC system_header
+#endif
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
@@ -60,8 +62,7 @@ namespace tr2
 	      this->_M_w[__wshift] = this->_M_w[0] << __offset;
 	    }
 
-	  //// std::fill(this->_M_w.begin(), this->_M_w.begin() + __wshift,
-	  ////          static_cast<_WordT>(0));
+	  std::fill_n(this->_M_w.begin(), __wshift, _WordT(0));
 	}
     }
 
@@ -88,8 +89,7 @@ namespace tr2
 	      this->_M_w[__limit] = this->_M_w[_M_w.size()-1] >> __offset;
 	    }
 
-	  ////std::fill(this->_M_w.begin() + __limit + 1, this->_M_w.end(),
-	  ////          static_cast<_WordT>(0));
+	  std::fill_n(this->_M_w.end() - __wshift, __wshift, _WordT(0));
 	}
     }
 
@@ -174,7 +174,7 @@ namespace tr2
 
   // Definitions of non-inline member functions.
   template<typename _WordT, typename _Alloc>
-    template<typename _CharT, typename _Traits>
+    template<typename _Traits, typename _CharT>
       void
       dynamic_bitset<_WordT, _Alloc>::
       _M_copy_from_ptr(const _CharT* __str, size_t __len,

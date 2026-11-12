@@ -1,4 +1,6 @@
 /* { dg-require-effective-target untyped_assembly } */
+/* { dg-skip-if "too many arguments in function call" { bpf-*-* } } */
+
 typedef signed char int8_t;
 typedef short int int16_t;
 typedef int int32_t;
@@ -22,6 +24,13 @@ func_17 (int32_t p_18, uint32_t p_19, uint32_t p_21)
   uint32_t l_23 = -1L;
   return l_23;
 }
+
+int func_93 (int);
+int func_59 (uint32_t, ...);
+int func_124 (uint32_t, long int, int, uint32_t, int, uint32_t, int);
+void func_117 (int, int, int, int);
+int safe_add_uint64_t_u_u (uint32_t, unsigned long long int);
+int safe_mul_int32_t_s_s (int, int);
 
 uint32_t
 func_26 (uint16_t p_27)

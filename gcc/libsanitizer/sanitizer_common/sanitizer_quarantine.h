@@ -1,7 +1,8 @@
 //===-- sanitizer_quarantine.h ----------------------------------*- C++ -*-===//
 //
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -67,10 +68,6 @@ struct QuarantineBatch {
 
 COMPILER_CHECK(sizeof(QuarantineBatch) <= (1 << 13));  // 8Kb.
 
-// The callback interface is:
-// void Callback::Recycle(Node *ptr);
-// void *cb.Allocate(uptr size);
-// void cb.Deallocate(void *ptr);
 template<typename Callback, typename Node>
 class Quarantine {
  public:
@@ -93,21 +90,20 @@ class Quarantine {
     recycle_mutex_.Init();
   }
 
-  uptr GetSize() const { return atomic_load_relaxed(&max_size_); }
-  uptr GetCacheSize() const {
-    return atomic_load_relaxed(&max_cache_size_);
-  }
+  uptr GetMaxSize() const { return atomic_load_relaxed(&max_size_); }
+  uptr GetMaxCacheSize() const { return atomic_load_relaxed(&max_cache_size_); }
 
   void Put(Cache *c, Callback cb, Node *ptr, uptr size) {
-    uptr cache_size = GetCacheSize();
-    if (cache_size) {
+    uptr max_cache_size = GetMaxCacheSize();
+    if (max_cache_size && size <= GetMaxSize()) {
+      cb.PreQuarantine(ptr);
       c->Enqueue(cb, ptr, size);
     } else {
-      // GetCacheSize() == 0 only when GetSize() == 0 (see Init).
-      cb.Recycle(ptr);
+      // GetMaxCacheSize() == 0 only when GetMaxSize() == 0 (see Init).
+      cb.RecyclePassThrough(ptr);
     }
     // Check cache size anyway to accommodate for runtime cache_size change.
-    if (c->Size() > cache_size)
+    if (c->Size() > max_cache_size)
       Drain(c, cb);
   }
 
@@ -116,7 +112,7 @@ class Quarantine {
       SpinMutexLock l(&cache_mutex_);
       cache_.Transfer(c);
     }
-    if (cache_.Size() > GetSize() && recycle_mutex_.TryLock())
+    if (cache_.Size() > GetMaxSize() && recycle_mutex_.TryLock())
       Recycle(atomic_load_relaxed(&min_size_), cb);
   }
 
@@ -132,7 +128,7 @@ class Quarantine {
   void PrintStats() const {
     // It assumes that the world is stopped, just as the allocator's PrintStats.
     Printf("Quarantine limits: global: %zdMb; thread local: %zdKb\n",
-           GetSize() >> 20, GetCacheSize() >> 10);
+           GetMaxSize() >> 20, GetMaxCacheSize() >> 10);
     cache_.PrintStats();
   }
 
@@ -148,7 +144,8 @@ class Quarantine {
   Cache cache_;
   char pad2_[kCacheLineSize];
 
-  void NOINLINE Recycle(uptr min_size, Callback cb) {
+  void NOINLINE Recycle(uptr min_size, Callback cb)
+      SANITIZER_REQUIRES(recycle_mutex_) SANITIZER_RELEASE(recycle_mutex_) {
     Cache tmp;
     {
       SpinMutexLock l(&cache_mutex_);

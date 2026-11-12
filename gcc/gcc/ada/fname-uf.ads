@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -52,6 +52,9 @@ package Fname.UF is
    --  that is a spec or body (e.g. by examining the extension). If this cannot
    --  be determined with the file naming conventions in use, then the returned
    --  value is set to Unknown.
+
+   function Get_Default_File_Name (Uname : Unit_Name_Type) return String;
+   --  Returns the file name of Uname under the default GNAT naming scheme.
 
    function Get_File_Name
      (Uname    : Unit_Name_Type;
@@ -105,7 +108,7 @@ package Fname.UF is
       Dot : String_Ptr;
       Cas : Casing_Type);
    --  This is called to process a Source_File_Name pragma whose first
-   --  argument is a file name pattern string.  Pat is this pattern string,
+   --  argument is a file name pattern string. Pat is this pattern string,
    --  which contains an asterisk to correspond to the unit. Typ is one of
    --  'b'/'s'/'u' for body/spec/subunit, Dot is the separator string
    --  for child/subunit names, and Cas is one of Lower/Upper/Mixed

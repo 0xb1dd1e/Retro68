@@ -12,7 +12,6 @@ abi_version = -fabi-version=4
 config_path = @config_path@
 search_path = $(addprefix $(top_srcdir)/config/, $(config_path)) $(top_srcdir)
 
-fincludedir = $(libdir)/gcc/$(target_alias)/$(gcc_version)/finclude
 libsubincludedir = $(libdir)/gcc/$(target_alias)/$(gcc_version)/include
 
 vpath % $(strip $(search_path))
@@ -40,9 +39,7 @@ libitm.map-sun : $(top_srcdir)/libitm.map \
 		$(libitm_la_OBJECTS) $(libitm_la_LIBADD)
 	perl $(top_srcdir)/../contrib/make_sunver.pl \
 	  $(top_srcdir)/libitm.map \
-	  $(libitm_la_OBJECTS:%.lo=.libs/%.o) \
-	 `echo $(libitm_la_LIBADD) | \
-	    sed 's,/\([^/.]*\)\.la,/.libs/\1.a,g'` \
+	  $(libitm_la_OBJECTS) $(libitm_la_LIBADD) \
 	 > $@ || (rm -f $@ ; exit 1)
 endif
 else
@@ -55,7 +52,12 @@ libitm_version_info = -version-info $(libtool_VERSION)
 # want or need libstdc++.
 libitm_la_DEPENDENCIES = $(libitm_version_dep)
 libitm_la_LINK = $(LINK) $(libitm_la_LDFLAGS)
-libitm_la_LDFLAGS = $(libitm_version_info) $(libitm_version_script)
+if ENABLE_DARWIN_AT_RPATH
+libitm_darwin_rpath = -Wc,-nodefaultrpaths
+libitm_darwin_rpath += -Wl,-rpath,@loader_path
+endif
+libitm_la_LDFLAGS = $(libitm_version_info) $(libitm_version_script) \
+  $(libitm_darwin_rpath)
 
 libitm_la_SOURCES = \
 	aatree.cc alloc.cc alloc_c.cc alloc_cpp.cc barrier.cc beginend.cc \

@@ -1,5 +1,5 @@
 /* subsegs.c - subsegments -
-   Copyright (C) 1987-2018 Free Software Foundation, Inc.
+   Copyright (C) 1987-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -43,7 +43,39 @@ subsegs_begin (void)
   frchain_now = NULL;		/* Warn new_subseg() that we are booting.  */
   frag_now = &dummy_frag;
 }
+
+void
+subsegs_end (struct obstack **obs)
+{
+  for (; *obs; obs++)
+    _obstack_free (*obs, NULL);
+  _obstack_free (&frchains, NULL);
+  bfd_set_section_userdata (bfd_com_section_ptr, NULL);
+  bfd_set_section_userdata (bfd_und_section_ptr, NULL);
+  bfd_set_section_userdata (bfd_abs_section_ptr, NULL);
+  bfd_set_section_userdata (bfd_ind_section_ptr, NULL);
+  /* Reverse bfd_std_section_init, so the sections look as they did
+     initially.  This, and clearing out userdata above, is so we don't
+     leave dangling pointers into freed memory for oss-fuzz to mess
+     with.  */
+  asymbol *global_syms = bfd_com_section_ptr->symbol;
+  bfd_und_section_ptr->used_by_bfd = NULL;
+  bfd_und_section_ptr->symbol = global_syms + (bfd_und_section_ptr
+					       - bfd_com_section_ptr);
+  bfd_abs_section_ptr->used_by_bfd = NULL;
+  bfd_abs_section_ptr->symbol = global_syms + (bfd_abs_section_ptr
+					       - bfd_com_section_ptr);
+}
 
+static void
+alloc_seginfo (segT seg)
+{
+  segment_info_type *seginfo;
+
+  seginfo = obstack_alloc (&notes, sizeof (*seginfo));
+  memset (seginfo, 0, sizeof (*seginfo));
+  bfd_set_section_userdata (seg, seginfo);
+}
 /*
  *			subseg_change()
  *
@@ -57,16 +89,11 @@ subsegs_begin (void)
 void
 subseg_change (segT seg, int subseg)
 {
-  segment_info_type *seginfo = seg_info (seg);
   now_seg = seg;
   now_subseg = subseg;
 
-  if (! seginfo)
-    {
-      seginfo = XCNEW (segment_info_type);
-      seginfo->bfd_section = seg;
-      bfd_set_section_userdata (stdoutput, seg, seginfo);
-    }
+  if (!seg_info (seg))
+    alloc_seginfo (seg);
 }
 
 static void
@@ -89,6 +116,10 @@ subseg_set_rest (segT seg, subsegT subseg)
 
   seginfo = seg_info (seg);
 
+  /* Should the section symbol be kept?  */
+  if (bfd_keep_unused_section_symbols (stdoutput))
+    seg->symbol->flags |= BSF_SECTION_SYM_USED;
+
   /* Attempt to find or make a frchain for that subsection.
      We keep the list sorted by subsection number.  */
   for (frcP = *(lastPP = &seginfo->frchainP);
@@ -101,7 +132,7 @@ subseg_set_rest (segT seg, subsegT subseg)
     {
       /* This should be the only code that creates a frchainS.  */
 
-      newP = (frchainS *) obstack_alloc (&frchains, sizeof (frchainS));
+      newP = obstack_alloc (&frchains, sizeof (frchainS));
       newP->frch_subseg = subseg;
       newP->fix_root = NULL;
       newP->fix_tail = NULL;
@@ -109,9 +140,10 @@ subseg_set_rest (segT seg, subsegT subseg)
 #if __GNUC__ >= 2
       obstack_alignment_mask (&newP->frch_obstack) = __alignof__ (fragS) - 1;
 #endif
-      newP->frch_frag_now = frag_alloc (&newP->frch_obstack);
+      newP->frch_frag_now = frag_alloc (&newP->frch_obstack, 0);
       newP->frch_frag_now->fr_type = rs_fill;
       newP->frch_cfi_data = NULL;
+      newP->frch_ginsn_data = NULL;
 
       newP->frch_root = newP->frch_last = newP->frch_frag_now;
 
@@ -145,10 +177,7 @@ segT
 subseg_get (const char *segname, int force_new)
 {
   segT secptr;
-  segment_info_type *seginfo;
-  const char *now_seg_name = (now_seg
-			      ? bfd_get_section_name (stdoutput, now_seg)
-			      : 0);
+  const char *now_seg_name = now_seg ? bfd_section_name (now_seg) : 0;
 
   if (!force_new
       && now_seg_name
@@ -161,13 +190,10 @@ subseg_get (const char *segname, int force_new)
   else
     secptr = bfd_make_section_anyway (stdoutput, segname);
 
-  seginfo = seg_info (secptr);
-  if (! seginfo)
+  if (!seg_info (secptr))
     {
       secptr->output_section = secptr;
-      seginfo = XCNEW (segment_info_type);
-      seginfo->bfd_section = secptr;
-      bfd_set_section_userdata (stdoutput, secptr, seginfo);
+      alloc_seginfo (secptr);
     }
   return secptr;
 }
@@ -224,7 +250,7 @@ section_symbol (segT sec)
   if (! EMIT_SECTION_SYMBOLS || symbol_table_frozen)
     {
       /* Here we know it won't be going into the symbol table.  */
-      s = symbol_create (sec->symbol->name, sec, 0, &zero_address_frag);
+      s = symbol_create (sec->symbol->name, sec, &zero_address_frag, 0);
     }
   else
     {
@@ -235,7 +261,7 @@ section_symbol (segT sec)
       if (s == NULL
 	  || ((seg = S_GET_SEGMENT (s)) != sec
 	      && seg != undefined_section))
-	s = symbol_new (sec->symbol->name, sec, 0, &zero_address_frag);
+	s = symbol_new (sec->symbol->name, sec, &zero_address_frag, 0);
       else if (seg == undefined_section)
 	{
 	  S_SET_SEGMENT (s, sec);
@@ -260,7 +286,7 @@ section_symbol (segT sec)
 int
 subseg_text_p (segT sec)
 {
-  return (bfd_get_section_flags (stdoutput, sec) & SEC_CODE) != 0;
+  return (bfd_section_flags (sec) & SEC_CODE) != 0;
 }
 
 /* Return non zero if SEC has at least one byte of data.  It is

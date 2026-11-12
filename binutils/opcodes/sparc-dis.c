@@ -1,5 +1,5 @@
 /* Print SPARC instructions.
-   Copyright (C) 1989-2018 Free Software Foundation, Inc.
+   Copyright (C) 1989-2026 Free Software Foundation, Inc.
 
    This file is part of the GNU opcodes library.
 
@@ -63,8 +63,8 @@ static sparc_opcode_hash *opcode_hash_table[HASH_SIZE];
 
 /* Sign-extend a value which is N bits long.  */
 #define	SEX(value, bits) \
-	((((int)(value)) << ((8 * sizeof (int)) - bits))	\
-			 >> ((8 * sizeof (int)) - bits) )
+  ((int) (((value & ((1u << (bits - 1) << 1) - 1))	\
+	   ^ (1u << (bits - 1))) - (1u << (bits - 1))))
 
 static  char *reg_names[] =
 { "g0", "g1", "g2", "g3", "g4", "g5", "g6", "g7",
@@ -325,7 +325,7 @@ compare_opcodes (const void * a, const void * b)
      another, it is important to order the opcodes in the right order.  */
   for (i = 0; i < 32; ++i)
     {
-      unsigned long int x = 1 << i;
+      unsigned long int x = 1ul << i;
       int x0 = (match0 & x) != 0;
       int x1 = (match1 & x) != 0;
 
@@ -335,7 +335,7 @@ compare_opcodes (const void * a, const void * b)
 
   for (i = 0; i < 32; ++i)
     {
-      unsigned long int x = 1 << i;
+      unsigned long int x = 1ul << i;
       int x0 = (lose0 & x) != 0;
       int x1 = (lose1 & x) != 0;
 
@@ -387,40 +387,12 @@ compare_opcodes (const void * a, const void * b)
       return length_diff;
   }
 
-  /* Put 1+i before i+1.  */
-  {
-    char *p0 = (char *) strchr (op0->args, '+');
-    char *p1 = (char *) strchr (op1->args, '+');
-
-    if (p0 && p1)
-      {
-	/* There is a plus in both operands.  Note that a plus
-	   sign cannot be the first character in args,
-	   so the following [-1]'s are valid.  */
-	if (p0[-1] == 'i' && p1[1] == 'i')
-	  /* op0 is i+1 and op1 is 1+i, so op1 goes first.  */
-	  return 1;
-	if (p0[1] == 'i' && p1[-1] == 'i')
-	  /* op0 is 1+i and op1 is i+1, so op0 goes first.  */
-	  return -1;
-      }
-  }
-
-  /* Put 1,i before i,1.  */
-  {
-    int i0 = strncmp (op0->args, "i,1", 3) == 0;
-    int i1 = strncmp (op1->args, "i,1", 3) == 0;
-
-    if (i0 ^ i1)
-      return i0 - i1;
-  }
-
-  /* They are, as far as we can tell, identical.
-     Since qsort may have rearranged the table partially, there is
-     no way to tell which one was first in the opcode table as
-     written, so just say there are equal.  */
-  /* ??? This is no longer true now that we sort a vector of pointers,
-     not the table itself.  */
+  /* They are, as far as we can tell, identical.  Keep the order in
+     the sparc_opcodes table.  */
+  if (op0 < op1)
+    return -1;
+  if (op0 > op1)
+    return 1;
   return 0;
 }
 
@@ -441,8 +413,7 @@ build_hash_table (const sparc_opcode **opcode_table,
 
   memset (hash_table, 0, HASH_SIZE * sizeof (hash_table[0]));
   memset (hash_count, 0, HASH_SIZE * sizeof (hash_count[0]));
-  if (hash_buf != NULL)
-    free (hash_buf);
+  free (hash_buf);
   hash_buf = xmalloc (sizeof (* hash_buf) * num_opcodes);
   for (i = num_opcodes - 1; i >= 0; --i)
     {
@@ -712,8 +683,7 @@ print_insn_sparc (bfd_vma memaddr, disassemble_info *info)
 
 		  case 'h':
 		    (*info->fprintf_func) (stream, "%%hi(%#x)",
-					   ((unsigned) 0xFFFFFFFF
-					    & ((int) X_IMM22 (insn) << 10)));
+					   (unsigned) X_IMM22 (insn) << 10);
 		    break;
 
 		  case 'i':	/* 13 bit immediate.  */
@@ -1062,9 +1032,7 @@ print_insn_sparc (bfd_vma memaddr, disassemble_info *info)
 		      && X_RD (prev_insn) == X_RS1 (insn))
 		    {
 		      (*info->fprintf_func) (stream, "\t! ");
-		      info->target =
-			((unsigned) 0xFFFFFFFF
-			 & ((int) X_IMM22 (prev_insn) << 10));
+		      info->target = (unsigned) X_IMM22 (prev_insn) << 10;
 		      if (imm_added_to_rs1)
 			info->target += X_SIMM (insn, 13);
 		      else

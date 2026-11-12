@@ -4,15 +4,15 @@
  * Translated from MinGW Windows headers
  *
  * License: $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source: $(DRUNTIMESRC src/core/sys/windows/_oleauto.d)
+ * Source: $(DRUNTIMESRC core/sys/windows/_oleauto.d)
  */
 module core.sys.windows.oleauto;
 version (Windows):
 pragma(lib, "oleaut32");
 
 import core.sys.windows.oaidl;
-private import core.sys.windows.basetyps, core.sys.windows.unknwn, core.sys.windows.windef, core.sys.windows.wtypes;
-private import core.sys.windows.winbase; // for SYSTEMTIME
+import core.sys.windows.basetyps, core.sys.windows.unknwn, core.sys.windows.windef, core.sys.windows.wtypes;
+import core.sys.windows.winbase; // for SYSTEMTIME
 
 align(8):
 enum STDOLE_MAJORVERNUM = 1;
@@ -41,7 +41,7 @@ enum DISPATCH_PROPERTYGET = 2;
 enum DISPATCH_PROPERTYPUT = 4;
 enum DISPATCH_PROPERTYPUTREF = 8;
 
-//ULONG LHashValOfName(LCID l, OLECHAR* n) { return LHashValOfNameSys(SYSKIND.SYS_WIN32, l, n); }
+//ULONG LHashValOfName()(LCID l, OLECHAR* n) { return LHashValOfNameSys(SYSKIND.SYS_WIN32, l, n); }
 
 // DAC: These aren't in the 2003 SDK.
 //MACRO #define WHashValOfLHashVal(h) ((unsigned short)(0x0000ffff&(h)))
@@ -175,7 +175,7 @@ struct PARAMDATA{
     OLECHAR* szName;
     VARTYPE vt;
 }
-alias PARAMDATA* LPPARAMDATA;
+alias LPPARAMDATA = PARAMDATA*;
 
 struct METHODDATA{
     OLECHAR* szName;
@@ -187,13 +187,13 @@ struct METHODDATA{
     WORD wFlags;
     VARTYPE vtReturn;
 }
-alias METHODDATA* LPMETHODDATA;
+alias LPMETHODDATA = METHODDATA*;
 
 struct INTERFACEDATA{
     METHODDATA* pmethdata;
     UINT cMembers;
 }
-alias INTERFACEDATA* LPINTERFACEDATA;
+alias LPINTERFACEDATA = INTERFACEDATA*;
 
 struct UDATE {
     SYSTEMTIME st;
@@ -215,18 +215,18 @@ struct NUMPARSE {
 
 deprecated {  // not actually deprecated, but they aren't converted yet.
               // (will need to reinstate CreateTypeLib as well)
-    interface ICreateTypeInfo {};
-    interface ICreateTypeInfo2 {};
-    interface ICreateTypeLib {};
-    interface ICreateTypeLib2 {};
+    interface ICreateTypeInfo {}
+    interface ICreateTypeInfo2 {}
+    interface ICreateTypeLib {}
+    interface ICreateTypeLib2 {}
 
-    alias ICreateTypeInfo LPCREATETYPEINFO;
-    alias ICreateTypeInfo2 LPCREATETYPEINFO2;
-    alias ICreateTypeLib LPCREATETYPELIB;
-    alias ICreateTypeLib2 LPCREATETYPELIB2;
+    alias LPCREATETYPEINFO = ICreateTypeInfo;
+    alias LPCREATETYPEINFO2 = ICreateTypeInfo2;
+    alias LPCREATETYPELIB = ICreateTypeLib;
+    alias LPCREATETYPELIB2 = ICreateTypeLib2;
 }
 
-extern (Windows) {
+extern (Windows) nothrow @nogc {
     BSTR SysAllocString(const(OLECHAR)*);
     int SysReAllocString(BSTR*, const(OLECHAR)*);
     BSTR SysAllocStringLen(const(OLECHAR)*, uint);

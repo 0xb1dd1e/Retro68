@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---            Copyright (C) 2015-2019, Free Software Foundation, Inc.       --
+--            Copyright (C) 2015-2026, Free Software Foundation, Inc.       --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -30,6 +30,7 @@
 ------------------------------------------------------------------------------
 
 private with System;
+private with Ada.Strings.Text_Buffers;
 
 generic
    type Element_Type (<>) is private;
@@ -68,8 +69,14 @@ package Ada.Containers.Bounded_Holders is
    --  The 'Size of each Element_Type object must be a multiple of
    --  System.Storage_Unit; e.g. creating Holders from 5-bit objects won't
    --  work.
+   --
+   --  Do not confuse this GNAT-defined unit with the similar (similar
+   --  in both name and functionality) predefined unit
+   --  Ada.Containers.Bounded_Indefinite_Holders described in Ada RM A.18.32.
 
-   type Holder is private;
+   type Holder is private
+     with Preelaborable_Initialization
+            => Element_Type'Preelaborable_Initialization;
 
    function "=" (Left, Right : Holder) return Boolean;
 
@@ -79,6 +86,12 @@ package Ada.Containers.Bounded_Holders is
    function Get (Container : Holder) return Element_Type;
 
    procedure Set (Container : in out Holder; New_Item  : Element_Type);
+
+   function Constant_Reference
+     (Container : aliased Holder) return not null access constant Element_Type;
+
+   function Reference
+     (Container : not null access Holder) return not null access Element_Type;
 
 private
 
@@ -93,10 +106,13 @@ private
    type Holder is record
       Data : Storage_Array (1 .. Max_Size_In_Storage_Elements);
    end record
-     with Alignment => Standard'Maximum_Alignment;
+     with Alignment => Standard'Maximum_Alignment, Put_Image => Put_Image;
    --  We would like to say "Alignment => Element_Type'Alignment", but that
    --  is illegal because it's not static, so we use the maximum possible
    --  (default) alignment instead.
+
+   procedure Put_Image
+     (S : in out Ada.Strings.Text_Buffers.Root_Buffer_Type'Class; V : Holder);
 
    type Element_Access is access all Element_Type;
    pragma Assert (Element_Access'Size = Standard'Address_Size,

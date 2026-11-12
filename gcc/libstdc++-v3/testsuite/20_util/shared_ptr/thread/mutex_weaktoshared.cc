@@ -1,4 +1,4 @@
-// Copyright (C) 2006-2019 Free Software Foundation, Inc.
+// Copyright (C) 2006-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -17,11 +17,10 @@
 
 // 20.6.6.2 Template class shared_ptr [util.smartptr.shared]
 
-// { dg-do run }
-// { dg-options "-pthread"  }
+// { dg-do run { target c++11 } }
+// { dg-additional-options "-pthread" { target pthread } }
 // { dg-add-options libatomic }
-// { dg-require-effective-target c++11 }
-// { dg-require-effective-target pthread }
+// { dg-require-gthreads "" }
 // { dg-require-cstdint "" }
 
 #include <memory>

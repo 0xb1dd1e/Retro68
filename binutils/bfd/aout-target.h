@@ -1,5 +1,5 @@
 /* Define a target vector and some small routines for a variant of a.out.
-   Copyright (C) 1990-2018 Free Software Foundation, Inc.
+   Copyright (C) 1990-2026 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -34,7 +34,7 @@ extern reloc_howto_type * NAME (aout, reloc_name_lookup) (bfd *, const char *);
    This routine is called from some_aout_object_p just before it returns.  */
 #ifndef MY_callback
 
-static const bfd_target *
+static bfd_cleanup
 MY (callback) (bfd *abfd)
 {
   struct internal_exec *execp = exec_hdr (abfd);
@@ -121,22 +121,22 @@ MY (callback) (bfd *abfd)
   /* Don't set sizes now -- can't be sure until we know arch & mach.
      Sizes get set in set_sizes callback, later.  */
 
-  return abfd->xvec;
+  return _bfd_no_cleanup;
 }
 #endif
 
 #ifndef MY_object_p
 /* Finish up the reading of an a.out file header.  */
 
-static const bfd_target *
+static bfd_cleanup
 MY (object_p) (bfd *abfd)
 {
   struct external_exec exec_bytes;	/* Raw exec header from file.  */
   struct internal_exec exec;		/* Cleaned-up exec header.  */
-  const bfd_target *target;
-  bfd_size_type amt = EXEC_BYTES_SIZE;
+  bfd_cleanup cleanup;
+  size_t amt = EXEC_BYTES_SIZE;
 
-  if (bfd_bread ((void *) &exec_bytes, amt, abfd) != amt)
+  if (bfd_read (&exec_bytes, amt, abfd) != amt)
     {
       if (bfd_get_error () != bfd_error_system_call)
 	bfd_set_error (bfd_error_wrong_format);
@@ -164,7 +164,7 @@ MY (object_p) (bfd *abfd)
   exec.a_info = SWAP_MAGIC (exec_bytes.e_info);
 #endif
 
-  target = NAME (aout, some_aout_object_p) (abfd, &exec, MY (callback));
+  cleanup = NAME (aout, some_aout_object_p) (abfd, &exec, MY (callback));
 
 #ifdef ENTRY_CAN_BE_ZERO
   /* The NEWSOS3 entry-point is/was 0, which (amongst other lossage)
@@ -180,19 +180,20 @@ MY (object_p) (bfd *abfd)
 #ifndef S_IXUSR
 #define S_IXUSR 0100	/* Execute by owner.  */
 #endif
-      if (stat(abfd->filename, &buf) == 0 && (buf.st_mode & S_IXUSR))
+      if (stat (bfd_get_filename (abfd), &buf) == 0
+	  && (buf.st_mode & S_IXUSR) != 0)
 	abfd->flags |= EXEC_P;
     }
 #endif /* ENTRY_CAN_BE_ZERO */
 
-  return target;
+  return cleanup;
 }
 #define MY_object_p MY (object_p)
 #endif
 
 #ifndef MY_mkobject
 
-static bfd_boolean
+static bool
 MY (mkobject) (bfd *abfd)
 {
   return NAME (aout, mkobject (abfd));
@@ -209,16 +210,17 @@ MY (mkobject) (bfd *abfd)
    section contents, and copy_private_bfd_data is not called until
    after the section contents have been set.  */
 
-static bfd_boolean
+static bool
 MY_bfd_copy_private_section_data (bfd *ibfd,
 				  asection *isec ATTRIBUTE_UNUSED,
 				  bfd *obfd,
-				  asection *osec ATTRIBUTE_UNUSED)
+				  asection *osec ATTRIBUTE_UNUSED,
+				  struct bfd_link_info *link_info)
 {
-  if (bfd_get_flavour (ibfd) == bfd_target_aout_flavour
-      && bfd_get_flavour (obfd) == bfd_target_aout_flavour)
+  if (link_info == NULL
+      && bfd_get_flavour (ibfd) == bfd_target_aout_flavour)
     obj_aout_subformat (obfd) = obj_aout_subformat (ibfd);
-  return TRUE;
+  return true;
 }
 
 #endif
@@ -229,7 +231,7 @@ MY_bfd_copy_private_section_data (bfd *ibfd,
 
 #ifndef MY_write_object_contents
 
-static bfd_boolean
+static bool
 MY (write_object_contents) (bfd *abfd)
 {
   struct external_exec exec_bytes;
@@ -239,14 +241,14 @@ MY (write_object_contents) (bfd *abfd)
 
   WRITE_HEADERS (abfd, execp);
 
-  return TRUE;
+  return true;
 }
 #define MY_write_object_contents MY (write_object_contents)
 #endif
 
 #ifndef MY_set_sizes
 
-static bfd_boolean
+static bool
 MY (set_sizes) (bfd *abfd)
 {
   adata(abfd).page_size = TARGET_PAGE_SIZE;
@@ -259,7 +261,7 @@ MY (set_sizes) (bfd *abfd)
 #endif
 
   adata(abfd).exec_bytes_size = EXEC_BYTES_SIZE;
-  return TRUE;
+  return true;
 }
 #define MY_set_sizes MY (set_sizes)
 #endif
@@ -285,9 +287,6 @@ MY (set_sizes) (bfd *abfd)
 #ifndef MY_add_dynamic_symbols
 #define MY_add_dynamic_symbols 0
 #endif
-#ifndef MY_add_one_symbol
-#define MY_add_one_symbol 0
-#endif
 #ifndef MY_link_dynamic_object
 #define MY_link_dynamic_object 0
 #endif
@@ -311,7 +310,6 @@ static const struct aout_backend_data MY (backend_data) =
   MY_set_sizes,
   MY_exec_header_not_counted,
   MY_add_dynamic_symbols,
-  MY_add_one_symbol,
   MY_link_dynamic_object,
   MY_write_dynamic_symbol,
   MY_check_dynamic_reloc,
@@ -344,7 +342,7 @@ MY_final_link_callback (bfd *abfd,
 /* Final link routine.  We need to use a call back to get the correct
    offsets in the output file.  */
 
-static bfd_boolean
+static bool
 MY_bfd_final_link (bfd *abfd, struct bfd_link_info *info)
 {
   return NAME (aout, final_link) (abfd, info, MY_final_link_callback);
@@ -431,9 +429,6 @@ MY_bfd_final_link (bfd *abfd, struct bfd_link_info *info)
 #ifndef MY_get_section_contents
 #define MY_get_section_contents NAME (aout, get_section_contents)
 #endif
-#ifndef MY_get_section_contents_in_window
-#define MY_get_section_contents_in_window _bfd_generic_get_section_contents_in_window
-#endif
 #ifndef MY_new_section_hook
 #define MY_new_section_hook NAME (aout, new_section_hook)
 #endif
@@ -449,8 +444,8 @@ MY_bfd_final_link (bfd *abfd, struct bfd_link_info *info)
 #ifndef MY_canonicalize_reloc
 #define MY_canonicalize_reloc NAME (aout, canonicalize_reloc)
 #endif
-#ifndef MY_set_reloc
-#define MY_set_reloc _bfd_generic_set_reloc
+#ifndef MY_finalize_section_relocs
+#define MY_finalize_section_relocs _bfd_generic_finalize_section_relocs
 #endif
 #ifndef MY_make_empty_symbol
 #define MY_make_empty_symbol NAME (aout, make_empty_symbol)
@@ -474,6 +469,9 @@ MY_bfd_final_link (bfd *abfd, struct bfd_link_info *info)
 #ifndef MY_find_nearest_line
 #define MY_find_nearest_line NAME (aout, find_nearest_line)
 #endif
+#ifndef MY_find_nearest_line_with_alt
+#define MY_find_nearest_line_with_alt _bfd_nosymbols_find_nearest_line_with_alt
+#endif
 #ifndef MY_find_line
 #define MY_find_line _bfd_nosymbols_find_line
 #endif
@@ -496,11 +494,11 @@ MY_bfd_final_link (bfd *abfd, struct bfd_link_info *info)
 #ifndef MY_bfd_lookup_section_flags
 #define MY_bfd_lookup_section_flags bfd_generic_lookup_section_flags
 #endif
-#ifndef MY_bfd_merge_sections
-#define MY_bfd_merge_sections bfd_generic_merge_sections
-#endif
 #ifndef MY_bfd_is_group_section
 #define MY_bfd_is_group_section bfd_generic_is_group_section
+#endif
+#ifndef MY_bfd_group_name
+#define MY_bfd_group_name bfd_generic_group_name
 #endif
 #ifndef MY_bfd_discard_group
 #define MY_bfd_discard_group bfd_generic_discard_group
@@ -591,18 +589,7 @@ MY_bfd_final_link (bfd *abfd, struct bfd_link_info *info)
 #endif
 
 #ifndef MY_close_and_cleanup
-
-/* Handle closing of a BFD including the resource-releasing parts.  */
-
-static bfd_boolean
-MY_close_and_cleanup (bfd *abfd)
-{
-  if (!MY_bfd_free_cached_info (abfd))
-    return FALSE;
-
-  return _bfd_generic_close_and_cleanup (abfd);
-}
-
+#define MY_close_and_cleanup _bfd_generic_close_and_cleanup
 #endif
 
 #ifndef MY_get_dynamic_symtab_upper_bound
@@ -656,6 +643,8 @@ const bfd_target MY (vec) =
   AR_PAD_CHAR,			/* AR_pad_char.  */
   15,				/* AR_max_namelen.  */
   0,				/* match priority.  */
+  TARGET_KEEP_UNUSED_SECTION_SYMBOLS, /* keep unused section symbols.  */
+  TARGET_MERGE_SECTIONS,
 #ifdef TARGET_IS_BIG_ENDIAN_P
   bfd_getb64, bfd_getb_signed_64, bfd_putb64,
      bfd_getb32, bfd_getb_signed_32, bfd_putb32,

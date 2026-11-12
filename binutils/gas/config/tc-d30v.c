@@ -1,5 +1,5 @@
 /* tc-d30v.c -- Assembler code for the Mitsubishi D30V
-   Copyright (C) 1997-2018 Free Software Foundation, Inc.
+   Copyright (C) 1997-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -27,14 +27,13 @@
 const char comment_chars[]        = ";";
 const char line_comment_chars[]   = "#";
 const char line_separator_chars[] = "";
-const char *md_shortopts          = "OnNcC";
+/* Must do this if we want VLIW instruction with "->" or "<-".  */
+const char d30v_symbol_chars[]    = "-";
+const char md_shortopts[]         = "OnNcC";
 const char EXP_CHARS[]            = "eE";
 const char FLT_CHARS[]            = "dD";
 
-#if HAVE_LIMITS_H
 #include <limits.h>
-#endif
-
 #ifndef CHAR_BIT
 #define CHAR_BIT 8
 #endif
@@ -110,15 +109,15 @@ static symbolS *d30v_last_label;
 #define NOP_RIGHT  ((long long) NOP)
 #define NOP2 (FM00 | NOP_LEFT | NOP_RIGHT)
 
-struct option md_longopts[] =
+const struct option md_longopts[] =
 {
   {NULL, no_argument, NULL, 0}
 };
 
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 /* Opcode hash table.  */
-static struct hash_control *d30v_hash;
+static htab_t d30v_hash;
 
 /* Do a binary search of the pre_defined_registers array to see if
    NAME is a valid register name.  Return the register number from the
@@ -167,7 +166,7 @@ register_name (expressionS *expressionP)
   int reg_number;
   char c, *p = input_line_pointer;
 
-  while (*p && *p != '\n' && *p != '\r' && *p != ',' && *p != ' ' && *p != ')')
+  while (!is_end_of_stmt (*p) && *p != ',' && !is_whitespace (*p) && *p != ')')
     p++;
 
   c = *p;
@@ -288,7 +287,7 @@ md_undefined_symbol (char *name ATTRIBUTE_UNUSED)
 const char *
 md_atof (int type, char *litP, int *sizeP)
 {
-  return ieee_md_atof (type, litP, sizeP, TRUE);
+  return ieee_md_atof (type, litP, sizeP, true);
 }
 
 void
@@ -302,19 +301,19 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED,
 valueT
 md_section_align (asection *seg, valueT addr)
 {
-  int align = bfd_get_section_alignment (stdoutput, seg);
+  int align = bfd_section_alignment (seg);
   return ((addr + (1 << align) - 1) & -(1 << align));
 }
 
 void
 md_begin (void)
 {
-  struct d30v_opcode *opcode;
-  d30v_hash = hash_new ();
+  const struct d30v_opcode *opcode;
+  d30v_hash = str_htab_create ();
 
   /* Insert opcode names into a hash table.  */
-  for (opcode = (struct d30v_opcode *) d30v_opcode_table; opcode->name; opcode++)
-      hash_insert (d30v_hash, opcode->name, (char *) opcode);
+  for (opcode = d30v_opcode_table; opcode->name; opcode++)
+      str_hash_insert (d30v_hash, opcode->name, opcode, 0);
 
   fixups = &FixUps[0];
   FixUps[0].next = &FixUps[1];
@@ -331,7 +330,7 @@ postfix (char *p)
 {
   while (*p != '-' && *p != '+')
     {
-      if (*p == 0 || *p == '\n' || *p == '\r' || *p == ' ' || *p == ',')
+      if (is_end_of_stmt (*p) || is_whitespace (*p) || *p == ',')
 	break;
       p++;
     }
@@ -403,7 +402,7 @@ get_operands (expressionS exp[], int cmp_hack)
 
   while (*p)
     {
-      while (*p == ' ' || *p == '\t' || *p == ',')
+      while (is_whitespace (*p) || *p == ',')
 	p++;
 
       if (*p == 0 || *p == '\n' || *p == '\r')
@@ -487,8 +486,8 @@ build_insn (struct d30v_insn *opcode, expressionS *opers)
   int i, bits, shift, flags;
   unsigned long number, id = 0;
   long long insn;
-  struct d30v_opcode *op = opcode->op;
-  struct d30v_format *form = opcode->form;
+  const struct d30v_opcode *op = opcode->op;
+  const struct d30v_format *form = opcode->form;
 
   insn =
     opcode->ecc << 28 | op->op1 << 25 | op->op2 << 20 | form->modifier << 18;
@@ -685,8 +684,8 @@ parallel_ok (struct d30v_insn *op1,
   int i, j, shift, regno, bits, ecc;
   unsigned long flags, mask, flags_set1, flags_set2, flags_used1, flags_used2;
   unsigned long ins, mod_reg[2][3], used_reg[2][3], flag_reg[2];
-  struct d30v_format *f;
-  struct d30v_opcode *op;
+  const struct d30v_format *f;
+  const struct d30v_opcode *op;
 
   /* Section 4.3: Both instructions must not be IU or MU only.  */
   if ((op1->op->unit == IU && op2->op->unit == IU)
@@ -862,9 +861,9 @@ parallel_ok (struct d30v_insn *op1,
 		      for (r = regno; r <= regno + z; r++)
 			{
 			  if (r >= 32)
-			    used_reg[j][1] |= 1L << (r - 32);
+			    used_reg[j][1] |= 1UL << (r - 32);
 			  else
-			    used_reg[j][0] |= 1L << r;
+			    used_reg[j][0] |= 1UL << r;
 			}
 		    }
 		}
@@ -953,7 +952,7 @@ write_2_short (struct d30v_insn *opcode1,
 	 we are not optimizing, then we have been asked to produce
 	 an error about such constructs.  For the purposes of this
 	 test, subroutine calls are considered to be branches.  */
-      write_1_short (opcode1, insn1, fx->next, FALSE);
+      write_1_short (opcode1, insn1, fx->next, false);
       return 1;
     }
 
@@ -993,14 +992,14 @@ write_2_short (struct d30v_insn *opcode1,
 	  /* We must treat repeat instructions likewise, since the
 	     following instruction has to be separate from the repeat
 	     in order to be repeated.  */
-	  write_1_short (opcode1, insn1, fx->next, FALSE);
+	  write_1_short (opcode1, insn1, fx->next, false);
 	  return 1;
 	}
       else if (prev_left_kills_right_p)
 	{
 	  /* The left instruction kills the right slot, so we
 	     must leave it empty.  */
-	  write_1_short (opcode1, insn1, fx->next, FALSE);
+	  write_1_short (opcode1, insn1, fx->next, false);
 	  return 1;
 	}
       else if (opcode1->op->unit == IU)
@@ -1010,7 +1009,7 @@ write_2_short (struct d30v_insn *opcode1,
 	      /* Case 103810 is a request from Mitsubishi that opcodes
 		 with EITHER_BUT_PREFER_MU should not be executed in
 		 reverse sequential order.  */
-	      write_1_short (opcode1, insn1, fx->next, FALSE);
+	      write_1_short (opcode1, insn1, fx->next, false);
 	      return 1;
 	    }
 
@@ -1125,14 +1124,14 @@ write_2_short (struct d30v_insn *opcode1,
    It must look at all formats for an opcode and use the operands
    to choose the correct one.  Return NULL on error.  */
 
-static struct d30v_format *
-find_format (struct d30v_opcode *opcode,
+static const struct d30v_format *
+find_format (const struct d30v_opcode *opcode,
 	     expressionS myops[],
 	     int fsize,
 	     int cmp_hack)
 {
   int match, opcode_index, i = 0, j, k;
-  struct d30v_format *fm;
+  const struct d30v_format *fm;
 
   if (opcode == NULL)
     return NULL;
@@ -1148,7 +1147,7 @@ find_format (struct d30v_opcode *opcode,
       if (fsize == FORCE_LONG && opcode_index < LONG)
 	continue;
 
-      fm = (struct d30v_format *) &d30v_format_table[opcode_index];
+      fm = &d30v_format_table[opcode_index];
       k = opcode_index;
       while (fm->form == opcode_index)
 	{
@@ -1269,7 +1268,7 @@ find_format (struct d30v_opcode *opcode,
 
 	      return fm;
 	    }
-	  fm = (struct d30v_format *) &d30v_format_table[++k];
+	  fm = &d30v_format_table[++k];
 	}
     }
   return NULL;
@@ -1297,7 +1296,7 @@ do_assemble (char *str,
   long long      insn;
 
   /* Drop leading whitespace.  */
-  while (*str == ' ')
+  while (is_whitespace (*str))
     str++;
 
   /* Find the opcode end.  */
@@ -1305,7 +1304,7 @@ do_assemble (char *str,
        *op_end
        && nlen < (NAME_BUF_LEN - 1)
        && *op_end != '/'
-       && !is_end_of_line[(unsigned char) *op_end] && *op_end != ' ';
+       && !is_end_of_stmt (*op_end) && !is_whitespace (*op_end);
        op_end++)
     {
       name[nlen] = TOLOWER (op_start[nlen]);
@@ -1339,10 +1338,10 @@ do_assemble (char *str,
     opcode->ecc = ECC_AL;
 
   /* CMP and CMPU change their name based on condition codes.  */
-  if (!strncmp (name, "cmp", 3))
+  if (startswith (name, "cmp"))
     {
       int p, i;
-      char **d30v_str = (char **) d30v_cc_names;
+      const char **d30v_str = d30v_cc_names;
 
       if (name[3] == 'u')
 	p = 4;
@@ -1390,7 +1389,7 @@ do_assemble (char *str,
     }
 
   /* Find the first opcode with the proper name.  */
-  opcode->op = (struct d30v_opcode *) hash_find (d30v_hash, name);
+  opcode->op = str_hash_find (d30v_hash, name);
   if (opcode->op == NULL)
     {
       as_bad (_("unknown opcode: %s"), name);
@@ -1485,12 +1484,12 @@ d30v_align (int n, char *pfill, symbolS *label)
      this alignment request.  The alignment of the current frag
      can be changed under our feet, for example by a .ascii
      directive in the source code.  cf testsuite/gas/d30v/reloc.s  */
-  d30v_cleanup (FALSE);
+  d30v_cleanup (false);
 
   if (pfill == NULL)
     {
       if (n > 2
-	  && (bfd_get_section_flags (stdoutput, now_seg) & SEC_CODE) != 0)
+	  && (bfd_section_flags (now_seg) & SEC_CODE) != 0)
 	{
 	  static char const nop[4] = { 0x00, 0xf0, 0x00, 0x00 };
 
@@ -1512,7 +1511,7 @@ d30v_align (int n, char *pfill, symbolS *label)
   if (label != NULL)
     {
       symbolS     *sym;
-      int          label_seen = FALSE;
+      int          label_seen = false;
       struct frag *old_frag;
       valueT       old_value;
       valueT       new_value;
@@ -1539,7 +1538,7 @@ d30v_align (int n, char *pfill, symbolS *label)
 	  if (symbol_get_frag (sym) == old_frag
 	      && S_GET_VALUE (sym) == old_value)
 	    {
-	      label_seen = TRUE;
+	      label_seen = true;
 	      symbol_set_frag (sym, frag_now);
 	      S_SET_VALUE (sym, new_value);
 	    }
@@ -1575,7 +1574,7 @@ md_assemble (char *str)
 
   if ((prev_insn != -1) && prev_seg
       && ((prev_seg != now_seg) || (prev_subseg != now_subseg)))
-    d30v_cleanup (FALSE);
+    d30v_cleanup (false);
 
   if (d30v_current_align < 3)
     d30v_align (3, NULL, d30v_last_label);
@@ -1614,7 +1613,7 @@ md_assemble (char *str)
 
 	  /* If two instructions are present and we already have one saved,
 	     then first write it out.  */
-	  d30v_cleanup (FALSE);
+	  d30v_cleanup (false);
 
 	  /* Assemble first instruction and save it.  */
 	  prev_insn = do_assemble (str, &prev_opcode, 1, 0);
@@ -1675,13 +1674,13 @@ md_assemble (char *str)
 	     of NOPs for us.  */
 
 	  if (prev_insn != -1 && (strcmp (prev_opcode.op->name, "nop") == 0))
-	    d30v_cleanup (FALSE);
+	    d30v_cleanup (false);
 	  else
 	    {
 	      char *f;
 
 	      if (prev_insn != -1)
-		d30v_cleanup (TRUE);
+		d30v_cleanup (true);
 	      else
 		{
 		  f = frag_more (8);
@@ -1707,7 +1706,7 @@ md_assemble (char *str)
     {
       /* Can't parallelize, flush current instruction and add a
          sequential NOP.  */
-      write_1_short (&opcode, (long) insn, fixups->next->next, TRUE);
+      write_1_short (&opcode, (long) insn, fixups->next->next, true);
 
       /* Make the previous instruction the current one.  */
       extype = EXEC_UNKNOWN;
@@ -1726,7 +1725,7 @@ md_assemble (char *str)
     {
       if (extype != EXEC_UNKNOWN)
 	as_bad (_("Instruction uses long version, so it cannot be mixed as specified"));
-      d30v_cleanup (FALSE);
+      d30v_cleanup (false);
       write_long (&opcode, insn, fixups);
       prev_insn = -1;
     }
@@ -1760,8 +1759,8 @@ arelent *
 tc_gen_reloc (asection *seg ATTRIBUTE_UNUSED, fixS *fixp)
 {
   arelent *reloc;
-  reloc = XNEW (arelent);
-  reloc->sym_ptr_ptr = XNEW (asymbol *);
+  reloc = notes_alloc (sizeof (arelent));
+  reloc->sym_ptr_ptr = notes_alloc (sizeof (asymbol *));
   *reloc->sym_ptr_ptr = symbol_get_bfdsym (fixp->fx_addsy);
   reloc->address = fixp->fx_frag->fr_address + fixp->fx_where;
   reloc->howto = bfd_reloc_type_lookup (stdoutput, fixp->fx_r_type);
@@ -1788,7 +1787,7 @@ md_estimate_size_before_relax (fragS *fragp ATTRIBUTE_UNUSED,
 long
 md_pcrel_from_section (fixS *fixp, segT sec)
 {
-  if (fixp->fx_addsy != (symbolS *) NULL
+  if (fixp->fx_addsy != NULL
       && (!S_IS_DEFINED (fixp->fx_addsy)
 	  || (S_GET_SEGMENT (fixp->fx_addsy) != sec)))
     return 0;
@@ -1817,7 +1816,7 @@ d30v_cleanup (int use_sequential)
       subseg_set (seg, subseg);
       prev_insn = -1;
       if (use_sequential)
-	prev_mul32_p = FALSE;
+	prev_mul32_p = false;
     }
 
   return 1;
@@ -1832,11 +1831,11 @@ d30v_start_line (void)
 {
   char *c = input_line_pointer;
 
-  while (ISSPACE (*c))
+  while (is_whitespace (*c))
     c++;
 
   if (*c == '.')
-    d30v_cleanup (FALSE);
+    d30v_cleanup (false);
 }
 
 static void
@@ -1861,7 +1860,7 @@ void
 d30v_frob_label (symbolS *lab)
 {
   /* Emit any pending instructions.  */
-  d30v_cleanup (FALSE);
+  d30v_cleanup (false);
 
   /* Update the label's address with the current output pointer.  */
   symbol_set_frag (lab, frag_now);
@@ -1891,7 +1890,7 @@ d30v_cons_align (int size)
     ++log_size;
 
   if (d30v_current_align < log_size)
-    d30v_align (log_size, (char *) NULL, NULL);
+    d30v_align (log_size, NULL, NULL);
   else if (d30v_current_align > log_size)
     d30v_current_align = log_size;
   d30v_last_label = NULL;
@@ -1904,57 +1903,37 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
   unsigned long insn, insn2;
   long value = *valP;
 
-  if (fixP->fx_addsy == (symbolS *) NULL)
+  if (fixP->fx_addsy == NULL)
     fixP->fx_done = 1;
 
   /* We don't support subtracting a symbol.  */
-  if (fixP->fx_subsy != (symbolS *) NULL)
-    as_bad_where (fixP->fx_file, fixP->fx_line, _("expression too complex"));
+  if (fixP->fx_subsy != NULL)
+    as_bad_subtract (fixP);
 
   /* Fetch the instruction, insert the fully resolved operand
      value, and stuff the instruction back again.  */
   where = fixP->fx_frag->fr_literal + fixP->fx_where;
-  insn = bfd_getb32 ((unsigned char *) where);
+  insn = bfd_getb32 (where);
 
   switch (fixP->fx_r_type)
     {
-    case BFD_RELOC_8:  /* Check for a bad .byte directive.  */
-      if (fixP->fx_addsy != NULL)
-	as_bad (_("line %d: unable to place address of symbol '%s' into a byte"),
-		fixP->fx_line, S_GET_NAME (fixP->fx_addsy));
-      else if (((unsigned)value) > 0xff)
-	as_bad (_("line %d: unable to place value %lx into a byte"),
-		fixP->fx_line, value);
-      else
-	*(unsigned char *) where = value;
+    case BFD_RELOC_8:
+      *where = value;
       break;
 
-    case BFD_RELOC_16:  /* Check for a bad .short directive.  */
-      if (fixP->fx_addsy != NULL)
-	as_bad (_("line %d: unable to place address of symbol '%s' into a short"),
-		fixP->fx_line, S_GET_NAME (fixP->fx_addsy));
-      else if (((unsigned)value) > 0xffff)
-	as_bad (_("line %d: unable to place value %lx into a short"),
-		fixP->fx_line, value);
-      else
-	bfd_putb16 ((bfd_vma) value, (unsigned char *) where);
+    case BFD_RELOC_16:
+      bfd_putb16 (value, where);
       break;
 
-    case BFD_RELOC_64:  /* Check for a bad .quad directive.  */
-      if (fixP->fx_addsy != NULL)
-	as_bad (_("line %d: unable to place address of symbol '%s' into a quad"),
-		fixP->fx_line, S_GET_NAME (fixP->fx_addsy));
-      else
-	{
-	  bfd_putb32 ((bfd_vma) value, (unsigned char *) where);
-	  bfd_putb32 (0, ((unsigned char *) where) + 4);
-	}
+    case BFD_RELOC_64:
+      bfd_putb32 (value, where);
+      bfd_putb32 (0, where + 4);
       break;
 
     case BFD_RELOC_D30V_6:
       check_size (value, 6, fixP->fx_file, fixP->fx_line);
       insn |= value & 0x3F;
-      bfd_putb32 ((bfd_vma) insn, (unsigned char *) where);
+      bfd_putb32 (insn, where);
       break;
 
     case BFD_RELOC_D30V_9_PCREL:
@@ -1967,13 +1946,13 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
 	}
       check_size (value, 9, fixP->fx_file, fixP->fx_line);
       insn |= ((value >> 3) & 0x3F) << 12;
-      bfd_putb32 ((bfd_vma) insn, (unsigned char *) where);
+      bfd_putb32 (insn, where);
       break;
 
     case BFD_RELOC_D30V_15:
       check_size (value, 15, fixP->fx_file, fixP->fx_line);
       insn |= (value >> 3) & 0xFFF;
-      bfd_putb32 ((bfd_vma) insn, (unsigned char *) where);
+      bfd_putb32 (insn, where);
       break;
 
     case BFD_RELOC_D30V_15_PCREL:
@@ -1986,13 +1965,13 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
 	}
       check_size (value, 15, fixP->fx_file, fixP->fx_line);
       insn |= (value >> 3) & 0xFFF;
-      bfd_putb32 ((bfd_vma) insn, (unsigned char *) where);
+      bfd_putb32 (insn, where);
       break;
 
     case BFD_RELOC_D30V_21:
       check_size (value, 21, fixP->fx_file, fixP->fx_line);
       insn |= (value >> 3) & 0x3FFFF;
-      bfd_putb32 ((bfd_vma) insn, (unsigned char *) where);
+      bfd_putb32 (insn, where);
       break;
 
     case BFD_RELOC_D30V_21_PCREL:
@@ -2005,29 +1984,29 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
 	}
       check_size (value, 21, fixP->fx_file, fixP->fx_line);
       insn |= (value >> 3) & 0x3FFFF;
-      bfd_putb32 ((bfd_vma) insn, (unsigned char *) where);
+      bfd_putb32 (insn, where);
       break;
 
     case BFD_RELOC_D30V_32:
-      insn2 = bfd_getb32 ((unsigned char *) where + 4);
+      insn2 = bfd_getb32 (where + 4);
       insn |= (value >> 26) & 0x3F;		/* Top 6 bits.  */
       insn2 |= ((value & 0x03FC0000) << 2);	/* Next 8 bits.  */
       insn2 |= value & 0x0003FFFF;		/* Bottom 18 bits.  */
-      bfd_putb32 ((bfd_vma) insn, (unsigned char *) where);
-      bfd_putb32 ((bfd_vma) insn2, (unsigned char *) where + 4);
+      bfd_putb32 (insn, where);
+      bfd_putb32 (insn2, where + 4);
       break;
 
     case BFD_RELOC_D30V_32_PCREL:
-      insn2 = bfd_getb32 ((unsigned char *) where + 4);
+      insn2 = bfd_getb32 (where + 4);
       insn |= (value >> 26) & 0x3F;		/* Top 6 bits.  */
       insn2 |= ((value & 0x03FC0000) << 2);	/* Next 8 bits.  */
       insn2 |= value & 0x0003FFFF;		/* Bottom 18 bits.  */
-      bfd_putb32 ((bfd_vma) insn, (unsigned char *) where);
-      bfd_putb32 ((bfd_vma) insn2, (unsigned char *) where + 4);
+      bfd_putb32 (insn, where);
+      bfd_putb32 (insn2, where + 4);
       break;
 
     case BFD_RELOC_32:
-      bfd_putb32 ((bfd_vma) value, (unsigned char *) where);
+      bfd_putb32 (value, where);
       break;
 
     default:
@@ -2078,7 +2057,7 @@ static void
 s_d30v_text (int i)
 
 {
-  s_text (i);
+  obj_elf_text (i);
   d30v_last_label = NULL;
   d30v_current_align = 0;
   d30v_current_align_seg = now_seg;
@@ -2090,7 +2069,7 @@ s_d30v_text (int i)
 static void
 s_d30v_data (int i)
 {
-  s_data (i);
+  obj_elf_data (i);
   d30v_last_label = NULL;
   d30v_current_align = 0;
   d30v_current_align_seg = now_seg;

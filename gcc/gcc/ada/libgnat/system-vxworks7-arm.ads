@@ -7,7 +7,7 @@
 --                                 S p e c                                  --
 --                          (VxWorks Version ARM)                           --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -48,29 +48,29 @@ package System is
 
    --  System-Dependent Named Numbers
 
-   Min_Int               : constant := Long_Long_Integer'First;
-   Max_Int               : constant := Long_Long_Integer'Last;
+   Min_Int             : constant := -2 ** (Standard'Max_Integer_Size - 1);
+   Max_Int             : constant :=  2 ** (Standard'Max_Integer_Size - 1) - 1;
 
-   Max_Binary_Modulus    : constant := 2 ** Long_Long_Integer'Size;
+   Max_Binary_Modulus    : constant := 2 ** Standard'Max_Integer_Size;
    Max_Nonbinary_Modulus : constant := 2 ** Integer'Size - 1;
 
    Max_Base_Digits       : constant := Long_Long_Float'Digits;
    Max_Digits            : constant := Long_Long_Float'Digits;
 
-   Max_Mantissa          : constant := 63;
+   Max_Mantissa          : constant := Standard'Max_Integer_Size - 1;
    Fine_Delta            : constant := 2.0 ** (-Max_Mantissa);
 
    Tick                  : constant := 1.0 / 60.0;
 
    --  Storage-related Declarations
 
-   type Address is private;
-   pragma Preelaborable_Initialization (Address);
+   type Address is private
+   with Preelaborable_Initialization;
    Null_Address : constant Address;
 
    Storage_Unit : constant := 8;
-   Word_Size    : constant := 32;
-   Memory_Size  : constant := 2 ** 32;
+   Word_Size    : constant := Standard'Word_Size;
+   Memory_Size  : constant := 2 ** Word_Size;
 
    --  Address comparison
 
@@ -119,6 +119,8 @@ package System is
 private
 
    type Address is mod Memory_Size;
+   for Address'Size use Standard'Address_Size;
+
    Null_Address : constant Address := 0;
 
    --------------------------------------
@@ -138,8 +140,6 @@ private
    Denorm                    : constant Boolean := True;
    Duration_32_Bits          : constant Boolean := False;
    Exit_Status_Supported     : constant Boolean := True;
-   Fractional_Fixed_Ops      : constant Boolean := False;
-   Frontend_Layout           : constant Boolean := False;
    Machine_Overflows         : constant Boolean := False;
    Machine_Rounds            : constant Boolean := True;
    Preallocated_Stacks       : constant Boolean := False;
@@ -148,13 +148,13 @@ private
    Stack_Check_Probes        : constant Boolean := True;
    Stack_Check_Limits        : constant Boolean := False;
    Support_Aggregates        : constant Boolean := True;
+   Support_Atomic_Primitives : constant Boolean := True;
    Support_Composite_Assign  : constant Boolean := True;
    Support_Composite_Compare : constant Boolean := True;
    Support_Long_Shifts       : constant Boolean := True;
    Always_Compatible_Rep     : constant Boolean := False;
    Suppress_Standard_Library : constant Boolean := False;
    Use_Ada_Main_Program_Name : constant Boolean := True;
-   Frontend_Exceptions       : constant Boolean := False;
    ZCX_By_Default            : constant Boolean := True;
 
    Executable_Extension : constant String := ".out";

@@ -1,5 +1,5 @@
 /* tc-s390.h -- Header file for tc-s390.c.
-   Copyright (C) 2000-2018 Free Software Foundation, Inc.
+   Copyright (C) 2000-2026 Free Software Foundation, Inc.
    Written by Martin Schwidefsky (schwidefsky@de.ibm.com).
 
    This file is part of GAS, the GNU Assembler.
@@ -19,6 +19,7 @@
    Software Foundation, 51 Franklin Street - Fifth Floor, Boston, MA
    02110-1301, USA.  */
 
+#ifndef TC_S390
 #define TC_S390
 
 struct fix;
@@ -75,12 +76,11 @@ extern int target_big_endian;
 
 /* call md_pcrel_from_section, not md_pcrel_from */
 #define MD_PCREL_FROM_SECTION(FIX, SEC) md_pcrel_from_section(FIX, SEC)
-extern long md_pcrel_from_section (struct fix *, segT);
 
 #define md_operand(x)
 
-extern void s390_md_end (void);
-#define md_end() s390_md_end ()
+extern void s390_md_finish (void);
+#define md_finish() s390_md_finish ()
 
 #define TARGET_USE_CFIPOP 1
 
@@ -99,3 +99,41 @@ extern int s390_cie_data_alignment;
 extern void s390_elf_final_processing (void);
 
 #define elf_tc_final_processing s390_elf_final_processing
+
+/* SFrame.  */
+
+/* Whether SFrame stack trace info is supported.  */
+extern bool s390_support_sframe_p (void);
+#define support_sframe_p s390_support_sframe_p
+
+/* The stack pointer DWARF register number for SFrame CFA tracking.  */
+extern const unsigned int s390_sframe_cfa_sp_reg;
+#define SFRAME_CFA_SP_REG s390_sframe_cfa_sp_reg
+
+/* The frame pointer DWARF register number for SFrame CFA and FP tracking.  */
+extern const unsigned int s390_sframe_cfa_fp_reg;
+#define SFRAME_CFA_FP_REG s390_sframe_cfa_fp_reg
+
+/* The return address DWARF register number for SFrame RA tracking.  */
+extern const unsigned int s390_sframe_cfa_ra_reg;
+#define SFRAME_CFA_RA_REG s390_sframe_cfa_ra_reg
+
+/* Whether SFrame return address tracking is needed.  */
+#define sframe_ra_tracking_p() true
+
+/* The fixed offset from CFA for SFrame to recover the return address.
+   (useful only when SFrame RA tracking is not needed).  */
+extern offsetT s390_sframe_cfa_ra_offset (void);
+#define sframe_cfa_ra_offset s390_sframe_cfa_ra_offset
+
+/* The abi/arch identifier for SFrame.  */
+unsigned char s390_sframe_get_abi_arch (void);
+#define sframe_get_abi_arch s390_sframe_get_abi_arch
+
+/* Whether SFrame FDE of type SFRAME_FDE_TYPE_FLEX be generated.  */
+#define sframe_support_flex_fde_p() true
+
+/* The target supports Object Attributes v1.  */
+#define TC_OBJ_ATTR_v1 1
+
+#endif /* TC_S390 */

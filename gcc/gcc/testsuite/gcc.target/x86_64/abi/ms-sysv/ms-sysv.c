@@ -56,7 +56,6 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #include <signal.h>
 #include <unistd.h>
 #include <stdint.h>
-#include <alloca.h>
 #include <stdarg.h>
 #include <assert.h>
 #include <errno.h>

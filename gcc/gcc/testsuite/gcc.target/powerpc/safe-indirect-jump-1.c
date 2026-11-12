@@ -1,4 +1,5 @@
 /* { dg-do compile } */
+/* { dg-skip-if "not implemented for Darwin" { powerpc*-*-darwin* } } */
 /* { dg-additional-options "-mno-speculate-indirect-jumps" } */
 /* { dg-warning "'-mno-speculate-indirect-jumps' is deprecated" "" { target *-*-* } 0 } */
 
@@ -17,5 +18,5 @@ int bar ()
 /* { dg-final { scan-assembler "beqctrl-" { target { lp64 || { powerpc*-*-aix* } } } } } */
 
 /* The other ABIs do allow a sibcall.  */
-/* { dg-final { scan-assembler "beqctr-" { target { ilp32 && !powerpc*-*-aix* } } } } */
-/* { dg-final { scan-assembler {b \$} { target { ilp32 && !powerpc*-*-aix* } } } } */
+/* { dg-final { scan-assembler "beqctr-" { target { ilp32 && { ! powerpc*-*-aix* } } } } } */
+/* { dg-final { scan-assembler {b \$} { target { ilp32 && { ! powerpc*-*-aix* } } } } } */

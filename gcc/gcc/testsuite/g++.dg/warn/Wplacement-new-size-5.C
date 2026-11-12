@@ -2,7 +2,6 @@
 // warn_placement_new_too_small
 // { dg-do compile }
 // { dg-additional-options "-Wplacement-new -Wno-pedantic" }
-// { dg-require-effective-target alloca }
 
 #define SIZE_MAX   __SIZE_MAX__
 #define DIFF_MAX   __PTRDIFF_MAX__
@@ -11,17 +10,19 @@
 void* operator new (__SIZE_TYPE__ n, void *p) { return p; }
 void* operator new[] (__SIZE_TYPE__ n, void *p) { return p; }
 
+typedef int int32_t __attribute__((mode (__SI__)));
+
 struct A { };
 
 char carr[2];
-int iarr[2];
+int32_t iarr[2];
 
 struct C0 { char i, carr[0]; };
-struct I0 { int i, iarr[0]; };
+struct I0 { int32_t i, iarr[0]; };
 struct CX { char i, carr[]; };
-struct IX { int i, iarr[]; };
+struct IX { int32_t i, iarr[]; };
 
-void test_single (C0 *pc, CX *qc, I0 *pi, IX *qi, int n)
+void test_single (C0 *pc, CX *qc, I0 *pi, IX *qi, int32_t n)
 {
   new (&carr[DIFF_MIN]) A ();       // { dg-warning "placement new constructing an object of type .A. and size .1. in a region of type .char \\\[2]. and size .0." }
   new (&carr[-1]) A;                // { dg-warning "\\\[-Wplacement-new" }

@@ -1,5 +1,5 @@
 /* tc-m32r.c -- Assembler for the Renesas M32R.
-   Copyright (C) 1996-2018 Free Software Foundation, Inc.
+   Copyright (C) 1996-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -35,7 +35,7 @@ typedef struct sym_link
   symbolS *symbol;
 } sym_linkS;
 
-static sym_linkS *debug_sym_link = (sym_linkS *) 0;
+static sym_linkS *debug_sym_link = NULL;
 
 /* Structure to hold all of the different components describing
    an individual instruction.  */
@@ -189,7 +189,7 @@ allow_m32rx (int on)
 
 #define M32R_SHORTOPTS "O::K:"
 
-const char *md_shortopts = M32R_SHORTOPTS;
+const char md_shortopts[] = M32R_SHORTOPTS;
 
 enum md_option_enums
 {
@@ -212,7 +212,7 @@ enum md_option_enums
   OPTION_NO_WARN_UNMATCHED
 };
 
-struct option md_longopts[] =
+const struct option md_longopts[] =
 {
   {"m32r",  no_argument, NULL, OPTION_M32R},
   {"m32rx", no_argument, NULL, OPTION_M32RX},
@@ -243,7 +243,7 @@ struct option md_longopts[] =
   {NULL, no_argument, NULL, 0}
 };
 
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 static void
 little (int on)
@@ -574,7 +574,7 @@ debug_sym (int ignore ATTRIBUTE_UNUSED)
 
   if ((symbolP = symbol_find (name)) == NULL
       && (symbolP = md_undefined_symbol (name)) == NULL)
-    symbolP = symbol_new (name, undefined_section, 0, &zero_address_frag);
+    symbolP = symbol_new (name, undefined_section, &zero_address_frag, 0);
 
   symbol_table_insert (symbolP);
   if (S_IS_DEFINED (symbolP) && (S_GET_SEGMENT (symbolP) != reg_section
@@ -609,13 +609,13 @@ expand_debug_syms (sym_linkS *syms, int align)
     return;
 
   (void) frag_align_code (align, 0);
-  for (; syms != (sym_linkS *) 0; syms = next_syms)
+  for (; syms != NULL; syms = next_syms)
     {
       symbolS *symbolP = syms->symbol;
       next_syms = syms->next;
       input_line_pointer = (char *) ".\n";
       pseudo_set (symbolP);
-      free ((char *) syms);
+      free (syms);
     }
 
   input_line_pointer = save_input_line;
@@ -627,7 +627,7 @@ m32r_flush_pending_output (void)
   if (debug_sym_link)
     {
       expand_debug_syms (debug_sym_link, 1);
-      debug_sym_link = (sym_linkS *) 0;
+      debug_sym_link = NULL;
     }
 }
 
@@ -653,7 +653,7 @@ m32r_fill_insn (int done)
   if (done && debug_sym_link)
     {
       expand_debug_syms (debug_sym_link, 1);
-      debug_sym_link = (sym_linkS *) 0;
+      debug_sym_link = NULL;
     }
 
   return 1;
@@ -713,7 +713,8 @@ md_begin (void)
 
   /* This is copied from perform_an_assembly_pass.  */
   applicable = bfd_applicable_section_flags (stdoutput);
-  bfd_set_section_flags (stdoutput, sbss_section, applicable & SEC_ALLOC);
+  bfd_set_section_flags (sbss_section,
+			 applicable & (SEC_ALLOC | SEC_SMALL_DATA));
 
   subseg_set (seg, subseg);
 
@@ -721,9 +722,9 @@ md_begin (void)
      but with the name .scommon.  */
   scom_section                = *bfd_com_section_ptr;
   scom_section.name           = ".scommon";
+  scom_section.flags          = SEC_IS_COMMON | SEC_SMALL_DATA;
   scom_section.output_section = & scom_section;
   scom_section.symbol         = & scom_symbol;
-  scom_section.symbol_ptr_ptr = & scom_section.symbol;
   scom_symbol                 = * bfd_com_section_ptr->symbol;
   scom_symbol.name            = ".scommon";
   scom_symbol.section         = & scom_section;
@@ -842,7 +843,7 @@ can_make_parallel (m32r_insn *a, m32r_insn *b)
       || CGEN_FIELDS_BITSIZE (&b->fields) != 16)
     abort ();
 
-  if (first_writes_to_seconds_operands (a, b, TRUE))
+  if (first_writes_to_seconds_operands (a, b, true))
     return _("instructions write to the same destination register.");
 
   a_pipe = CGEN_INSN_ATTR_VALUE (a->insn, CGEN_INSN_PIPE);
@@ -910,7 +911,7 @@ assemble_two_insns (char *str1, char *str2, int parallel_p)
   fill_insn (0);
 
   first.debug_sym_link = debug_sym_link;
-  debug_sym_link = (sym_linkS *) 0;
+  debug_sym_link = NULL;
 
   /* Parse the first instruction.  */
   if (! (first.insn = m32r_cgen_assemble_insn
@@ -988,7 +989,7 @@ assemble_two_insns (char *str1, char *str2, int parallel_p)
   {
     char *s2 = str1;
 
-    while (ISSPACE (*s2++))
+    while (is_whitespace (*s2++))
       continue;
 
     --s2;
@@ -1116,11 +1117,11 @@ assemble_two_insns (char *str1, char *str2, int parallel_p)
 
   if (parallel_p && warn_explicit_parallel_conflicts)
     {
-      if (first_writes_to_seconds_operands (&first, &second, FALSE))
+      if (first_writes_to_seconds_operands (&first, &second, false))
 	/* xgettext:c-format  */
 	as_warn (_("%s: output of 1st instruction is the same as an input to 2nd instruction - is this intentional ?"), str2);
 
-      if (first_writes_to_seconds_operands (&second, &first, FALSE))
+      if (first_writes_to_seconds_operands (&second, &first, false))
 	/* xgettext:c-format  */
 	as_warn (_("%s: output of 2nd instruction is the same as an input to 1st instruction - is this intentional ?"), str2);
     }
@@ -1214,7 +1215,7 @@ md_assemble (char *str)
     }
 
   insn.debug_sym_link = debug_sym_link;
-  debug_sym_link = (sym_linkS *) 0;
+  debug_sym_link = NULL;
 
   insn.insn = m32r_cgen_assemble_insn
     (gas_cgen_cpu_desc, str, &insn.fields, insn.buffer, & errmsg);
@@ -1285,7 +1286,7 @@ md_assemble (char *str)
   else
     {
       int on_32bit_boundary_p;
-      int swap = FALSE;
+      int swap = false;
 
       if (CGEN_INSN_BITSIZE (insn.insn) != 16)
 	abort ();
@@ -1340,12 +1341,12 @@ md_assemble (char *str)
 	  && parallel ()
 	  && CGEN_INSN_ATTR_VALUE (insn.orig_insn, CGEN_INSN_RELAXABLE) == 0
 	  && ! writes_to_pc (&prev_insn)
-	  && ! first_writes_to_seconds_operands (&prev_insn, &insn, FALSE))
+	  && ! first_writes_to_seconds_operands (&prev_insn, &insn, false))
 	{
 	  if (can_make_parallel (&prev_insn, &insn) == NULL)
 	    make_parallel (insn.buffer);
 	  else if (can_make_parallel (&insn, &prev_insn) == NULL)
-	    swap = TRUE;
+	    swap = true;
 	}
 
       expand_debug_syms (insn.debug_sym_link, 1);
@@ -1448,9 +1449,9 @@ md_operand (expressionS *expressionP)
 valueT
 md_section_align (segT segment, valueT size)
 {
-  int align = bfd_get_section_alignment (stdoutput, segment);
+  int align = bfd_section_alignment (segment);
 
-  return ((size + (1 << align) - 1) & -(1 << align));
+  return (size + ((valueT) 1 << align) - 1) & -((valueT) 1 << align);
 }
 
 symbolS *
@@ -1481,8 +1482,8 @@ m32r_scomm (int ignore ATTRIBUTE_UNUSED)
 
   /* Just after name is now '\0'.  */
   p = input_line_pointer;
-  *p = c;
-  SKIP_WHITESPACE_AFTER_NAME ();
+  restore_line_pointer (c);
+  SKIP_WHITESPACE ();
   if (*input_line_pointer != ',')
     {
       as_bad (_("Expected comma after symbol-name: rest of line ignored."));
@@ -1571,8 +1572,7 @@ m32r_scomm (int ignore ATTRIBUTE_UNUSED)
 
       symbol_set_frag (symbolP, frag_now);
 
-      pfrag = frag_var (rs_org, 1, 1, (relax_substateT) 0, symbolP, size,
-			(char *) 0);
+      pfrag = frag_var (rs_org, 1, 1, 0, symbolP, size, NULL);
       *pfrag = 0;
       S_SET_SIZE (symbolP, size);
       S_SET_SEGMENT (symbolP, sbss_section);
@@ -1581,7 +1581,7 @@ m32r_scomm (int ignore ATTRIBUTE_UNUSED)
     }
   else
     {
-      S_SET_VALUE (symbolP, (valueT) size);
+      S_SET_VALUE (symbolP, size);
       S_SET_ALIGN (symbolP, align2);
       S_SET_EXTERNAL (symbolP);
       S_SET_SEGMENT (symbolP, &scom_section);
@@ -1837,7 +1837,7 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED,
 long
 md_pcrel_from_section (fixS *fixP, segT sec)
 {
-  if (fixP->fx_addsy != (symbolS *) NULL
+  if (fixP->fx_addsy != NULL
       && (! S_IS_DEFINED (fixP->fx_addsy)
 	  || S_GET_SEGMENT (fixP->fx_addsy) != sec
           || S_IS_EXTERNAL (fixP->fx_addsy)
@@ -2103,9 +2103,6 @@ md_number_to_chars (char *buf, valueT val, int n)
    of LITTLENUMS emitted is stored in *SIZEP.  An error message is
    returned, or NULL on OK.  */
 
-/* Equal to MAX_PRECISION in atof-ieee.c.  */
-#define MAX_LITTLENUMS 6
-
 const char *
 md_atof (int type, char *litP, int *sizeP)
 {
@@ -2126,15 +2123,15 @@ m32r_elf_section_change_hook (void)
 /* Return true if can adjust the reloc to be relative to its section
    (such as .data) instead of relative to some symbol.  */
 
-bfd_boolean
+bool
 m32r_fix_adjustable (fixS *fixP)
 {
   bfd_reloc_code_real_type reloc_type;
 
-  if ((int) fixP->fx_r_type >= (int) BFD_RELOC_UNUSED)
+  if (fixP->fx_r_type >= BFD_RELOC_UNUSED)
     {
       const CGEN_INSN *insn = NULL;
-      int opindex = (int) fixP->fx_r_type - (int) BFD_RELOC_UNUSED;
+      int opindex = fixP->fx_r_type - BFD_RELOC_UNUSED;
       const CGEN_OPERAND *operand =
 	cgen_operand_lookup_by_num(gas_cgen_cpu_desc, opindex);
 
@@ -2195,9 +2192,8 @@ tc_gen_reloc (asection * section, fixS * fixP)
   arelent * reloc;
   bfd_reloc_code_real_type code;
 
-  reloc = XNEW (arelent);
-
-  reloc->sym_ptr_ptr = XNEW (asymbol *);
+  reloc = notes_alloc (sizeof (arelent));
+  reloc->sym_ptr_ptr = notes_alloc (sizeof (asymbol *));
   *reloc->sym_ptr_ptr = symbol_get_bfdsym (fixP->fx_addsy);
   reloc->address = fixP->fx_frag->fr_address + fixP->fx_where;
 
@@ -2270,7 +2266,7 @@ printf(" => %s",bfd_get_reloc_code_name(code));
 printf(" => %s\n",reloc->howto->name);
 #endif
 
- if (reloc->howto == (reloc_howto_type *) NULL)
+ if (reloc->howto == NULL)
     {
       as_bad_where (fixP->fx_file, fixP->fx_line,
             _("internal error: can't export reloc type %d (`%s')"),
@@ -2336,13 +2332,13 @@ m32r_parse_name (char const *name,
       /* If we have an absolute symbol or a
 	 reg, then we know its value now.  */
       segment = S_GET_SEGMENT (exprP->X_add_symbol);
-      if (mode != expr_defer && segment == absolute_section)
+      if (!expr_defer_p (mode) && segment == absolute_section)
 	{
 	  exprP->X_op = O_constant;
 	  exprP->X_add_number = S_GET_VALUE (exprP->X_add_symbol);
 	  exprP->X_add_symbol = NULL;
 	}
-      else if (mode != expr_defer && segment == reg_section)
+      else if (!expr_defer_p (mode) && segment == reg_section)
 	{
 	  exprP->X_op = O_register;
 	  exprP->X_add_number = S_GET_VALUE (exprP->X_add_symbol);

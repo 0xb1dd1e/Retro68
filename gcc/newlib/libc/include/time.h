@@ -29,7 +29,7 @@
 #include <sys/timespec.h>
 
 #if __POSIX_VISIBLE >= 200809
-#include <xlocale.h>
+#include <sys/_locale.h>
 #endif
 
 _BEGIN_STD_C
@@ -57,6 +57,11 @@ clock_t	   clock (void);
 double	   difftime (time_t _time2, time_t _time1);
 time_t	   mktime (struct tm *_timeptr);
 time_t	   time (time_t *_timer);
+#if (__ISO_C_VISIBLE >= 2011 || __POSIX_VISIBLE >= 202405)
+#define TIME_UTC 1
+
+int        timespec_get(struct timespec *ts, int base);
+#endif
 #ifndef _REENT_ONLY
 char	  *asctime (const struct tm *_tblock);
 char	  *ctime (const time_t *_time);
@@ -101,26 +106,6 @@ char *strptime_l (const char *__restrict, const char *__restrict,
 void      tzset 	(void);
 #endif
 void      _tzset_r 	(struct _reent *);
-
-typedef struct __tzrule_struct
-{
-  char ch;
-  int m;
-  int n;
-  int d;
-  int s;
-  time_t change;
-  long offset; /* Match type of _timezone. */
-} __tzrule_type;
-
-typedef struct __tzinfo_struct
-{
-  int __tznorth;
-  int __tzyear;
-  __tzrule_type __tzrule[2];
-} __tzinfo_type;
-
-__tzinfo_type *__gettzinfo (void);
 
 /* getdate functions */
 
@@ -249,14 +234,18 @@ extern "C" {
                            /*   thread shall not have a CPU-time clock */
                            /*   accessible. */
 
-/* Manifest Constants, P1003.1b-1993, p. 262 */
-
-#define CLOCK_REALTIME (clockid_t)1
-
 /* Flag indicating time is "absolute" with respect to the clock
-   associated with a time.  */
+   associated with a time.  Value 4 is historic. */
 
 #define TIMER_ABSTIME	4
+
+/* Manifest Constants, P1003.1b-1993, p. 262 */
+
+#if __GNU_VISIBLE
+#define CLOCK_REALTIME_COARSE	(0)
+#endif
+
+#define CLOCK_REALTIME		(1)
 
 /* Manifest Constants, P1003.4b/D8, p. 55 */
 
@@ -266,7 +255,7 @@ extern "C" {
    the identifier of the CPU_time clock associated with the PROCESS
    making the function call.  */
 
-#define CLOCK_PROCESS_CPUTIME_ID (clockid_t)2
+#define CLOCK_PROCESS_CPUTIME_ID (2)
 
 #endif
 
@@ -276,17 +265,37 @@ extern "C" {
     the identifier of the CPU_time clock associated with the THREAD
     making the function call.  */
 
-#define CLOCK_THREAD_CPUTIME_ID (clockid_t)3
+#define CLOCK_THREAD_CPUTIME_ID	(3)
 
 #endif
 
 #if defined(_POSIX_MONOTONIC_CLOCK)
 
 /*  The identifier for the system-wide monotonic clock, which is defined
- *      as a clock whose value cannot be set via clock_settime() and which 
- *          cannot have backward clock jumps. */
+ *  as a clock whose value cannot be set via clock_settime() and which
+ *  cannot have backward clock jumps. */
 
-#define CLOCK_MONOTONIC (clockid_t)4
+#define CLOCK_MONOTONIC		(4)
+
+#endif
+
+#if __GNU_VISIBLE
+
+#define CLOCK_MONOTONIC_RAW	(5)
+
+#define CLOCK_MONOTONIC_COARSE	(6)
+
+#define CLOCK_BOOTTIME		(7)
+
+#define CLOCK_REALTIME_ALARM	(8)
+
+#define CLOCK_BOOTTIME_ALARM	(9)
+
+#endif
+
+#if _BSD_VISIBLE || __GNU_VISIBLE
+
+#define CLOCK_TAI		(11)
 
 #endif
 

@@ -1,4 +1,4 @@
-// Copyright (C) 2017-2019 Free Software Foundation, Inc.
+// Copyright (C) 2017-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -17,6 +17,7 @@
 
 // { dg-options "-D_GLIBCXX_DEBUG" }
 // { dg-do compile { target c++11 } }
+// { dg-skip-if "" { *-*-* } { "-D_GLIBCXX_PARALLEL" } }
 
 #include <vector>
 
@@ -42,7 +43,8 @@ test02()
   std::vector<PrivateDtor> v;
 }
 
-// { dg-error "value type is destructible" "" { target *-*-* } 0 }
+// { dg-error "deleted function .*DeletedDtor" "" { target *-*-* } 0 }
+// { dg-error "PrivateDtor.* is private" "" { target *-*-* } 0 }
 
 // In Debug Mode the "required from here" errors come from <debug/vector>
-// { dg-error "required from here" "" { target *-*-* } 163 }
+// { dg-error "required from here" "" { target *-*-* } 182 }

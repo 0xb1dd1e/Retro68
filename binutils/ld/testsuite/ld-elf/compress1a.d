@@ -2,7 +2,9 @@
 #as: --compress-debug-sections
 #ld: -e func_cu2
 #readelf: -S --wide
-#notarget: alpha-*
+#xfail: alpha-*-*ecoff
+# PR ld/25802
+#xfail: sparcv9-*-solaris2*
 
 #failif
 #...

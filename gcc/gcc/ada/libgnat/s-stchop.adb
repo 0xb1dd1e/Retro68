@@ -6,7 +6,7 @@
 --                                                                          --
 --                                  B o d y                                 --
 --                                                                          --
---          Copyright (C) 1999-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1999-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -60,8 +60,6 @@ package body System.Stack_Checking.Operations is
    --  This order is important because if at any time a write to the stack
    --  cache is pending, that write should be followed by a Poll to prevent
    --  losing signals.
-   --
-   --  Note: This function must be compiled with Polling turned off
    --
    --  Note: on systems with real thread-local storage, Set_Stack_Info should
    --  return an access value for such local storage. In those cases the cache
@@ -236,11 +234,10 @@ package body System.Stack_Checking.Operations is
          --  it is essential to use our local copy of Stack.
 
       begin
-         if (Stack_Grows_Down and then
-               (not (Frame_Address <= My_Stack.Base)))
+         if (Stack_Grows_Down and then not (Frame_Address <= My_Stack.Base))
            or else
             (not Stack_Grows_Down and then
-               (not (Frame_Address >= My_Stack.Base)))
+               not (Frame_Address >= My_Stack.Base))
          then
             --  The returned Base is lower than the stored one, so assume that
             --  the original one wasn't right and use the current Frame_Address

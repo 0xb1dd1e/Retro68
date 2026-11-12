@@ -1,5 +1,5 @@
 ! { dg-require-effective-target vect_int }
-! { dg-additional-options "--param vect-max-peeling-for-alignment=0" }
+! { dg-additional-options "-fno-tree-loop-distribute-patterns --param vect-max-peeling-for-alignment=0" }
 
         Subroutine foo (N, M)
         Integer N
@@ -18,6 +18,7 @@
         end do
 
         do I = 1, N
+!GCC$ novector
           do J = I, M
             if (A(J,2) /= B(J)) then
               STOP 1

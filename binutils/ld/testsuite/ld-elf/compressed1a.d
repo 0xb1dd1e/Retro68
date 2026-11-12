@@ -2,7 +2,9 @@
 #as: --compress-debug-sections=zlib-gabi
 #ld: -e func_cu2
 #readelf: -t
-#notarget: alpha-*
+#xfail: alpha-*-*ecoff
+# PR ld/25802
+#xfail: sparcv9-*-solaris2*
 
 #failif
 #...

@@ -1,5 +1,5 @@
 /* This file is tc-msp430.h
-   Copyright (C) 2002-2018 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
 
    Contributed by Dmitry Diky <diwil@mail.ru>
 
@@ -20,6 +20,7 @@
    Software Foundation, 51 Franklin Street - Fifth Floor, Boston, MA
    02110-1301, USA.  */
 
+#ifndef TC_MSP430
 #define TC_MSP430
 /*   By convention, you should define this macro in the `.h' file.  For
      example, `tc-m68k.h' defines `TC_M68K'.  You might have to use this
@@ -91,8 +92,6 @@
      of a PC relative instruction is the next instruction, so this
      macro would return the length of an instruction.  */
 
-extern long md_pcrel_from_section (struct fix *, segT);
-
 #define LISTING_WORD_SIZE 2
 /*   The number of bytes to put into a word in a listing.  This affects
      the way the bytes are clumped together in the listing.  For
@@ -101,7 +100,7 @@ extern long md_pcrel_from_section (struct fix *, segT);
 
 /* Support symbols like: C$$IO$$.  */
 #undef  LEX_DOLLAR
-#define LEX_DOLLAR 1
+#define LEX_DOLLAR LEX_NAME
 
 #define TC_IMPLICIT_LCOMM_ALIGNMENT(SIZE, P2VAR) (P2VAR) = 0
 /*   An `.lcomm' directive with no explicit alignment parameter will
@@ -129,7 +128,7 @@ extern int msp430_enable_relax;
 extern int msp430_enable_polys;
 
 #define tc_fix_adjustable(FIX) msp430_fix_adjustable (FIX)
-extern bfd_boolean             msp430_fix_adjustable (struct fix *);
+extern bool msp430_fix_adjustable (struct fix *);
 
 /* Allow hexadecimal numbers with 'h' suffix.  Note that if the number
    starts with a letter it will be interpreted as a symbol name not a
@@ -137,8 +136,8 @@ extern bfd_boolean             msp430_fix_adjustable (struct fix *);
    is A5A5h...  */
 #define NUMBERS_WITH_SUFFIX 1
 
-#define md_end msp430_md_end
-extern void    msp430_md_end (void);
+#define md_finish msp430_md_finish
+extern void    msp430_md_finish (void);
 
 /* Do not allow call frame debug info optimization as otherwise we could
    generate the DWARF directives without the relocs necessary to patch
@@ -148,7 +147,7 @@ extern void    msp430_md_end (void);
 /* The difference between same-section symbols may be affected by linker
    relaxation, so do not resolve such expressions in the assembler.  */
 #define md_allow_local_subtract(l,r,s) msp430_allow_local_subtract (l, r, s)
-extern bfd_boolean msp430_allow_local_subtract (expressionS *, expressionS *, segT);
+extern bool msp430_allow_local_subtract (expressionS *, expressionS *, segT);
 
 #define RELOC_EXPANSION_POSSIBLE
 #define MAX_RELOC_EXPANSION 2
@@ -174,3 +173,8 @@ extern bfd_boolean msp430_allow_local_subtract (expressionS *, expressionS *, se
 #define TC_LINKRELAX_FIXUP(seg) ((seg->flags & SEC_CODE) || (seg->flags & SEC_DEBUGGING))
 
 #define DWARF2_ADDR_SIZE(bfd) 4
+
+/* The target supports Object Attributes v1.  */
+#define TC_OBJ_ATTR_v1 1
+
+#endif /* TC_MSP430 */

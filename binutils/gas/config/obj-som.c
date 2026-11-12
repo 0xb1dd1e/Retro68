@@ -1,5 +1,5 @@
 /* SOM object file format.
-   Copyright (C) 1993-2018 Free Software Foundation, Inc.
+   Copyright (C) 1993-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -79,7 +79,7 @@ obj_som_compiler (int unused ATTRIBUTE_UNUSED)
      quote.  */
   filename = buf + 1;
   p = filename;
-  while (*p != ' ' && *p != '\000')
+  while (!is_whitespace (*p) && *p != '\000')
     p++;
   if (*p == '\000')
     {
@@ -89,7 +89,7 @@ obj_som_compiler (int unused ATTRIBUTE_UNUSED)
   *p = '\000';
 
   language_name = ++p;
-  while (*p != ' ' && *p != '\000')
+  while (!is_whitespace (*p) && *p != '\000')
     p++;
   if (*p == '\000')
     {
@@ -205,14 +205,18 @@ obj_som_copyright (int unused ATTRIBUTE_UNUSED)
    which BFD does not understand.  */
 
 void
-obj_som_init_stab_section (segT seg)
+obj_som_init_stab_section (segT stab, segT stabstr)
 {
   segT saved_seg = now_seg;
   segT space;
   subsegT saved_subseg = now_subseg;
   char *p;
- const char * file;
+  const char * file;
   unsigned int stroff;
+
+  /* Nothing to do if the section has already been created.  */
+  if (bfd_get_section_by_name (stdoutput, "$GDB_DEBUG$"))
+    return;
 
   /* Make the space which will contain the debug subspaces.  */
   space = bfd_make_section_old_way (stdoutput, "$GDB_DEBUG$");
@@ -224,14 +228,14 @@ obj_som_init_stab_section (segT seg)
      of the various stabs spaces/subspaces need to be "small".  We
      reserve range 72/73 which appear to work well.  */
   obj_set_section_attributes (space, 1, 1, 72, 2);
-  bfd_set_section_alignment (stdoutput, space, 2);
+  bfd_set_section_alignment (space, 2);
 
   /* Set the containing space for both stab sections to be $GDB_DEBUG$
      (just created above).  Also set some attributes which BFD does
      not understand.  In particular, access bits, sort keys, and load
      quadrant.  */
-  obj_set_subsection_attributes (seg, space, 0x1f, 73, 0, 0, 0, 0);
-  bfd_set_section_alignment (stdoutput, seg, 2);
+  obj_set_subsection_attributes (stab, space, 0x1f, 73, 0, 0, 0, 0);
+  bfd_set_section_alignment (stab, 2);
 
   /* Make some space for the first special stab entry and zero the memory.
      It contains information about the length of this file's
@@ -242,19 +246,18 @@ obj_som_init_stab_section (segT seg)
      the call to get_stab_string_offset.  */
   p = frag_more (12);
   memset (p, 0, 12);
-  file = as_where ((unsigned int *) NULL);
-  stroff = get_stab_string_offset (file, "$GDB_STRINGS$");
+  file = as_where (NULL);
+  stroff = get_stab_string_offset (file, stabstr);
   know (stroff == 1);
   md_number_to_chars (p, stroff, 4);
-  seg_info (seg)->stabu.p = p;
+  seg_info (stab)->stabu.p = p;
 
   /* Set the containing space for both stab sections to be $GDB_DEBUG$
      (just created above).  Also set some attributes which BFD does
      not understand.  In particular, access bits, sort keys, and load
      quadrant.  */
-  seg = bfd_get_section_by_name (stdoutput, "$GDB_STRINGS$");
-  obj_set_subsection_attributes (seg, space, 0x1f, 72, 0, 0, 0, 0);
-  bfd_set_section_alignment (stdoutput, seg, 2);
+  obj_set_subsection_attributes (stabstr, space, 0x1f, 72, 0, 0, 0, 0);
+  bfd_set_section_alignment (stabstr, 2);
 
   subseg_set (saved_seg, saved_subseg);
 }
@@ -273,16 +276,16 @@ adjust_stab_sections (bfd *abfd, asection *sec, void *xxx ATTRIBUTE_UNUSED)
 
   strsec = bfd_get_section_by_name (abfd, "$GDB_STRINGS$");
   if (strsec)
-    strsz = bfd_section_size (abfd, strsec);
+    strsz = bfd_section_size (strsec);
   else
     strsz = 0;
-  nsyms = bfd_section_size (abfd, sec) / 12 - 1;
+  nsyms = bfd_section_size (sec) / 12 - 1;
 
   p = seg_info (sec)->stabu.p;
   gas_assert (p != 0);
 
-  bfd_h_put_16 (abfd, (bfd_vma) nsyms, (bfd_byte *) p + 6);
-  bfd_h_put_32 (abfd, (bfd_vma) strsz, (bfd_byte *) p + 8);
+  bfd_h_put_16 (abfd, nsyms, p + 6);
+  bfd_h_put_32 (abfd, strsz, p + 8);
 }
 
 /* Called late in the assembly phase to adjust the special
@@ -291,7 +294,7 @@ adjust_stab_sections (bfd *abfd, asection *sec, void *xxx ATTRIBUTE_UNUSED)
 void
 som_frob_file (void)
 {
-  bfd_map_over_sections (stdoutput, adjust_stab_sections, (void *) 0);
+  bfd_map_over_sections (stdoutput, adjust_stab_sections, NULL);
 }
 
 static void
@@ -305,8 +308,8 @@ obj_som_weak (int ignore ATTRIBUTE_UNUSED)
     {
       c = get_symbol_name (&name);
       symbolP = symbol_find_or_make (name);
-      *input_line_pointer = c;
-      SKIP_WHITESPACE_AFTER_NAME ();
+      restore_line_pointer (c);
+      SKIP_WHITESPACE ();
       S_SET_WEAK (symbolP);
       if (c == ',')
 	{

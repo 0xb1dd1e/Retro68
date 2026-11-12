@@ -1,4 +1,4 @@
-/* { dg-require-effective-target vect_bswap } */
+/* { dg-additional-options "-msse4" { target sse4_runtime } } */
 
 #include "tree-vect.h"
 
@@ -30,6 +30,7 @@ main (void)
 
   vfoo16 (arr);
 
+#pragma GCC novector
   for (i = 0; i < N; ++i)
     {
       if (arr[i] != expect[i])
@@ -39,4 +40,4 @@ main (void)
   return 0;
 }
 
-/* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect" } } */
+/* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect" { target { vect_bswap || sse4_runtime } } } } */

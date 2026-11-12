@@ -23,6 +23,9 @@ along with GCC; see the file COPYING3.  If not see
 #include <string.h>
 #include <stdint.h>
 #include <unistd.h>
+#ifdef __linux
+#include <sys/prctl.h>
+#endif
 
 /* This is a first cut at checking that debug information matches
    run-time.  The idea is to annotate programs with GUALCHK* macros
@@ -201,9 +204,10 @@ int volatile guality_attached;
    of this wrapping, guality_main may not have an empty argument
    list.  */
 
-extern int guality_main (int argc, char *argv[]);
+extern int __attribute__((noipa))
+guality_main (int argc, char *argv[]);
 
-static void __attribute__((noinline))
+static void __attribute__((noipa))
 guality_check (const char *name, gualchk_t value, int unknown_ok);
 
 /* Set things up, run guality_main, then print a summary and quit.  */
@@ -213,6 +217,10 @@ main (int argc, char *argv[])
 {
   int i;
   char *argv0 = argv[0];
+
+#if defined(PR_SET_PTRACER_ANY)
+  prctl (PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
+#endif
 
   guality_gdb_command = getenv ("GUALITY_GDB");
   if (!guality_gdb_command)

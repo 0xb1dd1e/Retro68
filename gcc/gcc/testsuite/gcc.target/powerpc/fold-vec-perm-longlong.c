@@ -1,10 +1,10 @@
 /* Verify that overloaded built-ins for vec_perm with long long
    inputs produce the right code.  */
 
-/* { dg-do compile {target lp64} } */
+/* { dg-do compile { target lp64 } } */
 // 'long long' in Altivec types is invalid without -mvsx.
-/* { dg-require-effective-target powerpc_vsx_ok } */
 /* { dg-options "-mvsx -O2" } */
+/* { dg-require-effective-target powerpc_vsx } */
 
 #include <altivec.h>
 
@@ -29,4 +29,4 @@ testul (vector unsigned long long vul2, vector unsigned long long vul3,
   return vec_perm (vul2, vul3, vuc);
 }
 
-/* { dg-final { scan-assembler-times "vperm" 3 } } */
+/* { dg-final { scan-assembler-times {\m(?:v|xx)permr?\M} 3 } } */

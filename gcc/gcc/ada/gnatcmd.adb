@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1996-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1996-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -24,12 +24,15 @@
 ------------------------------------------------------------------------------
 
 with Gnatvsn;
+with Errid;    use Errid;
 with Namet;    use Namet;
 with Opt;      use Opt;
 with Osint;    use Osint;
 with Output;   use Output;
 with Switch;   use Switch;
+with System.OS_Lib;
 with Table;
+with Usage;
 
 with Ada.Characters.Handling; use Ada.Characters.Handling;
 with Ada.Command_Line;        use Ada.Command_Line;
@@ -43,6 +46,13 @@ procedure GNATCmd is
    Gprname  : constant String := "gprname";
    Gprls    : constant String := "gprls";
 
+   Ada_Help_Switch : constant String := "--help-ada";
+   --  Flag to display available build switches
+
+   Ada_Diagnostics_Switch : constant String := "--diagnostics";
+
+   Diagnostics_File_Name : constant String := "gnat_diagnostics.sarif";
+
    Error_Exit : exception;
    --  Raise this exception if error detected
 
@@ -53,7 +63,6 @@ procedure GNATCmd is
       Compile,
       Check,
       Elim,
-      Find,
       Krunch,
       Link,
       List,
@@ -65,10 +74,9 @@ procedure GNATCmd is
       Stack,
       Stub,
       Test,
-      Xref,
       Undefined);
 
-   subtype Real_Command_Type is Command_Type range Bind .. Xref;
+   subtype Real_Command_Type is Command_Type range Bind .. Test;
    --  All real command types (excludes only Undefined).
 
    type Alternate_Command is (Comp, Ls, Kr, Pp, Prep);
@@ -111,6 +119,7 @@ procedure GNATCmd is
 
    My_Exit_Status : Exit_Status := Success;
    --  The exit status of the spawned tool
+   Dummy : Boolean;
 
    type Command_Entry is record
       Cname : String_Access;
@@ -154,11 +163,6 @@ procedure GNATCmd is
       Elim =>
         (Cname    => new String'("ELIM"),
          Unixcmd  => new String'("gnatelim"),
-         Unixsws  => null),
-
-      Find =>
-        (Cname    => new String'("FIND"),
-         Unixcmd  => new String'("gnatfind"),
          Unixsws  => null),
 
       Krunch =>
@@ -214,11 +218,6 @@ procedure GNATCmd is
       Test =>
         (Cname    => new String'("TEST"),
          Unixcmd  => new String'("gnattest"),
-         Unixsws  => null),
-
-      Xref =>
-        (Cname    => new String'("XREF"),
-         Unixcmd  => new String'("gnatxref"),
          Unixsws  => null)
      );
 
@@ -229,7 +228,7 @@ procedure GNATCmd is
    procedure Output_Version;
    --  Output the version of this program
 
-   procedure Usage;
+   procedure GNATCmd_Usage;
    --  Display usage
 
    --------------------
@@ -244,13 +243,15 @@ procedure GNATCmd is
                 & ", Free Software Foundation, Inc.");
    end Output_Version;
 
-   -----------
-   -- Usage --
-   -----------
+   -------------------
+   -- GNATCmd_Usage --
+   -------------------
 
-   procedure Usage is
+   procedure GNATCmd_Usage is
    begin
       Output_Version;
+      New_Line;
+      Put_Line ("To list Ada build switches use " & Ada_Help_Switch);
       New_Line;
       Put_Line ("List of available commands");
       New_Line;
@@ -276,14 +277,16 @@ procedure GNATCmd is
       end loop;
 
       New_Line;
-   end Usage;
+   end GNATCmd_Usage;
 
-   procedure Check_Version_And_Help is new Check_Version_And_Help_G (Usage);
+   procedure Check_Version_And_Help
+     is new Check_Version_And_Help_G (GNATCmd_Usage);
 
 --  Start of processing for GNATCmd
 
 begin
-   --  All output from GNATCmd is debugging or error output: send to stderr
+   --  Almost all output from GNATCmd is debugging or error output: send to
+   --  stderr.
 
    Set_Standard_Error;
 
@@ -351,6 +354,36 @@ begin
             Keep_Temporary_Files := True;
             Command_Arg := Command_Arg + 1;
 
+         elsif Command_Arg <= Argument_Count
+           and then Argument (Command_Arg) = Ada_Diagnostics_Switch
+         then
+            --  Print the diagnostics repository to a file
+
+            System.OS_Lib.Delete_File (Diagnostics_File_Name, Dummy);
+            declare
+               Output_FD : constant System.OS_Lib.File_Descriptor :=
+                 System.OS_Lib.Create_New_File
+                   (Diagnostics_File_Name, Fmode => System.OS_Lib.Text);
+
+            begin
+               Set_Output (Output_FD);
+               Print_Diagnostic_Repository;
+               Set_Standard_Output;
+               System.OS_Lib.Close (Output_FD);
+            end;
+
+            Write_Line
+              ("gnat diagnostic information exported to "
+               & Diagnostics_File_Name);
+            Exit_Program (E_Success);
+
+         elsif Command_Arg <= Argument_Count
+           and then Argument (Command_Arg) = Ada_Help_Switch
+         then
+            Set_Standard_Output;
+            Usage;
+            Exit_Program (E_Success);
+
          else
             exit;
          end if;
@@ -359,7 +392,13 @@ begin
       --  If there is no command, just output the usage
 
       if Command_Arg > Argument_Count then
-         Usage;
+         GNATCmd_Usage;
+
+         --  Add the following so that output is consistent with or without the
+         --  --help flag.
+         Set_Standard_Output;
+         Write_Eol;
+         Write_Line ("Report bugs to support@adacore.com");
          return;
       end if;
 
@@ -379,7 +418,7 @@ begin
 
          exception
             when Constraint_Error =>
-               Usage;
+               GNATCmd_Usage;
                Fail ("unknown command: " & Argument (Command_Arg));
          end;
    end;
@@ -454,6 +493,15 @@ begin
 
          Program := new String'(Command_List (The_Command).Unixcmd.all);
 
+      elsif The_Command in Check | Test then
+         Program := new String'(Command_List (The_Command).Unixcmd.all);
+         Find_Program_Name;
+
+         if Name_Len > 5 then
+            First_Switches.Append
+              (new String'
+                 ("--target=" & Name_Buffer (1 .. Name_Len - 5)));
+         end if;
       else
          Program :=
            Program_Name (Command_List (The_Command).Unixcmd.all, "gnat");
@@ -463,13 +511,7 @@ begin
          --  instead of gnatmake/gnatclean.
          --  Ditto for gnatname -> gprname and gnatls -> gprls.
 
-         if The_Command = Make
-           or else The_Command = Compile
-           or else The_Command = Bind
-           or else The_Command = Link
-           or else The_Command = Clean
-           or else The_Command = Name
-           or else The_Command = List
+         if The_Command in Make | Compile | Bind | Link | Clean | Name | List
          then
             declare
                Switch        : String_Access;
@@ -567,30 +609,6 @@ begin
             First_Switches.Table (First_Switches.Last) :=
               Command_List (The_Command).Unixsws (J);
          end loop;
-      end if;
-
-      --  For FIND and XREF, look for switch -P. If it is specified, then
-      --  report an error indicating that the command is no longer supporting
-      --  project files.
-
-      if The_Command = Find or else The_Command = Xref then
-         declare
-            Argv : String_Access;
-         begin
-            for Arg_Num in 1 .. Last_Switches.Last loop
-               Argv := Last_Switches.Table (Arg_Num);
-
-               if Argv'Length >= 2 and then
-                  Argv (Argv'First .. Argv'First + 1) = "-P"
-               then
-                  if The_Command = Find then
-                     Fail ("'gnat find -P' is no longer supported;");
-                  else
-                     Fail ("'gnat xref -P' is no longer supported;");
-                  end if;
-               end if;
-            end loop;
-         end;
       end if;
 
       --  Gather all the arguments and invoke the executable

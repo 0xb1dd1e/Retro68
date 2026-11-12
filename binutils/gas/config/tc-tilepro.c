@@ -1,5 +1,5 @@
 /* tc-tilepro.c -- Assemble for a TILEPro chip.
-   Copyright (C) 2011-2018 Free Software Foundation, Inc.
+   Copyright (C) 2011-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -19,7 +19,6 @@
    MA 02110-1301, USA.  */
 
 #include "as.h"
-#include "struc-symbol.h"
 #include "subsegs.h"
 
 #include "elf/tilepro.h"
@@ -62,14 +61,14 @@ const char EXP_CHARS[] = "eE";
    as in 0d1.0.  */
 const char FLT_CHARS[] = "rRsSfFdDxXpP";
 
-const char *md_shortopts = "VQ:";
+const char md_shortopts[] = "VQ:";
 
-struct option md_longopts[] =
+const struct option md_longopts[] =
 {
   {NULL, no_argument, NULL, 0}
 };
 
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 int
 md_parse_option (int c, const char *arg ATTRIBUTE_UNUSED)
@@ -127,13 +126,13 @@ md_show_usage (FILE *stream)
 #define O_tls_gd_add  O_md22
 #define O_tls_ie_load O_md23
 
-static struct hash_control *special_operator_hash;
+static htab_t special_operator_hash;
 
 /* Hash tables for instruction mnemonic lookup.  */
-static struct hash_control *op_hash;
+static htab_t op_hash;
 
 /* Hash table for spr lookup.  */
-static struct hash_control *spr_hash;
+static htab_t spr_hash;
 
 /* True temporarily while parsing an SPR expression. This changes the
  * namespace to include SPR names.  */
@@ -182,7 +181,7 @@ static int allow_suspicious_bundles;
    for that register (e.g. r63 instead of zero), so we should generate
    a warning. The attempted register number can be found by clearing
    NONCANONICAL_REG_NAME_FLAG.  */
-static struct hash_control *main_reg_hash;
+static htab_t main_reg_hash;
 
 
 /* We cannot unambiguously store a 0 in a hash table and look it up,
@@ -208,7 +207,7 @@ md_begin (void)
   int i;
 
   /* Guarantee text section is aligned.  */
-  bfd_set_section_alignment (stdoutput, text_section,
+  bfd_set_section_alignment (text_section,
                              TILEPRO_LOG2_BUNDLE_ALIGNMENT_IN_BYTES);
 
   require_canonical_reg_names = 1;
@@ -217,9 +216,9 @@ md_begin (void)
   inside_bundle = 0;
 
   /* Initialize special operator hash table.  */
-  special_operator_hash = hash_new ();
+  special_operator_hash = str_htab_create ();
 #define INSERT_SPECIAL_OP(name)					\
-  hash_insert (special_operator_hash, #name, (void *)O_##name)
+  str_hash_insert_int (special_operator_hash, #name, O_##name, 0)
 
   INSERT_SPECIAL_OP(lo16);
   INSERT_SPECIAL_OP(hi16);
@@ -247,55 +246,48 @@ md_begin (void)
 #undef INSERT_SPECIAL_OP
 
   /* Initialize op_hash hash table.  */
-  op_hash = hash_new ();
+  op_hash = str_htab_create ();
   for (op = &tilepro_opcodes[0]; op->name != NULL; op++)
-    {
-      const char *hash_err = hash_insert (op_hash, op->name, (void *)op);
-      if (hash_err != NULL)
-	{
-	  as_fatal (_("Internal Error:  Can't hash %s: %s"),
-		    op->name, hash_err);
-	}
-    }
+    if (str_hash_insert (op_hash, op->name, op, 0) != NULL)
+      as_fatal (_("duplicate %s"), op->name);
 
   /* Initialize the spr hash table.  */
   parsing_spr = 0;
-  spr_hash = hash_new ();
+  spr_hash = str_htab_create ();
   for (i = 0; i < tilepro_num_sprs; i++)
-    hash_insert (spr_hash, tilepro_sprs[i].name,
-                 (void *) &tilepro_sprs[i]);
+    str_hash_insert (spr_hash, tilepro_sprs[i].name, &tilepro_sprs[i], 0);
 
   /* Set up the main_reg_hash table. We use this instead of
    * creating a symbol in the register section to avoid ambiguities
    * with labels that have the same names as registers.  */
-  main_reg_hash = hash_new ();
+  main_reg_hash = str_htab_create ();
   for (i = 0; i < TILEPRO_NUM_REGISTERS; i++)
     {
       char buf[64];
 
-      hash_insert (main_reg_hash, tilepro_register_names[i],
-		   (void *) (long)(i | CANONICAL_REG_NAME_FLAG));
+      str_hash_insert_int (main_reg_hash, tilepro_register_names[i],
+			   i | CANONICAL_REG_NAME_FLAG, 0);
 
       /* See if we should insert a noncanonical alias, like r63.  */
       sprintf (buf, "r%d", i);
       if (strcmp (buf, tilepro_register_names[i]) != 0)
-	hash_insert (main_reg_hash, xstrdup (buf),
-		     (void *) (long)(i | NONCANONICAL_REG_NAME_FLAG));
+	str_hash_insert_int (main_reg_hash, xstrdup (buf),
+			     i | NONCANONICAL_REG_NAME_FLAG, 0);
     }
 
   /* Insert obsolete backwards-compatibility register names.  */
-  hash_insert (main_reg_hash, "io0",
-               (void *) (long) (TREG_IDN0 | CANONICAL_REG_NAME_FLAG));
-  hash_insert (main_reg_hash, "io1",
-               (void *) (long) (TREG_IDN1 | CANONICAL_REG_NAME_FLAG));
-  hash_insert (main_reg_hash, "us0",
-               (void *) (long) (TREG_UDN0 | CANONICAL_REG_NAME_FLAG));
-  hash_insert (main_reg_hash, "us1",
-               (void *) (long) (TREG_UDN1 | CANONICAL_REG_NAME_FLAG));
-  hash_insert (main_reg_hash, "us2",
-               (void *) (long) (TREG_UDN2 | CANONICAL_REG_NAME_FLAG));
-  hash_insert (main_reg_hash, "us3",
-               (void *) (long) (TREG_UDN3 | CANONICAL_REG_NAME_FLAG));
+  str_hash_insert_int (main_reg_hash, "io0",
+		       TREG_IDN0 | CANONICAL_REG_NAME_FLAG, 0);
+  str_hash_insert_int (main_reg_hash, "io1",
+		       TREG_IDN1 | CANONICAL_REG_NAME_FLAG, 0);
+  str_hash_insert_int (main_reg_hash, "us0",
+		       TREG_UDN0 | CANONICAL_REG_NAME_FLAG, 0);
+  str_hash_insert_int (main_reg_hash, "us1",
+		       TREG_UDN1 | CANONICAL_REG_NAME_FLAG, 0);
+  str_hash_insert_int (main_reg_hash, "us2",
+		       TREG_UDN2 | CANONICAL_REG_NAME_FLAG, 0);
+  str_hash_insert_int (main_reg_hash, "us3",
+		       TREG_UDN3 | CANONICAL_REG_NAME_FLAG, 0);
 
 }
 
@@ -395,13 +387,13 @@ apply_special_operator (operatorT op, int num)
   switch (op)
     {
     case O_lo16:
-      return (signed short)num;
+      return (int16_t) num;
 
     case O_hi16:
-      return (signed short)(num >> 16);
+      return (int16_t) (num >> 16);
 
     case O_ha16:
-      return (signed short)((num + 0x8000) >> 16);
+      return (int16_t) ((num + 0x8000) >> 16);
 
     default:
       abort ();
@@ -628,16 +620,18 @@ emit_tilepro_instruction (tilepro_bundle_bits bits,
 	    }
 	  else if (use_subexp)
 	    {
+	      expressionS *sval = NULL;
 	      /* Now that we've changed the reloc, change ha16(x) into x,
 		 etc.  */
 
-	      if (!operand_exp->X_add_symbol->sy_flags.sy_local_symbol
-                  && operand_exp->X_add_symbol->sy_value.X_md)
+	      if (symbol_symbolS (operand_exp->X_add_symbol))
+		sval = symbol_get_value_expression (operand_exp->X_add_symbol);
+	      if (sval && sval->X_md)
 		{
 		  /* HACK: We used X_md to mark this symbol as a fake wrapper
 		     around a real expression. To unwrap it, we just grab its
 		     value here.  */
-		  operand_exp = &operand_exp->X_add_symbol->sy_value;
+		  operand_exp = sval;
 
 		  if (require_symbol)
 		    {
@@ -683,16 +677,16 @@ emit_tilepro_instruction (tilepro_bundle_bits bits,
 static void
 check_illegal_reg_writes (void)
 {
-  BFD_HOST_U_64_BIT all_regs_written = 0;
+  uint64_t all_regs_written = 0;
   int j;
 
   for (j = 0; j < current_bundle_index; j++)
     {
       const struct tilepro_instruction *instr = &current_bundle[j];
       int k;
-      BFD_HOST_U_64_BIT regs =
-	((BFD_HOST_U_64_BIT)1) << instr->opcode->implicitly_written_register;
-      BFD_HOST_U_64_BIT conflict;
+      uint64_t regs =
+	(uint64_t) 1 << instr->opcode->implicitly_written_register;
+      uint64_t conflict;
 
       for (k = 0; k < instr->opcode->num_operands; k++)
 	{
@@ -702,12 +696,12 @@ check_illegal_reg_writes (void)
 	  if (operand->is_dest_reg)
 	    {
 	      int regno = instr->operand_values[k].X_add_number;
-	      BFD_HOST_U_64_BIT mask = ((BFD_HOST_U_64_BIT)1) << regno;
+	      uint64_t mask = (uint64_t) 1 << regno;
 
-	      if ((mask & (  (((BFD_HOST_U_64_BIT)1) << TREG_IDN1)
-			     | (((BFD_HOST_U_64_BIT)1) << TREG_UDN1)
-			     | (((BFD_HOST_U_64_BIT)1) << TREG_UDN2)
-			     | (((BFD_HOST_U_64_BIT)1) << TREG_UDN3))) != 0
+	      if ((mask & (  ((uint64_t) 1 << TREG_IDN1)
+			   | ((uint64_t) 1 << TREG_UDN1)
+			   | ((uint64_t) 1 << TREG_UDN2)
+			   | ((uint64_t) 1 << TREG_UDN3))) != 0
 		  && !allow_suspicious_bundles)
 		{
 		  as_bad (_("Writes to register '%s' are not allowed."),
@@ -719,7 +713,7 @@ check_illegal_reg_writes (void)
 	}
 
       /* Writing to the zero register doesn't count.  */
-      regs &= ~(((BFD_HOST_U_64_BIT)1) << TREG_ZERO);
+      regs &= ~((uint64_t) 1 << TREG_ZERO);
 
       conflict = all_regs_written & regs;
       if (conflict != 0 && !allow_suspicious_bundles)
@@ -784,7 +778,7 @@ tilepro_flush_bundle (void)
 	  /* Make sure all instructions can be bundled with other
 	     instructions.  */
 	  const struct tilepro_opcode *cannot_bundle = NULL;
-	  bfd_boolean seen_non_nop = FALSE;
+	  bool seen_non_nop = false;
 
 	  for (j = 0; j < current_bundle_index; j++)
 	    {
@@ -795,7 +789,7 @@ tilepro_flush_bundle (void)
 	      else if (op->mnemonic != TILEPRO_OPC_NOP
 		       && op->mnemonic != TILEPRO_OPC_INFO
 		       && op->mnemonic != TILEPRO_OPC_INFOL)
-		seen_non_nop = TRUE;
+		seen_non_nop = true;
 	    }
 
 	  if (cannot_bundle != NULL && seen_non_nop)
@@ -837,8 +831,8 @@ tilepro_flush_bundle (void)
 
   /* If the section seems to have no alignment set yet, go ahead and
      make it large enough to hold code.  */
-  if (bfd_get_section_alignment (stdoutput, now_seg) == 0)
-    bfd_set_section_alignment (stdoutput, now_seg,
+  if (bfd_section_alignment (now_seg) == 0)
+    bfd_set_section_alignment (now_seg,
                                TILEPRO_LOG2_BUNDLE_ALIGNMENT_IN_BYTES);
 
   for (j = 0; j < current_bundle_index; j++)
@@ -852,10 +846,8 @@ tilepro_flush_bundle (void)
       /* Figure out what pipe the fnop must be in via arithmetic.
        * p0 + p1 + p2 must sum to the sum of TILEPRO_PIPELINE_Y[012].  */
       current_bundle[0].pipe =
-	(tilepro_pipeline)((TILEPRO_PIPELINE_Y0
-			    + TILEPRO_PIPELINE_Y1
-			    + TILEPRO_PIPELINE_Y2) -
-			   (current_bundle[1].pipe + current_bundle[2].pipe));
+	(TILEPRO_PIPELINE_Y0 + TILEPRO_PIPELINE_Y1 + TILEPRO_PIPELINE_Y2
+	 - current_bundle[1].pipe - current_bundle[2].pipe);
     }
 
   check_illegal_reg_writes ();
@@ -884,8 +876,8 @@ tilepro_flush_bundle (void)
 					f);
     }
 
-  number_to_chars_littleendian (f, (unsigned int)bits, 4);
-  number_to_chars_littleendian (f + 4, (unsigned int)(bits >> 32), 4);
+  number_to_chars_littleendian (f, bits, 4);
+  number_to_chars_littleendian (f + 4, bits >> 32, 4);
   current_bundle_index = 0;
 
   /* Emit DWARF2 debugging information.  */
@@ -902,7 +894,7 @@ tilepro_parse_name (char *name, expressionS *e, char *nextcharP)
 
   if (parsing_spr)
     {
-      void *val = hash_find (spr_hash, name);
+      void *val = str_hash_find (spr_hash, name);
       if (val == NULL)
 	return 0;
 
@@ -921,10 +913,10 @@ tilepro_parse_name (char *name, expressionS *e, char *nextcharP)
   else
     {
       /* Look up the operator in our table.  */
-      void *val = hash_find (special_operator_hash, name);
-      if (val == 0)
+      int opint = str_hash_find_int (special_operator_hash, name);
+      if (opint < 0)
 	return 0;
-      op = (operatorT)(long)val;
+      op = opint;
     }
 
   /* Restore old '(' and skip it.  */
@@ -958,7 +950,7 @@ tilepro_parse_name (char *name, expressionS *e, char *nextcharP)
 	  /* HACK: mark this symbol as a temporary wrapper around a proper
 	     expression, so we can unwrap it later once we have communicated
 	     the relocation type.  */
-	  sym->sy_value.X_md = 1;
+	  symbol_get_value_expression (sym)->X_md = 1;
 	}
 
       memset (e, 0, sizeof *e);
@@ -983,12 +975,10 @@ parse_reg_expression (expressionS* expression)
   char *regname;
   char terminating_char = get_symbol_name (&regname);
 
-  void* pval = hash_find (main_reg_hash, regname);
-
-  if (pval == NULL)
+  int regno_and_flags = str_hash_find_int (main_reg_hash, regname);
+  if (regno_and_flags < 0)
     as_bad (_("Expected register, got '%s'."), regname);
 
-  int regno_and_flags = (int)(size_t)pval;
   int regno = EXTRACT_REGNO(regno_and_flags);
 
   if ((regno_and_flags & NONCANONICAL_REG_NAME_FLAG)
@@ -1048,9 +1038,9 @@ parse_operands (const char *opcode_name,
 
       if (i + 1 < num_operands)
 	{
-	  int separator = (unsigned char)*input_line_pointer++;
+	  char separator = *input_line_pointer++;
 
-	  if (is_end_of_line[separator] || (separator == '}'))
+	  if (is_end_of_stmt (separator) || (separator == '}'))
 	    {
 	      as_bad (_("Too few operands to '%s'."), opcode_name);
 	      return;
@@ -1058,7 +1048,7 @@ parse_operands (const char *opcode_name,
 	  else if (separator != ',')
 	    {
 	      as_bad (_("Unexpected character '%c' after operand %d to %s."),
-		      (char)separator, i + 1, opcode_name);
+		      separator, i + 1, opcode_name);
 	      return;
 	    }
 	}
@@ -1085,7 +1075,7 @@ parse_operands (const char *opcode_name,
 	}
     }
 
-  if (!is_end_of_line[(unsigned char)*input_line_pointer])
+  if (!is_end_of_stmt (*input_line_pointer))
     {
       switch (*input_line_pointer)
 	{
@@ -1127,7 +1117,7 @@ md_assemble (char *str)
   old_char = str[opname_len];
   str[opname_len] = '\0';
 
-  op = hash_find(op_hash, str);
+  op = str_hash_find (op_hash, str);
   str[opname_len] = old_char;
   if (op == NULL)
     {
@@ -1197,9 +1187,6 @@ const pseudo_typeS md_pseudo_table[] =
   { NULL, 0, 0 }
 };
 
-/* Equal to MAX_PRECISION in atof-ieee.c  */
-#define MAX_LITTLENUMS 6
-
 /* Turn the string pointed to by litP into a floating point constant
    of type TYPE, and emit the appropriate bytes.  The number of
    LITTLENUMS emitted is stored in *SIZEP.  An error message is
@@ -1238,7 +1225,7 @@ md_atof (int type, char *litP, int *sizeP)
      the bigendian 386.  */
   for (wordP = words + prec - 1; prec--;)
     {
-      md_number_to_chars (litP, (valueT) (*wordP--), sizeof (LITTLENUM_TYPE));
+      md_number_to_chars (litP, *wordP--, sizeof (LITTLENUM_TYPE));
       litP += sizeof (LITTLENUM_TYPE);
     }
   return 0;
@@ -1343,7 +1330,7 @@ md_apply_fix (fixS *fixP, valueT * valP, segT seg ATTRIBUTE_UNUSED)
   if (fixP->fx_subsy != (symbolS *) NULL)
     {
       /* We can't actually support subtracting a symbol.  */
-      as_bad_where (fixP->fx_file, fixP->fx_line, _("expression too complex"));
+      as_bad_subtract (fixP);
     }
 
   /* Correct relocation types for pc-relativeness.  */
@@ -1515,8 +1502,8 @@ tc_gen_reloc (asection *sec ATTRIBUTE_UNUSED, fixS *fixp)
 {
   arelent *reloc;
 
-  reloc = XNEW (arelent);
-  reloc->sym_ptr_ptr = XNEW (asymbol *);
+  reloc = notes_alloc (sizeof (arelent));
+  reloc->sym_ptr_ptr = notes_alloc (sizeof (asymbol *));
   *reloc->sym_ptr_ptr = symbol_get_bfdsym (fixp->fx_addsy);
   reloc->address = fixp->fx_frag->fr_address + fixp->fx_where;
 

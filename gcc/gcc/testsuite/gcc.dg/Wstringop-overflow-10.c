@@ -1,5 +1,7 @@
-/* { dg-do compile } */
-/* { dg-options "-O2 -Wstringop-overflow" } */
+/* PR tree-optimization/89500 - ICE: tree check: expected integer_cst,
+   have ssa_name in get_len
+   { dg-do compile }
+   { dg-options "-O2 -Wstringop-overflow -Wstringop-truncation" } */
 
 void
 foo (char *a)
@@ -19,7 +21,7 @@ void
 baz (char *a)
 {
   char b[16] = "abcdefg";
-  __builtin_strncpy (a, b, __builtin_strnlen (b, 7));	/* { dg-bogus "specified bound depends on the length of the source argument" } */
+  __builtin_strncpy (a, b, __builtin_strnlen (b, 7));	/* { dg-warning "output truncated before terminating nul" } */
 }
 
 void fill (char *);

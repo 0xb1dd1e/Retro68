@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -28,7 +28,7 @@
 --  which the numbers are all written as $, and generates a new version of the
 --  spec file snames.ads (written to snames.ns). It also reads snames.adb-tmpl
 --  and generates an updated body (written to snames.nb), and snames.h-tmpl and
---  generates an updated C header file (written to snames.nh).
+--  generates an updated C header file (written to snames.h).
 
 with Ada.Strings.Unbounded;         use Ada.Strings.Unbounded;
 with Ada.Strings.Unbounded.Text_IO; use Ada.Strings.Unbounded.Text_IO;
@@ -58,6 +58,7 @@ procedure XSnamesT is
    Line  : VString := Nul;
    Name0 : VString := Nul;
    Name1 : VString := Nul;
+   Name2 : VString := Nul;
    Oval  : VString := Nul;
    Restl : VString := Nul;
 
@@ -69,6 +70,7 @@ procedure XSnamesT is
    Get_Name : constant Pattern := "Name_" & Rest * Name1;
    Chk_Low  : constant Pattern := Pos (0) & Any (Lower_Set) & Rest & Pos (1);
    Findu    : constant Pattern := Span ('u') * A;
+   Is_Conv  : constant Pattern := "Convention_" & Rest;
 
    Val : Natural;
 
@@ -98,12 +100,18 @@ procedure XSnamesT is
 
    --  Patterns used in the spec file
 
-   Get_Attr : constant Pattern := Span (' ') & "Attribute_"
-                                  & Break (",)") * Name1;
-   Get_Conv : constant Pattern := Span (' ') & "Convention_"
-                                  & Break (",)") * Name1;
-   Get_Prag : constant Pattern := Span (' ') & "Pragma_"
-                                  & Break (",)") * Name1;
+   Get_Attr  : constant Pattern := Span (' ') & "Attribute_"
+                                   & Break (",)") * Name1;
+   Get_Conv  : constant Pattern := Span (' ') & "Convention_"
+                                   & Break (",)") * Name1;
+   Get_Prag  : constant Pattern := Span (' ') & "Pragma_"
+                                   & Break (",)") * Name1;
+   Get_Subt1 : constant Pattern := Span (' ') & "subtype "
+                                   & Break (' ') * Name1
+                                   & " is " & Rest * Name2;
+   Get_Subt2 : constant Pattern := Span (' ') & "range "
+                                   & Break (' ') * Name1
+                                   & " .. " & Break (";") * Name2;
 
    type Header_Symbol_Counter is array (Header_Symbol) of Natural;
    Header_Counter : Header_Symbol_Counter := (0, 0, 0, 0, 0);
@@ -111,13 +119,17 @@ procedure XSnamesT is
    Header_Current_Symbol : Header_Symbol := None;
    Header_Pending_Line : VString := Nul;
 
+   --  Subtypes we will emit after an enum
+
+   Generated_C_Subtypes : Unbounded_String;
+
    ------------------------
    -- Output_Header_Line --
    ------------------------
 
    procedure Output_Header_Line (S : Header_Symbol) is
       function Make_Value (V : Integer) return String;
-      --  Build the definition for the current macro (Names are integers
+      --  Build the definition for the current enumerator (Names are integers
       --  offset to N, while other items are enumeration values).
 
       ----------------
@@ -136,15 +148,14 @@ procedure XSnamesT is
    --  Start of processing for Output_Header_Line
 
    begin
-      --  Skip all the #define for S-prefixed symbols in the header.
+      --  Skip all the enumerator for S-prefixed symbols in the header.
       --  Of course we are making implicit assumptions:
       --   (1) No newline between symbols with the same prefix.
       --   (2) Prefix order is the same as in snames.ads.
 
       if Header_Current_Symbol /= S then
          declare
-            Name2 : VString;
-            Pat : constant Pattern := "#define  "
+            Pat : constant Pattern := "  "
                                        & Header_Prefix (S).all
                                        & Break (' ') * Name2;
             In_Pat : Boolean := False;
@@ -173,14 +184,12 @@ procedure XSnamesT is
 
       --  Now output the line
 
-      --  Note that we must ensure at least one space between macro name and
-      --  parens, otherwise the parenthesized value gets treated as an argument
-      --  specification.
-
-      Put_Line (OutH, "#define  " & Header_Prefix (S).all
+      Put_Line (OutH, "  " & Header_Prefix (S).all
                   & "_" & Name1
                   & (30 - Natural'Min (29, Length (Name1))) * ' '
-                  & Make_Value (Header_Counter (S)));
+                  & " = "
+                  & Make_Value (Header_Counter (S))
+                  & ",");
       Header_Counter (S) := Header_Counter (S) + 1;
    end Output_Header_Line;
 
@@ -227,6 +236,13 @@ begin
             Output_Header_Line (Conv);
          elsif Match (Line, Get_Prag) then
             Output_Header_Line (Prag);
+         elsif Match (Line, Get_Subt1) and then Match (Name2, Is_Conv) then
+            Generated_C_Subtypes := Generated_C_Subtypes & ASCII.LF
+                                     & "SUBTYPE (" & Name1 & ", " & Name2
+                                     & ", ";
+         elsif Match (Line, Get_Subt2) and then Match (Name1, Is_Conv) then
+            Generated_C_Subtypes := Generated_C_Subtypes & ASCII.LF
+                                     & "   " & Name1 & ", " & Name2 & ')';
          end if;
       else
 
@@ -248,11 +264,14 @@ begin
                Replace (M, Translate (A, Xlate_U_Und));
                Translate (Name0, Lower_Case_Map);
 
-            elsif not Match (Name0, "Op_", "") then
-               Translate (Name0, Lower_Case_Map);
+            elsif Match (Name0, "UP_", "") then
+               Translate (Name0, Upper_Case_Map);
+
+            elsif Match (Name0, "Op_", "") then
+               Name0 := 'O' & Translate (Name0, Lower_Case_Map);
 
             else
-               Name0 := 'O' & Translate (Name0, Lower_Case_Map);
+               Translate (Name0, Lower_Case_Map);
             end if;
 
             if not Match (Name0, Chk_Low) then
@@ -282,6 +301,8 @@ begin
       Put_Line (OutH, Line);
    end loop;
 
+   Put_Line (OutH, Generated_C_Subtypes);
+   Put_Line (OutH, "");
    Put_Line (OutH, "#ifdef __cplusplus");
    Put_Line (OutH, "}");
    Put_Line (OutH, "#endif");

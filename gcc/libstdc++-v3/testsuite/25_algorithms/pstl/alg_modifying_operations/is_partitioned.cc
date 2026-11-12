@@ -1,7 +1,8 @@
 // -*- C++ -*-
-// { dg-options "-std=gnu++17 -ltbb" }
+// { dg-options "-ltbb" }
 // { dg-do run { target c++17 } }
-// { dg-require-effective-target tbb-backend }
+// { dg-timeout-factor 3 }
+// { dg-require-effective-target tbb_backend }
 
 //===-- is_partitioned.pass.cpp -------------------------------------------===//
 //
@@ -28,16 +29,16 @@ using namespace TestUtils;
 struct test_one_policy
 {
     //dummy specialization by policy type, in case of broken configuration
-#if __PSTL_ICC_17_VC141_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN || __PSTL_ICC_16_VC14_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN
+#if defined(_PSTL_ICC_17_VC141_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN) || defined(_PSTL_ICC_16_VC14_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN)
 
     template <typename Iterator1, typename Predicate>
     void
-    operator()(pstl::execution::unsequenced_policy, Iterator1 begin1, Iterator1 end1, Predicate pred)
+    operator()(__pstl::execution::unsequenced_policy, Iterator1 begin1, Iterator1 end1, Predicate pred)
     {
     }
     template <typename Iterator1, typename Predicate>
     void
-    operator()(pstl::execution::parallel_unsequenced_policy, Iterator1 begin1, Iterator1 end1, Predicate pred)
+    operator()(__pstl::execution::parallel_unsequenced_policy, Iterator1 begin1, Iterator1 end1, Predicate pred)
     {
     }
 #endif
@@ -91,14 +92,14 @@ struct test_non_const
     }
 };
 
-int32_t
+int
 main()
 {
     test<float64_t>([](const float64_t x) { return x < 0; });
     test<int32_t>([](const int32_t x) { return x > 1000; });
     test<uint16_t>([](const uint16_t x) { return x % 5 < 3; });
-#if !__PSTL_ICC_18_TEST_EARLY_EXIT_MONOTONIC_RELEASE_BROKEN && !__PSTL_ICC_19_TEST_IS_PARTITIONED_RELEASE_BROKEN
-    test<LocalWrapper<float64_t>>([](const LocalWrapper<float64_t>& x) { return true; });
+#if !defined(_PSTL_ICC_18_TEST_EARLY_EXIT_MONOTONIC_RELEASE_BROKEN) && !defined(_PSTL_ICC_19_TEST_IS_PARTITIONED_RELEASE_BROKEN)
+    test<LocalWrapper<float64_t>>([](const LocalWrapper<float64_t>&) { return true; });
 #endif
 
     test_algo_basic_single<int32_t>(run_for_rnd_fw<test_non_const>());

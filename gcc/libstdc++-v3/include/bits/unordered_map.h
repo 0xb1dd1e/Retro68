@@ -1,6 +1,6 @@
 // unordered_map implementation -*- C++ -*-
 
-// Copyright (C) 2010-2019 Free Software Foundation, Inc.
+// Copyright (C) 2010-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -29,6 +29,14 @@
 
 #ifndef _UNORDERED_MAP_H
 #define _UNORDERED_MAP_H
+
+#include <bits/hashtable.h>
+#include <bits/allocator.h>
+#include <bits/functional_hash.h> // hash
+#include <bits/stl_function.h>    // equal_to
+#if __glibcxx_containers_ranges // C++ >= 23
+# include <bits/ranges_base.h> // ranges::begin, ranges::distance etc.
+#endif
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
@@ -78,13 +86,15 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
    *  with the keys.
    *
    *  @ingroup unordered_associative_containers
+   *  @headerfile unordered_map
+   *  @since C++11
    *
    *  @tparam  _Key    Type of key objects.
    *  @tparam  _Tp     Type of mapped objects.
-   *  @tparam  _Hash   Hashing function object type, defaults to hash<_Value>.
+   *  @tparam  _Hash   Hashing function object type, defaults to hash<_Key>.
    *  @tparam  _Pred   Predicate function object type, defaults
-   *                   to equal_to<_Value>.
-   *  @tparam  _Alloc  Allocator type, defaults to 
+   *                   to equal_to<_Key>.
+   *  @tparam  _Alloc  Allocator type, defaults to
    *                   std::allocator<std::pair<const _Key, _Tp>>.
    *
    *  Meets the requirements of a <a href="tables.html#65">container</a>, and
@@ -106,7 +116,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 
     public:
       // typedefs:
-      //@{
+      ///@{
       /// Public typedefs.
       typedef typename _Hashtable::key_type	key_type;
       typedef typename _Hashtable::value_type	value_type;
@@ -114,9 +124,9 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       typedef typename _Hashtable::hasher	hasher;
       typedef typename _Hashtable::key_equal	key_equal;
       typedef typename _Hashtable::allocator_type allocator_type;
-      //@}
+      ///@}
 
-      //@{
+      ///@{
       ///  Iterator-related typedefs.
       typedef typename _Hashtable::pointer		pointer;
       typedef typename _Hashtable::const_pointer	const_pointer;
@@ -128,9 +138,9 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       typedef typename _Hashtable::const_local_iterator	const_local_iterator;
       typedef typename _Hashtable::size_type		size_type;
       typedef typename _Hashtable::difference_type	difference_type;
-      //@}
+      ///@}
 
-#if __cplusplus > 201402L
+#ifdef __glibcxx_node_extract // >= C++17 && HOSTED
       using node_type = typename _Hashtable::node_type;
       using insert_return_type = typename _Hashtable::insert_return_type;
 #endif
@@ -209,6 +219,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        */
       unordered_map(unordered_map&& __umap,
 		    const allocator_type& __a)
+	noexcept( noexcept(_Hashtable(std::move(__umap._M_h), __a)) )
       : _M_h(std::move(__umap._M_h), __a)
       { }
 
@@ -240,6 +251,14 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       : unordered_map(__n, __hf, key_equal(), __a)
       { }
 
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 2713. More missing allocator-extended constructors for unordered containers
+      template<typename _InputIterator>
+	unordered_map(_InputIterator __first, _InputIterator __last,
+		      const allocator_type& __a)
+	: unordered_map(__first, __last, 0, hasher(), key_equal(), __a)
+	{ }
+
       template<typename _InputIterator>
 	unordered_map(_InputIterator __first, _InputIterator __last,
 		      size_type __n,
@@ -260,11 +279,61 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       : unordered_map(__l, __n, hasher(), key_equal(), __a)
       { }
 
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 2713. More missing allocator-extended constructors for unordered containers
+      unordered_map(initializer_list<value_type> __l,
+		    const allocator_type& __a)
+      : unordered_map(__l, 0, hasher(), key_equal(), __a)
+      { }
+
       unordered_map(initializer_list<value_type> __l,
 		    size_type __n, const hasher& __hf,
 		    const allocator_type& __a)
       : unordered_map(__l, __n, __hf, key_equal(), __a)
       { }
+
+#if __glibcxx_containers_ranges // C++ >= 23
+      /**
+       *  @brief  Builds an %unordered_map from a range.
+       *  @since C++23
+       *  @param  __rg An input range of elements that can be converted to
+       *               the maps's value type.
+       *  @param __n  Minimal initial number of buckets.
+       *  @param __hf  A hash functor.
+       *  @param __eql  A key equality functor.
+       *  @param  __a  An allocator object.
+       *
+       *  Create an %unordered_map consisting of copies of the elements in the
+       *  range. This is linear in N (where N is `std::ranges::size(__rg)`).
+       */
+       template<__detail::__container_compatible_range<value_type> _Rg>
+	 unordered_map(from_range_t, _Rg&& __rg,
+		       size_type __n = 0,
+		       const hasher& __hf = hasher(),
+		       const key_equal& __eql = key_equal(),
+		       const allocator_type& __a = allocator_type())
+	  : _M_h(__n, __hf, __eql, __a)
+	  { insert_range(std::forward<_Rg>(__rg)); }
+
+       // _GLIBCXX_RESOLVE_LIB_DEFECTS
+       // 2713. More missing allocator-extended constructors for unordered containers
+       template<__detail::__container_compatible_range<value_type> _Rg>
+	 unordered_map(from_range_t, _Rg&& __rg, const allocator_type& __a)
+	  : _M_h(0, hasher(), key_equal(), __a)
+	  { insert_range(std::forward<_Rg>(__rg)); }
+
+       template<__detail::__container_compatible_range<value_type> _Rg>
+	 unordered_map(from_range_t, _Rg&& __rg, size_type __n,
+		       const allocator_type& __a)
+	  : _M_h(__n, hasher(), key_equal(), __a)
+	  { insert_range(std::forward<_Rg>(__rg)); }
+
+       template<__detail::__container_compatible_range<value_type> _Rg>
+	 unordered_map(from_range_t, _Rg&& __rg, size_type __n,
+		       const hasher& __hf, const allocator_type& __a)
+	  : _M_h(__n, __hf, key_equal(), __a)
+	  { insert_range(std::forward<_Rg>(__rg)); }
+#endif
 
       /// Copy assignment operator.
       unordered_map&
@@ -324,7 +393,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       begin() noexcept
       { return _M_h.begin(); }
 
-      //@{
+      ///@{
       /**
        *  Returns a read-only (constant) iterator that points to the first
        *  element in the %unordered_map.
@@ -336,7 +405,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       const_iterator
       cbegin() const noexcept
       { return _M_h.begin(); }
-      //@}
+      ///@}
 
       /**
        *  Returns a read/write iterator that points one past the last element in
@@ -346,7 +415,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       end() noexcept
       { return _M_h.end(); }
 
-      //@{
+      ///@{
       /**
        *  Returns a read-only (constant) iterator that points one past the last
        *  element in the %unordered_map.
@@ -358,7 +427,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       const_iterator
       cend() const noexcept
       { return _M_h.end(); }
-      //@}
+      ///@}
 
       // modifiers.
 
@@ -418,7 +487,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	emplace_hint(const_iterator __pos, _Args&&... __args)
 	{ return _M_h.emplace_hint(__pos, std::forward<_Args>(__args)...); }
 
-#if __cplusplus > 201402L
+#ifdef __glibcxx_node_extract // >= C++17 && HOSTED
       /// Extract a node.
       node_type
       extract(const_iterator __pos)
@@ -432,6 +501,13 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       extract(const key_type& __key)
       { return _M_h.extract(__key); }
 
+#ifdef __glibcxx_associative_heterogeneous_erasure // C++23
+      template <__heterogeneous_hash_key<unordered_map> _Kt>
+	node_type
+	extract(_Kt&& __key)
+	{ return _M_h._M_extract_tr(__key); }
+#endif
+
       /// Re-insert an extracted node.
       insert_return_type
       insert(node_type&& __nh)
@@ -441,15 +517,17 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       iterator
       insert(const_iterator, node_type&& __nh)
       { return _M_h._M_reinsert_node(std::move(__nh)).position; }
+#endif // node_extract
 
-#define __cpp_lib_unordered_map_try_emplace 201411
+#ifdef __glibcxx_unordered_map_try_emplace // C++ >= 17 && HOSTED
+      ///@{
       /**
        *  @brief Attempts to build and insert a std::pair into the
        *  %unordered_map.
        *
        *  @param __k    Key to use for finding a possibly existing pair in
        *                the unordered_map.
-       *  @param __args  Arguments used to generate the .second for a 
+       *  @param __args  Arguments used to generate the .second for a
        *                new pair instance.
        *
        *  @return  A pair, of which the first element is an iterator that points
@@ -466,40 +544,33 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        *  Insertion requires amortized constant time.
        */
       template <typename... _Args>
-        pair<iterator, bool>
-        try_emplace(const key_type& __k, _Args&&... __args)
-        {
-          iterator __i = find(__k);
-          if (__i == end())
-            {
-              __i = emplace(std::piecewise_construct,
-                            std::forward_as_tuple(__k),
-                            std::forward_as_tuple(
-                              std::forward<_Args>(__args)...))
-                .first;
-              return {__i, true};
-            }
-          return {__i, false};
-        }
+	pair<iterator, bool>
+	try_emplace(const key_type& __k, _Args&&... __args)
+	{
+	  return _M_h.try_emplace(cend(), __k, std::forward<_Args>(__args)...);
+	}
 
       // move-capable overload
       template <typename... _Args>
-        pair<iterator, bool>
-        try_emplace(key_type&& __k, _Args&&... __args)
-        {
-          iterator __i = find(__k);
-          if (__i == end())
-            {
-              __i = emplace(std::piecewise_construct,
-                            std::forward_as_tuple(std::move(__k)),
-                            std::forward_as_tuple(
-                              std::forward<_Args>(__args)...))
-                .first;
-              return {__i, true};
-            }
-          return {__i, false};
-        }
+	pair<iterator, bool>
+	try_emplace(key_type&& __k, _Args&&... __args)
+	{
+	  return _M_h.try_emplace(cend(), std::move(__k),
+				  std::forward<_Args>(__args)...);
+	}
 
+#ifdef __glibcxx_associative_heterogeneous_insertion  // C++26
+      template <__heterogeneous_hash_key<unordered_map> _Kt, typename ..._Args>
+	pair<iterator, bool>
+	try_emplace(_Kt&& __k, _Args&&... __args)
+	{
+	  return _M_h.try_emplace(cend(),
+	    std::forward<_Kt>(__k), std::forward<_Args>(__args)...);
+	}
+#endif
+      ///@}
+
+      ///@{
       /**
        *  @brief Attempts to build and insert a std::pair into the
        *  %unordered_map.
@@ -508,7 +579,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        *                should be inserted.
        *  @param __k    Key to use for finding a possibly existing pair in
        *                the unordered_map.
-       *  @param __args  Arguments used to generate the .second for a 
+       *  @param __args  Arguments used to generate the .second for a
        *                new pair instance.
        *  @return An iterator that points to the element with key of the
        *          std::pair built from @a __args (may or may not be that
@@ -529,43 +600,44 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        *  Insertion requires amortized constant time.
        */
       template <typename... _Args>
-        iterator
-        try_emplace(const_iterator __hint, const key_type& __k,
-                    _Args&&... __args)
-        {
-          iterator __i = find(__k);
-          if (__i == end())
-            __i = emplace_hint(__hint, std::piecewise_construct,
-                               std::forward_as_tuple(__k),
-                               std::forward_as_tuple(
-                                 std::forward<_Args>(__args)...));
-          return __i;
-        }
+	iterator
+	try_emplace(const_iterator __hint, const key_type& __k,
+		    _Args&&... __args)
+	{
+	  return _M_h.try_emplace(__hint, __k,
+				  std::forward<_Args>(__args)...).first;
+	}
 
       // move-capable overload
       template <typename... _Args>
-        iterator
-        try_emplace(const_iterator __hint, key_type&& __k, _Args&&... __args)
-        {
-          iterator __i = find(__k);
-          if (__i == end())
-            __i = emplace_hint(__hint, std::piecewise_construct,
-                               std::forward_as_tuple(std::move(__k)),
-                               std::forward_as_tuple(
-                                 std::forward<_Args>(__args)...));
-          return __i;
-        }
-#endif // C++17
+	iterator
+	try_emplace(const_iterator __hint, key_type&& __k, _Args&&... __args)
+	{
+	  return _M_h.try_emplace(__hint, std::move(__k),
+				  std::forward<_Args>(__args)...).first;
+	}
 
-      //@{
+#ifdef __glibcxx_associative_heterogeneous_insertion  // C++26
+      template <__heterogeneous_hash_key<unordered_map> _Kt, typename ..._Args>
+	iterator
+	try_emplace(const_iterator __hint, _Kt&& __k, _Args&&... __args)
+	{
+	  return _M_h.try_emplace(__hint,
+	    std::forward<_Kt>(__k), std::forward<_Args>(__args)...).first;
+	}
+#endif
+      ///@}
+#endif // __glibcxx_unordered_map_try_emplace
+
+      ///@{
       /**
        *  @brief Attempts to insert a std::pair into the %unordered_map.
 
        *  @param __x Pair to be inserted (see std::make_pair for easy
        *	     creation of pairs).
        *
-       *  @return  A pair, of which the first element is an iterator that 
-       *           points to the possibly inserted pair, and the second is 
+       *  @return  A pair, of which the first element is an iterator that
+       *           points to the possibly inserted pair, and the second is
        *           a bool that is true if the pair was actually inserted.
        *
        *  This function attempts to insert a (key, value) %pair into the
@@ -590,9 +662,9 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 		      pair<iterator, bool>>
 	insert(_Pair&& __x)
         { return _M_h.emplace(std::forward<_Pair>(__x)); }
-      //@}
+      ///@}
 
-      //@{
+      ///@{
       /**
        *  @brief Attempts to insert a std::pair into the %unordered_map.
        *  @param  __hint  An iterator that serves as a hint as to where the
@@ -628,7 +700,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	__enable_if_t<is_constructible<value_type, _Pair&&>::value, iterator>
 	insert(const_iterator __hint, _Pair&& __x)
 	{ return _M_h.emplace_hint(__hint, std::forward<_Pair>(__x)); }
-      //@}
+      ///@}
 
       /**
        *  @brief A template function that attempts to insert a range of
@@ -655,78 +727,98 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       insert(initializer_list<value_type> __l)
       { _M_h.insert(__l); }
 
+#if __glibcxx_containers_ranges // C++ >= 23
+      /**
+       *  @brief Inserts a range of elements.
+       *  @since C++23
+       *  @param  __rg An input range of elements that can be converted to
+       *               the map's value type.
+       */
+      template<__detail::__container_compatible_range<value_type> _Rg>
+	void
+	insert_range(_Rg&& __rg)
+	{
+	  auto __first = ranges::begin(__rg);
+	  const auto __last = ranges::end(__rg);
+	  for (; __first != __last; ++__first)
+	    _M_h.emplace(*__first);
+	}
+#endif
 
-#if __cplusplus > 201402L
-#define __cpp_lib_unordered_map_insertion 201411
+#ifdef __glibcxx_unordered_map_try_emplace // >= C++17 && HOSTED
+      ///@{
       /**
        *  @brief Attempts to insert a std::pair into the %unordered_map.
        *  @param __k    Key to use for finding a possibly existing pair in
        *                the map.
-       *  @param __obj  Argument used to generate the .second for a pair 
+       *  @param __obj  Argument used to generate the .second for a pair
        *                instance.
        *
-       *  @return  A pair, of which the first element is an iterator that 
-       *           points to the possibly inserted pair, and the second is 
+       *  @return  A pair, of which the first element is an iterator that
+       *           points to the possibly inserted pair, and the second is
        *           a bool that is true if the pair was actually inserted.
        *
        *  This function attempts to insert a (key, value) %pair into the
        *  %unordered_map. An %unordered_map relies on unique keys and thus a
        *  %pair is only inserted if its first element (the key) is not already
        *  present in the %unordered_map.
-       *  If the %pair was already in the %unordered_map, the .second of 
+       *  If the %pair was already in the %unordered_map, the .second of
        *  the %pair is assigned from __obj.
        *
        *  Insertion requires amortized constant time.
        */
       template <typename _Obj>
-        pair<iterator, bool>
-        insert_or_assign(const key_type& __k, _Obj&& __obj)
-        {
-          iterator __i = find(__k);
-          if (__i == end())
-            {
-              __i = emplace(std::piecewise_construct,
-                            std::forward_as_tuple(__k),
-                            std::forward_as_tuple(std::forward<_Obj>(__obj)))
-                .first;
-              return {__i, true};
-            }
-          (*__i).second = std::forward<_Obj>(__obj);
-          return {__i, false};
-        }
+	pair<iterator, bool>
+	insert_or_assign(const key_type& __k, _Obj&& __obj)
+	{
+	  auto __ret = _M_h.try_emplace(cend(), __k,
+					std::forward<_Obj>(__obj));
+	  if (!__ret.second)
+	    __ret.first->second = std::forward<_Obj>(__obj);
+	  return __ret;
+	}
 
       // move-capable overload
       template <typename _Obj>
-        pair<iterator, bool>
-        insert_or_assign(key_type&& __k, _Obj&& __obj)
-        {
-          iterator __i = find(__k);
-          if (__i == end())
-            {
-              __i = emplace(std::piecewise_construct,
-                            std::forward_as_tuple(std::move(__k)),
-                            std::forward_as_tuple(std::forward<_Obj>(__obj)))
-                .first;
-              return {__i, true};
-            }
-          (*__i).second = std::forward<_Obj>(__obj);
-          return {__i, false};
-        }
+	pair<iterator, bool>
+	insert_or_assign(key_type&& __k, _Obj&& __obj)
+	{
+	  auto __ret = _M_h.try_emplace(cend(), std::move(__k),
+					std::forward<_Obj>(__obj));
+	  if (!__ret.second)
+	    __ret.first->second = std::forward<_Obj>(__obj);
+	  return __ret;
+	}
 
+#ifdef __glibcxx_associative_heterogeneous_insertion  // C++26
+      template <__heterogeneous_hash_key<unordered_map> _Kt, typename _Obj>
+	pair<iterator, bool>
+	insert_or_assign(_Kt&& __k, _Obj&& __obj)
+	{
+	  auto __ret = _M_h.try_emplace(
+	    cend(), std::forward<_Kt>(__k), std::forward<_Obj>(__obj));
+	  if (!__ret.second)
+	    __ret.first->second = std::forward<_Obj>(__obj);
+	  return __ret;
+	}
+#endif
+      ///@}
+
+      ///@{
       /**
        *  @brief Attempts to insert a std::pair into the %unordered_map.
        *  @param  __hint  An iterator that serves as a hint as to where the
        *                  pair should be inserted.
        *  @param __k    Key to use for finding a possibly existing pair in
        *                the unordered_map.
-       *  @param __obj  Argument used to generate the .second for a pair 
+       *  @param __obj  Argument used to generate the .second for a pair
        *                instance.
        *  @return An iterator that points to the element with key of
        *           @a __x (may or may not be the %pair passed in).
        *
        *  This function is not concerned about whether the insertion took place,
        *  and thus does not return a boolean like the single-argument insert()
-       *  does.         
+       *  does.
        *  If the %pair was already in the %unordered map, the .second of
        *  the %pair is assigned from __obj.
        *  Note that the first parameter is only a hint and can
@@ -740,41 +832,44 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        *  Insertion requires amortized constant time.
        */
       template <typename _Obj>
-        iterator
-        insert_or_assign(const_iterator __hint, const key_type& __k,
-                         _Obj&& __obj)
-        {
-          iterator __i = find(__k);
-          if (__i == end())
-            {
-              return emplace_hint(__hint, std::piecewise_construct,
-                                  std::forward_as_tuple(__k),
-                                  std::forward_as_tuple(
-                                    std::forward<_Obj>(__obj)));
-            }
-          (*__i).second = std::forward<_Obj>(__obj);
-          return __i;
-        }
+	iterator
+	insert_or_assign(const_iterator __hint, const key_type& __k,
+			 _Obj&& __obj)
+	{
+	  auto __ret = _M_h.try_emplace(__hint, __k, std::forward<_Obj>(__obj));
+	  if (!__ret.second)
+	    __ret.first->second = std::forward<_Obj>(__obj);
+	  return __ret.first;
+	}
 
       // move-capable overload
       template <typename _Obj>
-        iterator
-        insert_or_assign(const_iterator __hint, key_type&& __k, _Obj&& __obj)
-        {
-          iterator __i = find(__k);
-          if (__i == end())
-            {
-              return emplace_hint(__hint, std::piecewise_construct,
-                                  std::forward_as_tuple(std::move(__k)),
-                                  std::forward_as_tuple(
-                                    std::forward<_Obj>(__obj)));
-            }
-          (*__i).second = std::forward<_Obj>(__obj);
-          return __i;
-        }
-#endif
+	iterator
+	insert_or_assign(const_iterator __hint, key_type&& __k, _Obj&& __obj)
+	{
+	  auto __ret = _M_h.try_emplace(__hint, std::move(__k),
+					std::forward<_Obj>(__obj));
+	  if (!__ret.second)
+	    __ret.first->second = std::forward<_Obj>(__obj);
+	  return __ret.first;
+	}
 
-      //@{
+#ifdef __glibcxx_associative_heterogeneous_insertion  // C++26
+      template <__heterogeneous_hash_key<unordered_map> _Kt, typename _Obj>
+	iterator
+	insert_or_assign(const_iterator __hint, _Kt&& __k, _Obj&& __obj)
+	{
+	  auto __ret = _M_h.try_emplace(__hint,
+	    std::forward<_Kt>(__k), std::forward<_Obj>(__obj));
+	  if (!__ret.second)
+	    __ret.first->second = std::forward<_Obj>(__obj);
+	  return __ret.first;
+	}
+#endif
+      ///@}
+#endif // unordered_map_try_emplace
+
+      ///@{
       /**
        *  @brief Erases an element from an %unordered_map.
        *  @param  __position  An iterator pointing to the element to be erased.
@@ -796,8 +891,9 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       iterator
       erase(iterator __position)
       { return _M_h.erase(__position); }
-      //@}
+      ///@}
 
+      ///@{
       /**
        *  @brief Erases elements according to the provided key.
        *  @param  __x  Key of element to be erased.
@@ -813,6 +909,14 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       size_type
       erase(const key_type& __x)
       { return _M_h.erase(__x); }
+
+#ifdef __glibcxx_associative_heterogeneous_erasure // C++23
+      template <__heterogeneous_hash_key<unordered_map> _Kt>
+	size_type
+	erase(_Kt&& __x)
+	{ return _M_h._M_erase_tr(__x); }
+#endif
+      ///@}
 
       /**
        *  @brief Erases a [__first,__last) range of elements from an
@@ -857,7 +961,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       noexcept( noexcept(_M_h.swap(__x._M_h)) )
       { _M_h.swap(__x._M_h); }
 
-#if __cplusplus > 201402L
+#ifdef __glibcxx_node_extract // >= C++17 && HOSTED
       template<typename, typename, typename>
 	friend class std::_Hash_merge_helper;
 
@@ -865,6 +969,10 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	void
 	merge(unordered_map<_Key, _Tp, _H2, _P2, _Alloc>& __source)
 	{
+	  if constexpr (is_same_v<_H2, _Hash> && is_same_v<_P2, _Pred>)
+	    if (std::__addressof(__source) == this) [[__unlikely__]]
+	      return;
+
 	  using _Merge_helper = _Hash_merge_helper<unordered_map, _H2, _P2>;
 	  _M_h._M_merge_unique(_Merge_helper::_S_get_table(__source));
 	}
@@ -872,7 +980,10 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       template<typename _H2, typename _P2>
 	void
 	merge(unordered_map<_Key, _Tp, _H2, _P2, _Alloc>&& __source)
-	{ merge(__source); }
+	{
+	  using _Merge_helper = _Hash_merge_helper<unordered_map, _H2, _P2>;
+	  _M_h._M_merge_unique(_Merge_helper::_S_get_table(__source));
+	}
 
       template<typename _H2, typename _P2>
 	void
@@ -886,7 +997,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	void
 	merge(unordered_multimap<_Key, _Tp, _H2, _P2, _Alloc>&& __source)
 	{ merge(__source); }
-#endif // C++17
+#endif // node_extract
 
       // observers.
 
@@ -904,7 +1015,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 
       // lookup.
 
-      //@{
+      ///@{
       /**
        *  @brief Tries to locate an element in an %unordered_map.
        *  @param  __x  Key to be located.
@@ -920,11 +1031,26 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       find(const key_type& __x)
       { return _M_h.find(__x); }
 
+#ifdef __glibcxx_generic_unordered_lookup // C++ >= 20 && HOSTED
+      template<typename _Kt>
+	auto
+	find(const _Kt& __x) -> decltype(_M_h._M_find_tr(__x))
+	{ return _M_h._M_find_tr(__x); }
+#endif
+
       const_iterator
       find(const key_type& __x) const
       { return _M_h.find(__x); }
-      //@}
 
+#ifdef __glibcxx_generic_unordered_lookup // C++ >= 20 && HOSTED
+      template<typename _Kt>
+	auto
+	find(const _Kt& __x) const -> decltype(_M_h._M_find_tr(__x))
+	{ return _M_h._M_find_tr(__x); }
+#endif
+      ///@}
+
+      ///@{
       /**
        *  @brief  Finds the number of elements.
        *  @param  __x  Key to count.
@@ -938,7 +1064,16 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       count(const key_type& __x) const
       { return _M_h.count(__x); }
 
+#ifdef __glibcxx_generic_unordered_lookup // C++ >= 20 && HOSTED
+      template<typename _Kt>
+	auto
+	count(const _Kt& __x) const -> decltype(_M_h._M_count_tr(__x))
+	{ return _M_h._M_count_tr(__x); }
+#endif
+      ///@}
+
 #if __cplusplus > 201703L
+      ///@{
       /**
        *  @brief  Finds whether an element with the given key exists.
        *  @param  __x  Key of elements to be located.
@@ -947,9 +1082,16 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       bool
       contains(const key_type& __x) const
       { return _M_h.find(__x) != _M_h.end(); }
+
+      template<typename _Kt>
+	auto
+	contains(const _Kt& __x) const
+	-> decltype(_M_h._M_find_tr(__x), void(), true)
+	{ return _M_h._M_find_tr(__x) != _M_h.end(); }
+      ///@}
 #endif
 
-      //@{
+      ///@{
       /**
        *  @brief Finds a subsequence matching given key.
        *  @param  __x  Key to be located.
@@ -962,12 +1104,28 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       equal_range(const key_type& __x)
       { return _M_h.equal_range(__x); }
 
+#ifdef __glibcxx_generic_unordered_lookup // C++ >= 20 && HOSTED
+      template<typename _Kt>
+	auto
+	equal_range(const _Kt& __x)
+	-> decltype(_M_h._M_equal_range_tr(__x))
+	{ return _M_h._M_equal_range_tr(__x); }
+#endif
+
       std::pair<const_iterator, const_iterator>
       equal_range(const key_type& __x) const
       { return _M_h.equal_range(__x); }
-      //@}
 
-      //@{
+#ifdef __glibcxx_generic_unordered_lookup // C++ >= 20 && HOSTED
+      template<typename _Kt>
+	auto
+	equal_range(const _Kt& __x) const
+	-> decltype(_M_h._M_equal_range_tr(__x))
+	{ return _M_h._M_equal_range_tr(__x); }
+#endif
+      ///@}
+
+      ///@{
       /**
        *  @brief  Subscript ( @c [] ) access to %unordered_map data.
        *  @param  __k  The key for which data should be retrieved.
@@ -987,9 +1145,18 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       mapped_type&
       operator[](key_type&& __k)
       { return _M_h[std::move(__k)]; }
-      //@}
 
-      //@{
+#ifdef __glibcxx_associative_heterogeneous_insertion  // C++26
+      template <__heterogeneous_hash_key<unordered_map> _Kt>
+	mapped_type&
+	operator[](_Kt&& __k)
+      {
+	return try_emplace(std::forward<_Kt>(__k)).first->second;
+      }
+#endif
+      ///@}
+
+      ///@{
       /**
        *  @brief  Access to %unordered_map data.
        *  @param  __k  The key for which data should be retrieved.
@@ -1001,10 +1168,24 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       at(const key_type& __k)
       { return _M_h.at(__k); }
 
+#ifdef __glibcxx_associative_heterogeneous_insertion  // C++26
+      template <__heterogeneous_hash_key<unordered_map> _Kt>
+	mapped_type&
+	at(const _Kt& __k)
+	{ return _M_h._M_at_tr(__k); }
+#endif
+
       const mapped_type&
       at(const key_type& __k) const
       { return _M_h.at(__k); }
-      //@}
+
+#ifdef __glibcxx_associative_heterogeneous_insertion  // C++26
+      template <__heterogeneous_hash_key<unordered_map> _Kt>
+	const mapped_type&
+	at(const _Kt& __k) const
+	{ return _M_h._M_at_tr(__k); }
+#endif
+      ///@}
 
       // bucket interface.
 
@@ -1027,6 +1208,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       bucket_size(size_type __n) const
       { return _M_h.bucket_size(__n); }
 
+      ///@{
       /*
        * @brief  Returns the bucket index of a given element.
        * @param  __key  A key instance.
@@ -1035,7 +1217,15 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       size_type
       bucket(const key_type& __key) const
       { return _M_h.bucket(__key); }
-      
+
+#ifdef __glibcxx_associative_heterogeneous_insertion  // C++26
+      template <__heterogeneous_hash_key<unordered_map> _Kt>
+	size_type
+	bucket(const _Kt& __key) const
+	{ return _M_h._M_bucket_tr(__key); }
+#endif
+      ///@}
+
       /**
        *  @brief  Returns a read/write iterator pointing to the first bucket
        *         element.
@@ -1046,7 +1236,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       begin(size_type __n)
       { return _M_h.begin(__n); }
 
-      //@{
+      ///@{
       /**
        *  @brief  Returns a read-only (constant) iterator pointing to the first
        *         bucket element.
@@ -1060,7 +1250,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       const_local_iterator
       cbegin(size_type __n) const
       { return _M_h.cbegin(__n); }
-      //@}
+      ///@}
 
       /**
        *  @brief  Returns a read/write iterator pointing to one past the last
@@ -1072,7 +1262,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       end(size_type __n)
       { return _M_h.end(__n); }
 
-      //@{
+      ///@{
       /**
        *  @brief  Returns a read-only (constant) iterator pointing to one past
        *         the last bucket elements.
@@ -1086,7 +1276,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       const_local_iterator
       cend(size_type __n) const
       { return _M_h.cend(__n); }
-      //@}
+      ///@}
 
       // hash policy.
 
@@ -1218,6 +1408,47 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 		  _Hash, _Allocator)
     -> unordered_map<_Key, _Tp, _Hash, equal_to<_Key>, _Allocator>;
 
+#if __glibcxx_containers_ranges // C++ >= 23
+  template<ranges::input_range _Rg,
+	   __not_allocator_like _Hash = hash<__detail::__range_key_type<_Rg>>,
+	   __not_allocator_like _Pred = equal_to<__detail::__range_key_type<_Rg>>,
+	   __allocator_like _Allocator =
+	     allocator<__detail::__range_to_alloc_type<_Rg>>>
+    unordered_map(from_range_t, _Rg&&, unordered_map<int, int>::size_type = {},
+		  _Hash = _Hash(), _Pred = _Pred(), _Allocator = _Allocator())
+    -> unordered_map<__detail::__range_key_type<_Rg>,
+		     __detail::__range_mapped_type<_Rg>,
+		     _Hash, _Pred, _Allocator>;
+
+  template<ranges::input_range _Rg,
+	   __allocator_like _Allocator>
+    unordered_map(from_range_t, _Rg&&, unordered_map<int, int>::size_type,
+		  _Allocator)
+    -> unordered_map<__detail::__range_key_type<_Rg>,
+		     __detail::__range_mapped_type<_Rg>,
+		     hash<__detail::__range_key_type<_Rg>>,
+		     equal_to<__detail::__range_key_type<_Rg>>,
+		     _Allocator>;
+
+  template<ranges::input_range _Rg,
+	   __allocator_like _Allocator>
+    unordered_map(from_range_t, _Rg&&, _Allocator)
+    -> unordered_map<__detail::__range_key_type<_Rg>,
+		     __detail::__range_mapped_type<_Rg>,
+		     hash<__detail::__range_key_type<_Rg>>,
+		     equal_to<__detail::__range_key_type<_Rg>>,
+		     _Allocator>;
+
+  template<ranges::input_range _Rg,
+	   __not_allocator_like _Hash,
+	   __allocator_like _Allocator>
+    unordered_map(from_range_t, _Rg&&, unordered_map<int, int>::size_type,
+		  _Hash, _Allocator)
+    -> unordered_map<__detail::__range_key_type<_Rg>,
+		     __detail::__range_mapped_type<_Rg>,
+		     _Hash, equal_to<__detail::__range_key_type<_Rg>>,
+		     _Allocator>;
+#endif
 #endif
 
   /**
@@ -1226,12 +1457,14 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
    *  values of another type with the keys.
    *
    *  @ingroup unordered_associative_containers
+   *  @headerfile unordered_map
+   *  @since C++11
    *
    *  @tparam  _Key    Type of key objects.
    *  @tparam  _Tp     Type of mapped objects.
-   *  @tparam  _Hash   Hashing function object type, defaults to hash<_Value>.
+   *  @tparam  _Hash   Hashing function object type, defaults to hash<_Key>.
    *  @tparam  _Pred   Predicate function object type, defaults
-   *                   to equal_to<_Value>.
+   *                   to equal_to<_Key>.
    *  @tparam  _Alloc  Allocator type, defaults to
    *                   std::allocator<std::pair<const _Key, _Tp>>.
    *
@@ -1254,7 +1487,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 
     public:
       // typedefs:
-      //@{
+      ///@{
       /// Public typedefs.
       typedef typename _Hashtable::key_type	key_type;
       typedef typename _Hashtable::value_type	value_type;
@@ -1262,9 +1495,9 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       typedef typename _Hashtable::hasher	hasher;
       typedef typename _Hashtable::key_equal	key_equal;
       typedef typename _Hashtable::allocator_type allocator_type;
-      //@}
+      ///@}
 
-      //@{
+      ///@{
       ///  Iterator-related typedefs.
       typedef typename _Hashtable::pointer		pointer;
       typedef typename _Hashtable::const_pointer	const_pointer;
@@ -1276,9 +1509,9 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       typedef typename _Hashtable::const_local_iterator	const_local_iterator;
       typedef typename _Hashtable::size_type		size_type;
       typedef typename _Hashtable::difference_type	difference_type;
-      //@}
+      ///@}
 
-#if __cplusplus > 201402L
+#ifdef __glibcxx_node_extract // >= C++17 && HOSTED
       using node_type = typename _Hashtable::node_type;
 #endif
 
@@ -1356,6 +1589,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        */
       unordered_multimap(unordered_multimap&& __ummap,
 			 const allocator_type& __a)
+	noexcept( noexcept(_Hashtable(std::move(__ummap._M_h), __a)) )
       : _M_h(std::move(__ummap._M_h), __a)
       { }
 
@@ -1387,6 +1621,14 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       : unordered_multimap(__n, __hf, key_equal(), __a)
       { }
 
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 2713. More missing allocator-extended constructors for unordered containers
+      template<typename _InputIterator>
+	unordered_multimap(_InputIterator __first, _InputIterator __last,
+			   const allocator_type& __a)
+	: unordered_multimap(__first, __last, 0, hasher(), key_equal(), __a)
+	{ }
+
       template<typename _InputIterator>
 	unordered_multimap(_InputIterator __first, _InputIterator __last,
 			   size_type __n,
@@ -1401,6 +1643,13 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	: unordered_multimap(__first, __last, __n, __hf, key_equal(), __a)
 	{ }
 
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 2713. More missing allocator-extended constructors for unordered containers
+      unordered_multimap(initializer_list<value_type> __l,
+			 const allocator_type& __a)
+      : unordered_multimap(__l, 0, hasher(), key_equal(), __a)
+      { }
+
       unordered_multimap(initializer_list<value_type> __l,
 			 size_type __n,
 			 const allocator_type& __a)
@@ -1412,6 +1661,49 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 			 const allocator_type& __a)
       : unordered_multimap(__l, __n, __hf, key_equal(), __a)
       { }
+
+#if __glibcxx_containers_ranges // C++ >= 23
+      /**
+       *  @brief  Builds an %unordered_multimap from a range.
+       *  @since C++23
+       *  @param  __rg An input range of elements that can be converted to
+       *               the maps's value type.
+       *  @param __n  Minimal initial number of buckets.
+       *  @param __hf  A hash functor.
+       *  @param __eql  A key equality functor.
+       *  @param  __a  An allocator object.
+       *
+       *  Create an %unordered_multimap consisting of copies of the elements in
+       *  the range. This is linear in N (where N is `std::ranges::size(__rg)`).
+       */
+       template<__detail::__container_compatible_range<value_type> _Rg>
+	 unordered_multimap(from_range_t, _Rg&& __rg,
+			    size_type __n = 0,
+			    const hasher& __hf = hasher(),
+			    const key_equal& __eql = key_equal(),
+			    const allocator_type& __a = allocator_type())
+	  : _M_h(__n, __hf, __eql, __a)
+	  { insert_range(std::forward<_Rg>(__rg)); }
+
+       // _GLIBCXX_RESOLVE_LIB_DEFECTS
+       // 2713. More missing allocator-extended constructors for unordered containers
+       template<__detail::__container_compatible_range<value_type> _Rg>
+	 unordered_multimap(from_range_t, _Rg&& __rg, const allocator_type& __a)
+	  : _M_h(0, hasher(), key_equal(), __a)
+	  { insert_range(std::forward<_Rg>(__rg)); }
+
+       template<__detail::__container_compatible_range<value_type> _Rg>
+	 unordered_multimap(from_range_t, _Rg&& __rg, size_type __n,
+			    const allocator_type& __a)
+	  : _M_h(__n, hasher(), key_equal(), __a)
+	  { insert_range(std::forward<_Rg>(__rg)); }
+
+       template<__detail::__container_compatible_range<value_type> _Rg>
+	 unordered_multimap(from_range_t, _Rg&& __rg, size_type __n,
+			    const hasher& __hf, const allocator_type& __a)
+	  : _M_h(__n, __hf, key_equal(), __a)
+	  { insert_range(std::forward<_Rg>(__rg)); }
+#endif
 
       /// Copy assignment operator.
       unordered_multimap&
@@ -1471,7 +1763,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       begin() noexcept
       { return _M_h.begin(); }
 
-      //@{
+      ///@{
       /**
        *  Returns a read-only (constant) iterator that points to the first
        *  element in the %unordered_multimap.
@@ -1483,7 +1775,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       const_iterator
       cbegin() const noexcept
       { return _M_h.begin(); }
-      //@}
+      ///@}
 
       /**
        *  Returns a read/write iterator that points one past the last element in
@@ -1493,7 +1785,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       end() noexcept
       { return _M_h.end(); }
 
-      //@{
+      ///@{
       /**
        *  Returns a read-only (constant) iterator that points one past the last
        *  element in the %unordered_multimap.
@@ -1505,7 +1797,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       const_iterator
       cend() const noexcept
       { return _M_h.end(); }
-      //@}
+      ///@}
 
       // modifiers.
 
@@ -1556,7 +1848,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	emplace_hint(const_iterator __pos, _Args&&... __args)
 	{ return _M_h.emplace_hint(__pos, std::forward<_Args>(__args)...); }
 
-      //@{
+      ///@{
       /**
        *  @brief Inserts a std::pair into the %unordered_multimap.
        *  @param __x Pair to be inserted (see std::make_pair for easy
@@ -1578,9 +1870,9 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	__enable_if_t<is_constructible<value_type, _Pair&&>::value, iterator>
 	insert(_Pair&& __x)
         { return _M_h.emplace(std::forward<_Pair>(__x)); }
-      //@}
+      ///@}
 
-      //@{
+      ///@{
       /**
        *  @brief Inserts a std::pair into the %unordered_multimap.
        *  @param  __hint  An iterator that serves as a hint as to where the
@@ -1614,7 +1906,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	__enable_if_t<is_constructible<value_type, _Pair&&>::value, iterator>
 	insert(const_iterator __hint, _Pair&& __x)
         { return _M_h.emplace_hint(__hint, std::forward<_Pair>(__x)); }
-      //@}
+      ///@}
 
       /**
        *  @brief A template function that attempts to insert a range of
@@ -1642,7 +1934,33 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       insert(initializer_list<value_type> __l)
       { _M_h.insert(__l); }
 
-#if __cplusplus > 201402L
+#if __glibcxx_containers_ranges // C++ >= 23
+      /**
+       *  @brief Inserts a range of elements.
+       *  @since C++23
+       *  @param  __rg An input range of elements that can be converted to
+       *               the maps's value type.
+       */
+      template<__detail::__container_compatible_range<value_type> _Rg>
+	void
+	insert_range(_Rg&& __rg)
+	{
+	  auto __first = ranges::begin(__rg);
+	  const auto __last = ranges::end(__rg);
+	  if (__first == __last)
+	    return;
+
+	  if constexpr (ranges::forward_range<_Rg> || ranges::sized_range<_Rg>)
+	    _M_h._M_rehash_insert(size_type(ranges::distance(__rg)));
+	  else
+	    _M_h._M_rehash_insert(1);
+
+	  for (; __first != __last; ++__first)
+	    _M_h.emplace(*__first);
+	}
+#endif
+
+#ifdef __glibcxx_node_extract // >= C++17 && HOSTED
       /// Extract a node.
       node_type
       extract(const_iterator __pos)
@@ -1656,6 +1974,13 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       extract(const key_type& __key)
       { return _M_h.extract(__key); }
 
+#ifdef __glibcxx_associative_heterogeneous_erasure // C++23
+      template <__heterogeneous_hash_key<unordered_multimap> _Kt>
+	node_type
+	extract(_Kt&& __key)
+	{ return _M_h._M_extract_tr(__key); }
+#endif
+
       /// Re-insert an extracted node.
       iterator
       insert(node_type&& __nh)
@@ -1665,9 +1990,9 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       iterator
       insert(const_iterator __hint, node_type&& __nh)
       { return _M_h._M_reinsert_node_multi(__hint, std::move(__nh)); }
-#endif // C++17
+#endif // node_extract
 
-      //@{
+      ///@{
       /**
        *  @brief Erases an element from an %unordered_multimap.
        *  @param  __position  An iterator pointing to the element to be erased.
@@ -1689,8 +2014,9 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       iterator
       erase(iterator __position)
       { return _M_h.erase(__position); }
-      //@}
+      ///@}
 
+      ///@{
       /**
        *  @brief Erases elements according to the provided key.
        *  @param  __x  Key of elements to be erased.
@@ -1705,6 +2031,15 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       size_type
       erase(const key_type& __x)
       { return _M_h.erase(__x); }
+
+#ifdef __glibcxx_associative_heterogeneous_erasure // C++23
+      template <__heterogeneous_hash_key<unordered_multimap> _Kt>
+	size_type
+	erase(_Kt&& __x)
+	{ return _M_h._M_erase_tr(__x); }
+#endif
+      ///@}
+
 
       /**
        *  @brief Erases a [__first,__last) range of elements from an
@@ -1750,7 +2085,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       noexcept( noexcept(_M_h.swap(__x._M_h)) )
       { _M_h.swap(__x._M_h); }
 
-#if __cplusplus > 201402L
+#ifdef __glibcxx_node_extract // >= C++17 && HOSTED
       template<typename, typename, typename>
 	friend class std::_Hash_merge_helper;
 
@@ -1758,6 +2093,10 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	void
 	merge(unordered_multimap<_Key, _Tp, _H2, _P2, _Alloc>& __source)
 	{
+	  if constexpr (is_same_v<_H2, _Hash> && is_same_v<_P2, _Pred>)
+	    if (std::__addressof(__source) == this) [[__unlikely__]]
+	      return;
+
 	  using _Merge_helper
 	    = _Hash_merge_helper<unordered_multimap, _H2, _P2>;
 	  _M_h._M_merge_multi(_Merge_helper::_S_get_table(__source));
@@ -1766,7 +2105,11 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       template<typename _H2, typename _P2>
 	void
 	merge(unordered_multimap<_Key, _Tp, _H2, _P2, _Alloc>&& __source)
-	{ merge(__source); }
+	{
+	  using _Merge_helper
+	    = _Hash_merge_helper<unordered_multimap, _H2, _P2>;
+	  _M_h._M_merge_multi(_Merge_helper::_S_get_table(__source));
+	}
 
       template<typename _H2, typename _P2>
 	void
@@ -1781,7 +2124,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	void
 	merge(unordered_map<_Key, _Tp, _H2, _P2, _Alloc>&& __source)
 	{ merge(__source); }
-#endif // C++17
+#endif // node_extract
 
       // observers.
 
@@ -1799,7 +2142,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 
       // lookup.
 
-      //@{
+      ///@{
       /**
        *  @brief Tries to locate an element in an %unordered_multimap.
        *  @param  __x  Key to be located.
@@ -1815,11 +2158,26 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       find(const key_type& __x)
       { return _M_h.find(__x); }
 
+#ifdef __glibcxx_generic_unordered_lookup // C++ >= 20 && HOSTED
+      template<typename _Kt>
+	auto
+	find(const _Kt& __x) -> decltype(_M_h._M_find_tr(__x))
+	{ return _M_h._M_find_tr(__x); }
+#endif
+
       const_iterator
       find(const key_type& __x) const
       { return _M_h.find(__x); }
-      //@}
 
+#ifdef __glibcxx_generic_unordered_lookup // C++ >= 20 && HOSTED
+      template<typename _Kt>
+	auto
+	find(const _Kt& __x) const -> decltype(_M_h._M_find_tr(__x))
+	{ return _M_h._M_find_tr(__x); }
+#endif
+      ///@}
+
+      ///@{
       /**
        *  @brief  Finds the number of elements.
        *  @param  __x  Key to count.
@@ -1829,7 +2187,16 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       count(const key_type& __x) const
       { return _M_h.count(__x); }
 
+#ifdef __glibcxx_generic_unordered_lookup // C++ >= 20 && HOSTED
+      template<typename _Kt>
+	auto
+	count(const _Kt& __x) const -> decltype(_M_h._M_count_tr(__x))
+	{ return _M_h._M_count_tr(__x); }
+#endif
+      ///@}
+
 #if __cplusplus > 201703L
+      ///@{
       /**
        *  @brief  Finds whether an element with the given key exists.
        *  @param  __x  Key of elements to be located.
@@ -1838,9 +2205,16 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       bool
       contains(const key_type& __x) const
       { return _M_h.find(__x) != _M_h.end(); }
+
+      template<typename _Kt>
+	auto
+	contains(const _Kt& __x) const
+	-> decltype(_M_h._M_find_tr(__x), void(), true)
+	{ return _M_h._M_find_tr(__x) != _M_h.end(); }
+      ///@}
 #endif
 
-      //@{
+      ///@{
       /**
        *  @brief Finds a subsequence matching given key.
        *  @param  __x  Key to be located.
@@ -1851,10 +2225,26 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       equal_range(const key_type& __x)
       { return _M_h.equal_range(__x); }
 
+#ifdef __glibcxx_generic_unordered_lookup // C++ >= 20 && HOSTED
+      template<typename _Kt>
+	auto
+	equal_range(const _Kt& __x)
+	-> decltype(_M_h._M_equal_range_tr(__x))
+	{ return _M_h._M_equal_range_tr(__x); }
+#endif
+
       std::pair<const_iterator, const_iterator>
       equal_range(const key_type& __x) const
       { return _M_h.equal_range(__x); }
-      //@}
+
+#ifdef __glibcxx_generic_unordered_lookup // C++ >= 20 && HOSTED
+      template<typename _Kt>
+	auto
+	equal_range(const _Kt& __x) const
+	-> decltype(_M_h._M_equal_range_tr(__x))
+	{ return _M_h._M_equal_range_tr(__x); }
+#endif
+      ///@}
 
       // bucket interface.
 
@@ -1877,6 +2267,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       bucket_size(size_type __n) const
       { return _M_h.bucket_size(__n); }
 
+      ///@{
       /*
        * @brief  Returns the bucket index of a given element.
        * @param  __key  A key instance.
@@ -1885,7 +2276,15 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       size_type
       bucket(const key_type& __key) const
       { return _M_h.bucket(__key); }
-      
+
+#ifdef __glibcxx_associative_heterogeneous_insertion  // C++26
+      template <__heterogeneous_hash_key<unordered_multimap> _Kt>
+	size_type
+	bucket(const _Kt& __key) const
+	{ return _M_h._M_bucket_tr(__key); }
+#endif
+      ///@}
+
       /**
        *  @brief  Returns a read/write iterator pointing to the first bucket
        *         element.
@@ -1896,7 +2295,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       begin(size_type __n)
       { return _M_h.begin(__n); }
 
-      //@{
+      ///@{
       /**
        *  @brief  Returns a read-only (constant) iterator pointing to the first
        *         bucket element.
@@ -1910,7 +2309,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       const_local_iterator
       cbegin(size_type __n) const
       { return _M_h.cbegin(__n); }
-      //@}
+      ///@}
 
       /**
        *  @brief  Returns a read/write iterator pointing to one past the last
@@ -1922,7 +2321,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       end(size_type __n)
       { return _M_h.end(__n); }
 
-      //@{
+      ///@{
       /**
        *  @brief  Returns a read-only (constant) iterator pointing to one past
        *         the last bucket elements.
@@ -1936,7 +2335,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       const_local_iterator
       cend(size_type __n) const
       { return _M_h.cend(__n); }
-      //@}
+      ///@}
 
       // hash policy.
 
@@ -2070,6 +2469,50 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 		       _Hash, _Allocator)
     -> unordered_multimap<_Key, _Tp, _Hash, equal_to<_Key>, _Allocator>;
 
+#if __glibcxx_containers_ranges // C++ >= 23
+  template<ranges::input_range _Rg,
+	   __not_allocator_like _Hash = hash<__detail::__range_key_type<_Rg>>,
+	   __not_allocator_like _Pred = equal_to<__detail::__range_key_type<_Rg>>,
+	   __allocator_like _Allocator =
+	     allocator<__detail::__range_to_alloc_type<_Rg>>>
+    unordered_multimap(from_range_t, _Rg&&,
+		       unordered_multimap<int, int>::size_type = {},
+		       _Hash = _Hash(), _Pred = _Pred(),
+		       _Allocator = _Allocator())
+    -> unordered_multimap<__detail::__range_key_type<_Rg>,
+			  __detail::__range_mapped_type<_Rg>,
+			  _Hash, _Pred, _Allocator>;
+
+  template<ranges::input_range _Rg,
+	   __allocator_like _Allocator>
+    unordered_multimap(from_range_t, _Rg&&, unordered_multimap<int, int>::size_type,
+		  _Allocator)
+    -> unordered_multimap<__detail::__range_key_type<_Rg>,
+			  __detail::__range_mapped_type<_Rg>,
+			  hash<__detail::__range_key_type<_Rg>>,
+			  equal_to<__detail::__range_key_type<_Rg>>,
+			  _Allocator>;
+
+  template<ranges::input_range _Rg,
+	   __allocator_like _Allocator>
+    unordered_multimap(from_range_t, _Rg&&, _Allocator)
+    -> unordered_multimap<__detail::__range_key_type<_Rg>,
+			  __detail::__range_mapped_type<_Rg>,
+			  hash<__detail::__range_key_type<_Rg>>,
+			  equal_to<__detail::__range_key_type<_Rg>>,
+			  _Allocator>;
+
+  template<ranges::input_range _Rg,
+	   __not_allocator_like _Hash,
+	   __allocator_like _Allocator>
+    unordered_multimap(from_range_t, _Rg&&,
+		       unordered_multimap<int, int>::size_type,
+		       _Hash, _Allocator)
+    -> unordered_multimap<__detail::__range_key_type<_Rg>,
+			  __detail::__range_mapped_type<_Rg>,
+			  _Hash, equal_to<__detail::__range_key_type<_Rg>>,
+			  _Allocator>;
+#endif
 #endif
 
   template<class _Key, class _Tp, class _Hash, class _Pred, class _Alloc>
@@ -2092,11 +2535,13 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	       const unordered_map<_Key, _Tp, _Hash, _Pred, _Alloc>& __y)
     { return __x._M_h._M_equal(__y._M_h); }
 
+#if __cpp_impl_three_way_comparison < 201907L
   template<class _Key, class _Tp, class _Hash, class _Pred, class _Alloc>
     inline bool
     operator!=(const unordered_map<_Key, _Tp, _Hash, _Pred, _Alloc>& __x,
 	       const unordered_map<_Key, _Tp, _Hash, _Pred, _Alloc>& __y)
     { return !(__x == __y); }
+#endif
 
   template<class _Key, class _Tp, class _Hash, class _Pred, class _Alloc>
     inline bool
@@ -2104,15 +2549,17 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	       const unordered_multimap<_Key, _Tp, _Hash, _Pred, _Alloc>& __y)
     { return __x._M_h._M_equal(__y._M_h); }
 
+#if __cpp_impl_three_way_comparison < 201907L
   template<class _Key, class _Tp, class _Hash, class _Pred, class _Alloc>
     inline bool
     operator!=(const unordered_multimap<_Key, _Tp, _Hash, _Pred, _Alloc>& __x,
 	       const unordered_multimap<_Key, _Tp, _Hash, _Pred, _Alloc>& __y)
     { return !(__x == __y); }
+#endif
 
 _GLIBCXX_END_NAMESPACE_CONTAINER
 
-#if __cplusplus > 201402L
+#ifdef __glibcxx_node_extract // >= C++17 && HOSTED
   // Allow std::unordered_map access to internals of compatible maps.
   template<typename _Key, typename _Val, typename _Hash1, typename _Eq1,
 	   typename _Alloc, typename _Hash2, typename _Eq2>
@@ -2160,7 +2607,7 @@ _GLIBCXX_END_NAMESPACE_CONTAINER
       _S_get_table(unordered_multimap<_Key, _Val, _Hash2, _Eq2, _Alloc>& __map)
       { return __map._M_h; }
     };
-#endif // C++17
+#endif // node_extract
 
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace std

@@ -1,6 +1,6 @@
 // Class filesystem::path -*- C++ -*-
 
-// Copyright (C) 2014-2019 Free Software Foundation, Inc.
+// Copyright (C) 2014-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -33,7 +33,10 @@
 
 #include <filesystem>
 #include <algorithm>
+#include <array>
+#include <new>
 #include <bits/stl_uninitialized.h>
+#include <ext/numeric_traits.h> // __gnu_cxx::__int_traits
 
 namespace fs = std::filesystem;
 using fs::path;
@@ -46,6 +49,13 @@ static inline bool is_dir_sep(path::value_type ch)
     return ch == '/';
 #endif
 }
+
+#ifdef _GLIBCXX_FILESYSTEM_IS_WINDOWS
+static inline bool is_disk_designator(std::wstring_view s)
+{
+  return s.length() == 2 && s[1] == L':';
+}
+#endif
 
 struct path::_Parser
 {
@@ -74,7 +84,7 @@ struct path::_Parser
     const size_t len = input.size();
 
     // look for root name or root directory
-    if (is_dir_sep(input[0]))
+    if (len && is_dir_sep(input[0]))
       {
 #if SLASHSLASH_IS_ROOTNAME
 	// look for root name, such as "//foo"
@@ -117,7 +127,7 @@ struct path::_Parser
 	  ++pos;
       }
 #ifdef _GLIBCXX_FILESYSTEM_IS_WINDOWS
-    else if (len > 1 && input[1] == L':')
+    else if (is_disk_designator(input.substr(0, 2)))
       {
 	// got disk designator
 	root.first.str = input.substr(0, 2);
@@ -179,12 +189,29 @@ struct path::_Parser
   { return origin + c.str.data() - input.data(); }
 };
 
+inline
+path::path(basic_string_view<value_type> __str, _Type __type)
+: _M_pathname(__str)
+{
+  __glibcxx_assert(__type != _Type::_Multi);
+  _M_cmpts.type(__type);
+}
+
+inline
+path::_Cmpt::_Cmpt(basic_string_view<value_type> __s, _Type __t, size_t __pos)
+: path(__s, __t), _M_pos(__pos)
+{ }
+
 struct path::_List::_Impl
 {
   using value_type = _Cmpt;
 
   _Impl(int cap) : _M_size(0), _M_capacity(cap) { }
 
+  ~_Impl() { clear(); }
+
+  // Align the first member like the value_type so that we can store one or
+  // more objects of that type immediately after the memory occupied by *this.
   alignas(value_type) int _M_size;
   int _M_capacity;
 
@@ -224,12 +251,21 @@ struct path::_List::_Impl
   unique_ptr<_Impl, _Impl_deleter> copy() const
   {
     const auto n = size();
-    void* p = ::operator new(sizeof(_Impl) + n * sizeof(value_type));
-    unique_ptr<_Impl, _Impl_deleter> newptr(::new (p) _Impl{n});
+    // *this already has n elements so don't need to check if n overflows:
+    auto newptr = create_unchecked(n);
     std::uninitialized_copy_n(begin(), n, newptr->begin());
     newptr->_M_size = n;
     return newptr;
   }
+
+  // We use the two least significant bits to store a _Type value so
+  // require memory aligned to at least 4 bytes:
+  static constexpr size_t required_alignment
+    = std::max(size_t(4), alignof(value_type));
+
+  // Only use aligned new if needed, because it might be less efficient.
+  static constexpr bool use_aligned_new
+    = __STDCPP_DEFAULT_NEW_ALIGNMENT__ < required_alignment;
 
   // Clear the lowest two bits from the pointer (i.e. remove the _Type value)
   static _Impl* notype(_Impl* p)
@@ -237,16 +273,60 @@ struct path::_List::_Impl
     constexpr uintptr_t mask = ~(uintptr_t)0x3;
     return reinterpret_cast<_Impl*>(reinterpret_cast<uintptr_t>(p) & mask);
   }
+
+  // Create a new _Impl with capacity for n components.
+  static unique_ptr<_Impl, _Impl_deleter>
+  create(int n)
+  {
+    using __gnu_cxx::__int_traits;
+    // Nobody should need paths with this many components.
+    if (n >= __int_traits<int>::__max / 4)
+      std::__throw_bad_alloc();
+
+    if constexpr (__int_traits<int>::__max >= __int_traits<size_t>::__max)
+      {
+	// Check that the calculation in create_unchecked(n) won't overflow.
+	size_t bytes;
+	if (__builtin_mul_overflow(n, sizeof(value_type), &bytes)
+	      || __builtin_add_overflow(sizeof(_Impl), bytes, &bytes))
+	  std::__throw_bad_alloc();
+      }
+    // Otherwise, it can't overflow, even for 20-bit size_t on msp430.
+
+    return create_unchecked(n);
+  }
+
+  // pre: no overflow in Si + n * Sv
+  static unique_ptr<_Impl, _Impl_deleter>
+  create_unchecked(int n)
+  {
+    const auto bytes = alloc_size(n);
+    void* p;
+    if constexpr (use_aligned_new)
+      p = ::operator new(bytes, align_val_t{required_alignment});
+    else
+      p = ::operator new(bytes);
+    return std::unique_ptr<_Impl, _Impl_deleter>(::new(p) _Impl{n});
+  }
+
+  // The number of bytes that must be allocated for _Impl with capacity n.
+  static size_t
+  alloc_size(int n) { return sizeof(_Impl) + n * sizeof(value_type); }
 };
 
-void path::_List::_Impl_deleter::operator()(_Impl* p) const noexcept
+// Destroy and deallocate an _Impl.
+void
+path::_List::_Impl_deleter::operator()(_Impl* p) const noexcept
 {
   p = _Impl::notype(p);
   if (p)
     {
-      __glibcxx_assert(p->_M_size <= p->_M_capacity);
-      p->clear();
-      ::operator delete(p, sizeof(*p) + p->_M_capacity * sizeof(value_type));
+      const auto bytes = _Impl::alloc_size(p->_M_capacity);
+      p->~_Impl();
+      if constexpr (_Impl::use_aligned_new)
+	::operator delete(p, bytes, align_val_t{_Impl::required_alignment});
+      else
+	::operator delete(p, bytes);
     }
 }
 
@@ -278,8 +358,8 @@ path::_List::operator=(const _List& other)
 	    to[i]._M_pathname.reserve(from[i]._M_pathname.length());
 	  if (newsize > oldsize)
 	    {
-	      std::uninitialized_copy_n(to + oldsize, newsize - oldsize,
-					from + oldsize);
+	      std::uninitialized_copy_n(from + oldsize, newsize - oldsize,
+					to + oldsize);
 	      impl->_M_size = newsize;
 	    }
 	  else if (newsize < oldsize)
@@ -426,11 +506,14 @@ path::_List::reserve(int newcap, bool exact = false)
 
   if (curcap < newcap)
     {
-      if (!exact && newcap < int(1.5 * curcap))
-	newcap = 1.5 * curcap;
+      if (!exact)
+	{
+	  const int nextcap = curcap + curcap / 2;
+	  if (newcap < nextcap)
+	    newcap = nextcap;
+	}
 
-      void* p = ::operator new(sizeof(_Impl) + newcap * sizeof(value_type));
-      std::unique_ptr<_Impl, _Impl_deleter> newptr(::new(p) _Impl{newcap});
+      auto newptr = _Impl::create(newcap);
       const int cursize = curptr ? curptr->size() : 0;
       if (cursize)
 	{
@@ -565,13 +648,6 @@ path::operator/=(const path& __p)
   if (orig_type == _Type::_Root_name)
     ++capacity; // Need to insert root-directory after root-name
 #endif
-
-  if (orig_type == _Type::_Multi)
-    {
-      const int curcap = _M_cmpts._M_impl->capacity();
-      if (capacity > curcap)
-	capacity = std::max(capacity, (int) (curcap * 1.5));
-    }
 
   _M_pathname.reserve(_M_pathname.length() + sep.length()
 		      + __p._M_pathname.length());
@@ -845,6 +921,38 @@ path::operator+=(const path& p)
       return *this;
     }
 
+  // Handle p += p which would otherwise access dangling pointers after
+  // reallocating _M_cmpts and _M_pathname.
+  if (&p == this) [[unlikely]]
+    return *this += p.native();
+  // Handle p += *i where i is in [p.begin(),p.end()), for the same reason.
+  if (_M_type() == _Type::_Multi && p._M_type() != _Type::_Multi)
+    {
+      const auto first = _M_cmpts.begin(), last = first + _M_cmpts.size();
+      if (!std::less<>()(&p, first) && std::less<>()(&p, last)) [[unlikely]]
+	return *this += p.native();
+    }
+
+#if _GLIBCXX_FILESYSTEM_IS_WINDOWS
+  if (_M_type() == _Type::_Root_name
+      || (_M_type() == _Type::_Filename && _M_pathname.size() == 1))
+    {
+      // Handle path("C") += path(":") and path("C:") += path("/x")
+      // FIXME: do this more efficiently
+      *this = path(_M_pathname + p._M_pathname);
+      return *this;
+    }
+#endif
+#if SLASHSLASH_IS_ROOTNAME
+  if (_M_type() == _Type::_Root_dir)
+    {
+      // Handle path("/") += path("/x") and path("//") += path("x")
+      // FIXME: do this more efficiently
+      *this = path(_M_pathname + p._M_pathname);
+      return *this;
+    }
+#endif
+
   const auto orig_pathlen = _M_pathname.length();
   const auto orig_type = _M_type();
   const auto orig_size = _M_cmpts.size();
@@ -968,16 +1076,7 @@ path::operator+=(const path& p)
 	}
 
       if (it != last && it->_M_type() == _Type::_Root_dir)
-	{
-	  ++it;
-	  if (it == last)
-	    {
-	      // This root-dir becomes a trailing slash
-	      auto pos = _M_pathname.length() + p._M_pathname.length();
-	      ::new(output++) _Cmpt({}, _Type::_Filename, pos);
-	      ++_M_cmpts._M_impl->_M_size;
-	    }
-	}
+	++it;
 
       while (it != last)
 	{
@@ -1039,6 +1138,26 @@ path::_M_concat(basic_string_view<value_type> s)
       operator=(s);
       return;
     }
+
+#if _GLIBCXX_FILESYSTEM_IS_WINDOWS
+  if (_M_type() == _Type::_Root_name
+      || (_M_type() == _Type::_Filename && _M_pathname.size() == 1))
+    {
+      // Handle path("C") += ":" and path("C:") += "/x"
+      // FIXME: do this more efficiently
+      *this = path(_M_pathname + string_type(s));
+      return;
+    }
+#endif
+#if SLASHSLASH_IS_ROOTNAME
+  if (_M_type() == _Type::_Root_dir)
+    {
+      // Handle path("/") += "/x" and path("//") += "x"
+      // FIXME: do this more efficiently
+      *this = path(_M_pathname + string_type(s));
+      return;
+    }
+#endif
 
   const auto orig_pathlen = _M_pathname.length();
   const auto orig_type = _M_type();
@@ -1523,11 +1642,9 @@ path::parent_path() const
     __ret = *this;
   else if (_M_cmpts.size() >= 2)
     {
-      for (auto __it = _M_cmpts.begin(), __end = std::prev(_M_cmpts.end());
-	   __it != __end; ++__it)
-	{
-	  __ret /= *__it;
-	}
+      const auto parent = std::prev(_M_cmpts.end(), 2);
+      const auto len = parent->_M_pos + parent->_M_pathname.length();
+      __ret.assign(_M_pathname.substr(0, len));
     }
   return __ret;
 }
@@ -1749,6 +1866,19 @@ path::lexically_relative(const path& base) const
   if (!has_root_directory() && base.has_root_directory())
     return ret;
   auto [a, b] = std::mismatch(begin(), end(), base.begin(), base.end());
+#ifdef _GLIBCXX_FILESYSTEM_IS_WINDOWS
+  // _GLIBCXX_RESOLVE_LIB_DEFECTS
+  // 3070. path::lexically_relative causes surprising results if a filename
+  // can also be a root-name
+  if (!empty())
+    for (auto& p : _M_cmpts)
+      if (p._M_type() == _Type::_Filename && is_disk_designator(p.native()))
+	return ret;
+  if (!base.empty())
+    for (auto i = b, end = base.end(); i != end; ++i)
+      if (i->_M_type() == _Type::_Filename && is_disk_designator(i->native()))
+	return ret;
+#endif
   if (a == end() && b == base.end())
     ret = ".";
   else
@@ -1823,11 +1953,6 @@ path::_M_split_cmpts()
       _M_cmpts.type(_Type::_Filename);
       return;
     }
-  if (_M_pathname.length() == 1 && _M_pathname[0] == preferred_separator)
-    {
-      _M_cmpts.type(_Type::_Root_dir);
-      return;
-    }
 
   _Parser parser(_M_pathname);
 
@@ -1858,10 +1983,9 @@ path::_M_split_cmpts()
 	  _M_cmpts.type(_Type::_Multi);
 	  _M_cmpts.reserve(_M_cmpts.size() + buf.size());
 	  auto output = _M_cmpts._M_impl->end();
-	  for (auto& c : buf)
+	  for (const auto& c : buf)
 	    {
-	      auto pos = c.str.data() - _M_pathname.data();
-	      ::new(output++) _Cmpt(c.str, c.type, pos);
+	      ::new(output++) _Cmpt(c.str, c.type, parser.offset(c));
 	      ++_M_cmpts._M_impl->_M_size;
 	    }
 	  next = buf.begin();
@@ -1881,9 +2005,8 @@ path::_M_split_cmpts()
       auto output = _M_cmpts._M_impl->end();
       for (int i = 0; i < n; ++i)
 	{
-	  auto c = buf[i];
-	  auto pos = c.str.data() - _M_pathname.data();
-	  ::new(output++) _Cmpt(c.str, c.type, pos);
+	  const auto& c = buf[i];
+	  ::new(output++) _Cmpt(c.str, c.type, parser.offset(c));
 	  ++_M_cmpts._M_impl->_M_size;
 	}
     }
@@ -1891,20 +2014,16 @@ path::_M_split_cmpts()
 
 path::string_type
 path::_S_convert_loc(const char* __first, const char* __last,
-		     const std::locale& __loc)
+		     [[maybe_unused]] const std::locale& __loc)
 {
 #if _GLIBCXX_USE_WCHAR_T
   auto& __cvt = std::use_facet<codecvt<wchar_t, char, mbstate_t>>(__loc);
   basic_string<wchar_t> __ws;
-  if (!__str_codecvt_in(__first, __last, __ws, __cvt))
+  if (!__str_codecvt_in_all(__first, __last, __ws, __cvt))
     _GLIBCXX_THROW_OR_ABORT(filesystem_error(
 	  "Cannot convert character sequence",
 	  std::make_error_code(errc::illegal_byte_sequence)));
-#ifdef _GLIBCXX_FILESYSTEM_IS_WINDOWS
-  return __ws;
-#else
-  return _Cvt<wchar_t>::_S_convert(__ws.data(), __ws.data() + __ws.size());
-#endif
+  return _S_convert(std::move(__ws));
 #else
   return {__first, __last};
 #endif
@@ -1930,20 +2049,20 @@ fs::hash_value(const path& p) noexcept
 
 struct fs::filesystem_error::_Impl
 {
-  _Impl(const string& what_arg, const path& p1, const path& p2)
+  _Impl(string_view what_arg, const path& p1, const path& p2)
   : path1(p1), path2(p2), what(make_what(what_arg, &p1, &p2))
   { }
 
-  _Impl(const string& what_arg, const path& p1)
+  _Impl(string_view what_arg, const path& p1)
   : path1(p1), path2(), what(make_what(what_arg, &p1, nullptr))
   { }
 
-  _Impl(const string& what_arg)
+  _Impl(string_view what_arg)
   : what(make_what(what_arg, nullptr, nullptr))
   { }
 
   static std::string
-  make_what(const std::string& s, const path* p1, const path* p2)
+  make_what(string_view s, const path* p1, const path* p2)
   {
     const std::string pstr1 = p1 ? p1->u8string() : std::string{};
     const std::string pstr2 = p2 ? p2->u8string() : std::string{};
@@ -1979,20 +2098,20 @@ template class std::__shared_ptr<const fs::filesystem_error::_Impl>;
 fs::filesystem_error::
 filesystem_error(const string& what_arg, error_code ec)
 : system_error(ec, what_arg),
-  _M_impl(std::__make_shared<_Impl>(what_arg))
+  _M_impl(std::__make_shared<_Impl>(system_error::what()))
 { }
 
 fs::filesystem_error::
 filesystem_error(const string& what_arg, const path& p1, error_code ec)
 : system_error(ec, what_arg),
-  _M_impl(std::__make_shared<_Impl>(what_arg, p1))
+  _M_impl(std::__make_shared<_Impl>(system_error::what(), p1))
 { }
 
 fs::filesystem_error::
 filesystem_error(const string& what_arg, const path& p1, const path& p2,
 		 error_code ec)
 : system_error(ec, what_arg),
-  _M_impl(std::__make_shared<_Impl>(what_arg, p1, p2))
+  _M_impl(std::__make_shared<_Impl>(system_error::what(), p1, p2))
 { }
 
 fs::filesystem_error::~filesystem_error() = default;

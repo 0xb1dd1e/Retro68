@@ -1,5 +1,5 @@
 /* Utilities for ipa analysis.
-   Copyright (C) 2004-2019 Free Software Foundation, Inc.
+   Copyright (C) 2004-2026 Free Software Foundation, Inc.
    Contributed by Kenneth Zadeck <zadeck@naturalbridge.com>
 
 This file is part of GCC.
@@ -30,11 +30,11 @@ struct ipa_dfs_info {
   bool new_node;
   bool on_stack;
   struct cgraph_node* next_cycle;
-  PTR aux;
+  void *aux;
 };
 
 
-/* In ipa-utils.c  */
+/* In ipa-utils.cc  */
 void ipa_print_order (FILE*, const char *, struct cgraph_node**, int);
 int ipa_reduced_postorder (struct cgraph_node **, bool,
 			  bool (*ignore_edge) (struct cgraph_edge *));
@@ -46,14 +46,30 @@ tree get_base_var (tree);
 void ipa_merge_profiles (struct cgraph_node *dst,
 			 struct cgraph_node *src, bool preserve_body = false);
 bool recursive_call_p (tree, tree);
+bool stmt_may_terminate_function_p (function *fun, gimple *stmt, bool assume_return_or_eh);
+bitmap find_always_executed_bbs (function *fun, bool assume_return_or_eh);
 
-/* In ipa-profile.c  */
+/* In ipa-pure-const.cc  */
+bool finite_function_p ();
+bool builtin_safe_for_const_function_p (bool *, tree);
+bool ipa_make_function_const (cgraph_node *, bool, bool);
+bool ipa_make_function_pure (cgraph_node *, bool, bool);
+
+/* In ipa-profile.cc  */
 bool ipa_propagate_frequency (struct cgraph_node *node);
+void ipa_profile_cc_finalize (void);
 
-/* In ipa-devirt.c  */
+/* In ipa-icf.cc  */
+void ipa_icf_cc_finalize (void);
+
+/* In ipa-sra.cc  */
+void ipa_sra_cc_finalize (void);
+
+/* In ipa-devirt.cc  */
 
 struct odr_type_d;
 typedef odr_type_d *odr_type;
+extern bool thunk_expansion;
 void build_type_inheritance_graph (void);
 void rebuild_type_inheritance_graph (void);
 void update_type_inheritance_graph (void);
@@ -92,9 +108,16 @@ void warn_types_mismatch (tree t1, tree t2, location_t loc1 = UNKNOWN_LOCATION,
 bool odr_or_derived_type_p (const_tree t);
 bool odr_types_equivalent_p (tree type1, tree type2);
 bool odr_type_violation_reported_p (tree type);
+tree prevailing_odr_type (tree type);
+void enable_odr_based_tbaa (tree type);
+bool odr_based_tbaa_p (const_tree type);
+void set_type_canonical_for_odr_type (tree type, tree canonical);
+void warn_function_returns_nonnull (tree);
+
+void register_odr_enum (tree type);
 
 /* Return vector containing possible targets of polymorphic call E.
-   If COMPLETEP is non-NULL, store true if the list is complete. 
+   If COMPLETEP is non-NULL, store true if the list is complete.
    CACHE_TOKEN (if non-NULL) will get stored to an unique ID of entry
    in the target cache.  If user needs to visit every target list
    just once, it can memoize them.
@@ -111,8 +134,11 @@ possible_polymorphic_call_targets (struct cgraph_edge *e,
 {
   ipa_polymorphic_call_context context(e);
 
-  return possible_polymorphic_call_targets (e->indirect_info->otr_type,
-					    e->indirect_info->otr_token,
+  cgraph_polymorphic_indirect_info *pii
+    = as_a <cgraph_polymorphic_indirect_info *> (e->indirect_info);
+  gcc_checking_assert (pii->usable_p ());
+  return possible_polymorphic_call_targets (pii->otr_type,
+					    pii->otr_token,
 					    context,
 					    completep, cache_token,
 					    speculative);
@@ -143,8 +169,12 @@ dump_possible_polymorphic_call_targets (FILE *f, struct cgraph_edge *e,
 {
   ipa_polymorphic_call_context context(e);
 
-  dump_possible_polymorphic_call_targets (f, e->indirect_info->otr_type,
-					  e->indirect_info->otr_token,
+  cgraph_polymorphic_indirect_info *pii
+    = as_a <cgraph_polymorphic_indirect_info *> (e->indirect_info);
+  if (!pii->usable_p ())
+    return;
+  dump_possible_polymorphic_call_targets (f, pii->otr_type,
+					  pii->otr_token,
 					  context, verbose);
 }
 
@@ -157,12 +187,16 @@ possible_polymorphic_call_target_p (struct cgraph_edge *e,
 {
   ipa_polymorphic_call_context context(e);
 
-  return possible_polymorphic_call_target_p (e->indirect_info->otr_type,
-					     e->indirect_info->otr_token,
+  cgraph_polymorphic_indirect_info *pii
+    = as_a <cgraph_polymorphic_indirect_info *> (e->indirect_info);
+  if (!pii->usable_p ())
+    return true;
+  return possible_polymorphic_call_target_p (pii->otr_type,
+					     pii->otr_token,
 					     context, n);
 }
 
-/* Return true if BINFO corresponds to a type with virtual methods. 
+/* Return true if BINFO corresponds to a type with virtual methods.
 
    Every type has several BINFOs.  One is the BINFO associated by the type
    while other represents bases of derived types.  The BINFOs representing
@@ -186,19 +220,14 @@ type_with_linkage_p (const_tree t)
   if (!TYPE_NAME (t) || TREE_CODE (TYPE_NAME (t)) != TYPE_DECL)
     return false;
 
-  /* To support -fno-lto-odr-type-merigng recognize types with vtables
-     to have linkage.  */
-  if (RECORD_OR_UNION_TYPE_P (t)
-      && TYPE_BINFO (t) && BINFO_VTABLE (TYPE_BINFO (t)))
-    return true;
-
-  /* After free_lang_data was run and -flto-odr-type-merging we can recongize
+  /* After free_lang_data was run we can recongize
      types with linkage by presence of mangled name.  */
   if (DECL_ASSEMBLER_NAME_SET_P (TYPE_NAME (t)))
     return true;
 
   if (in_lto_p)
     return false;
+
   /* We used to check for TYPE_STUB_DECL but that is set to NULL for forward
      declarations.  */
 
@@ -232,7 +261,7 @@ type_in_anonymous_namespace_p (const_tree t)
     return !TREE_PUBLIC (TYPE_STUB_DECL (t));
 }
 
-/* Return true of T is type with One Definition Rule info attached. 
+/* Return true of T is type with One Definition Rule info attached.
    It means that either it is anonymous type or it has assembler name
    set.  */
 
@@ -241,27 +270,36 @@ odr_type_p (const_tree t)
 {
   /* We do not have this information when not in LTO, but we do not need
      to care, since it is used only for type merging.  */
-  gcc_checking_assert (in_lto_p || flag_lto);
+  gcc_checking_assert (in_lto_p || flag_lto || flag_generate_offload);
+  return TYPE_NAME (t) && TREE_CODE (TYPE_NAME (t)) == TYPE_DECL
+         && DECL_ASSEMBLER_NAME_SET_P (TYPE_NAME (t));
+}
 
-  if (!type_with_linkage_p (t))
-    return false;
+/* If TYPE has mangled ODR name, return it.  Otherwise return NULL.
+   The function works only when free_lang_data is run.  */
 
-  /* To support -fno-lto-odr-type-merging consider types with vtables ODR.  */
-  if (type_in_anonymous_namespace_p (t))
+inline const char *
+get_odr_name_for_type (tree type)
+{
+  tree type_name = TYPE_NAME (type);
+  if (type_name == NULL_TREE
+      || TREE_CODE (type_name) != TYPE_DECL
+      || !DECL_ASSEMBLER_NAME_SET_P (type_name))
+    return NULL;
+
+  return IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (type_name));
+}
+
+/* Return true if we are going to do LTO streaming.  */
+
+inline bool
+lto_streaming_expected_p ()
+{
+  /* Compilation before LTO stremaing.  */
+  if (flag_lto && !in_lto_p && symtab->state < IPA_SSA_AFTER_INLINING)
     return true;
-
-  if (TYPE_NAME (t) && DECL_ASSEMBLER_NAME_SET_P (TYPE_NAME (t)))
-    {
-      /* C++ FE uses magic <anon> as assembler names of anonymous types.
- 	 verify that this match with type_in_anonymous_namespace_p.  */
-      gcc_checking_assert (strcmp ("<anon>",
-				   IDENTIFIER_POINTER
-				   (DECL_ASSEMBLER_NAME (TYPE_NAME (t)))));
-      return true;
-    }
-  return false;
+  /* WPA or incremental link.  */
+  return (flag_wpa || flag_incremental_link == INCREMENTAL_LINK_LTO);
 }
 
 #endif  /* GCC_IPA_UTILS_H  */
-
-

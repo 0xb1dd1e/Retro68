@@ -1,7 +1,8 @@
-/* { dg-do compile { target { powerpc64le-*-* } } } */
-/* { dg-options "-mdejagnu-cpu=power8 -O3 -ffast-math" } */
+/* { dg-do compile { target le } } */
+/* { dg-options "-mdejagnu-cpu=power8 -mvsx -O3 -ffast-math" } */
+/* { dg-require-effective-target powerpc_vsx } */
 /* { dg-final { scan-assembler "lxvd2x" } } */
-/* { dg-final { scan-assembler-not "xxpermdi" } } */
+/* { dg-final { scan-assembler-not "xxpermdi" { target le } } } */
 
 /* Verify that swap optimization works correctly in the presence of
    a V2DFmode reduction.  */

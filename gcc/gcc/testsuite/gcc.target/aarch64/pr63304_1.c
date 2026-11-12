@@ -1,7 +1,8 @@
 /* { dg-do assemble } */
-/* { dg-options "-O1 --save-temps" } */
+/* { dg-require-effective-target lp64 } */
+/* { dg-options "-O1 --save-temps -fno-pie" } */
 #pragma GCC push_options
-#pragma GCC target ("+nothing+simd, cmodel=small")
+#pragma GCC target ("+nothing+simd,cmodel=small")
 
 int
 cal (double a)
@@ -44,4 +45,4 @@ cal3 (double a)
     return 1;
 }
 
-/* { dg-final { scan-assembler-times "adrp" 6 } } */
+/* { dg-final { scan-assembler-times "adrp" 4 } } */

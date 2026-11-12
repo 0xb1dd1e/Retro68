@@ -1,4 +1,4 @@
-// Copyright (C) 2017-2019 Free Software Foundation, Inc.
+// Copyright (C) 2017-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -15,7 +15,6 @@
 // with this library; see the file COPYING3.  If not see
 // <http://www.gnu.org/licenses/>.
 
-// { dg-options "-std=gnu++17" }
 // { dg-do compile { target c++17 } }
 
 #include <memory>
@@ -30,8 +29,7 @@ test01()
 {
   alignas(DeletedDtor) unsigned char buf[sizeof(DeletedDtor)];
   auto p = ::new (buf) DeletedDtor();
-  std::destroy(p, p + 1);	// { dg-error "here" }
-  std::destroy_n(p, 1);		// { dg-error "here" }
+  std::destroy(p, p + 1);
 }
 
 class PrivateDtor {
@@ -43,8 +41,19 @@ test02()
 {
   alignas(PrivateDtor) unsigned char buf[sizeof(PrivateDtor)];
   auto p = ::new (buf) PrivateDtor();
-  std::destroy(p, p + 1);	// { dg-error "here" }
-  std::destroy_n(p, 1);		// { dg-error "here" }
+  std::destroy(p, p + 1);
 }
 
-// { dg-error "value type is destructible" "" { target *-*-* } 0 }
+#if __cpp_constexpr_dynamic_alloc // >= C++20
+consteval bool
+test03()
+{
+  DeletedDtor* p = nullptr;
+  std::destroy(p, p);
+  return true;
+}
+static_assert(test03());
+#endif
+
+// { dg-error "deleted function .*DeletedDtor" "" { target *-*-* } 0 }
+// { dg-error "PrivateDtor.* is private" "" { target *-*-* } 0 }

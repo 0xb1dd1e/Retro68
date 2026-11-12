@@ -35,13 +35,15 @@ contains
   !$acc end parallel
   !$acc kernels deviceptr (i, c, r, ia, ca, ra, asa, ti)
   !$acc end kernels
+  !$acc serial deviceptr (i, c, r, ia, ca, ra, asa, ti)
+  !$acc end serial
   !$acc data deviceptr (i, c, r, ia, ca, ra, asa, ti)
   !$acc end data
 
 
-  !$acc parallel copy (tip) ! { dg-error "POINTER" }
+  !$acc parallel copy (tip)
   !$acc end parallel
-  !$acc parallel copy (tia) ! { dg-error "ALLOCATABLE" }
+  !$acc parallel copy (tia)
   !$acc end parallel
   !$acc parallel deviceptr (i) copy (i) ! { dg-error "multiple clauses" }
   !$acc end parallel
@@ -50,13 +52,15 @@ contains
   !$acc end parallel
   !$acc kernels copy (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
   !$acc end kernels
+  !$acc serial copy (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
+  !$acc end serial
   !$acc data copy (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
   !$acc end data
 
 
-  !$acc parallel copyin (tip) ! { dg-error "POINTER" }
+  !$acc parallel copyin (tip)
   !$acc end parallel
-  !$acc parallel copyin (tia) ! { dg-error "ALLOCATABLE" }
+  !$acc parallel copyin (tia)
   !$acc end parallel
   !$acc parallel deviceptr (i) copyin (i) ! { dg-error "multiple clauses" }
   !$acc end parallel
@@ -67,13 +71,15 @@ contains
   !$acc end parallel
   !$acc kernels copyin (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
   !$acc end kernels
+  !$acc serial copyin (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
+  !$acc end serial
   !$acc data copyin (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
   !$acc end data
 
 
-  !$acc parallel copyout (tip) ! { dg-error "POINTER" }
+  !$acc parallel copyout (tip)
   !$acc end parallel
-  !$acc parallel copyout (tia) ! { dg-error "ALLOCATABLE" }
+  !$acc parallel copyout (tia)
   !$acc end parallel
   !$acc parallel deviceptr (i) copyout (i) ! { dg-error "multiple clauses" }
   !$acc end parallel
@@ -86,13 +92,15 @@ contains
   !$acc end parallel
   !$acc kernels copyout (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
   !$acc end kernels
+  !$acc serial copyout (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
+  !$acc end serial
   !$acc data copyout (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
   !$acc end data
 
 
-  !$acc parallel create (tip) ! { dg-error "POINTER" }
+  !$acc parallel create (tip)
   !$acc end parallel
-  !$acc parallel create (tia) ! { dg-error "ALLOCATABLE" }
+  !$acc parallel create (tia)
   !$acc end parallel
   !$acc parallel deviceptr (i) create (i) ! { dg-error "multiple clauses" }
   !$acc end parallel
@@ -107,13 +115,38 @@ contains
   !$acc end parallel
   !$acc kernels create (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
   !$acc end kernels
+  !$acc serial create (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
+  !$acc end serial
   !$acc data create (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
   !$acc end data
 
 
-  !$acc parallel present (tip) ! { dg-error "POINTER" }
+  !$acc parallel no_create (tip)
   !$acc end parallel
-  !$acc parallel present (tia) ! { dg-error "ALLOCATABLE" }
+  !$acc parallel no_create (tia)
+  !$acc end parallel
+  !$acc parallel deviceptr (i) no_create (i) ! { dg-error "multiple clauses" }
+  !$acc end parallel
+  !$acc parallel copy (i) no_create (i) ! { dg-error "multiple clauses" }
+  !$acc end parallel
+  !$acc parallel copyin (i) no_create (i) ! { dg-error "multiple clauses" }
+  !$acc end parallel
+  !$acc parallel copyout (i) no_create (i) ! { dg-error "multiple clauses" }
+  !$acc end parallel
+
+  !$acc parallel no_create (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
+  !$acc end parallel
+  !$acc kernels no_create (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
+  !$acc end kernels
+  !$acc serial no_create (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
+  !$acc end serial
+  !$acc data no_create (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
+  !$acc end data
+
+
+  !$acc parallel present (tip)
+  !$acc end parallel
+  !$acc parallel present (tia)
   !$acc end parallel
   !$acc parallel deviceptr (i) present (i) ! { dg-error "multiple clauses" }
   !$acc end parallel
@@ -130,6 +163,8 @@ contains
   !$acc end parallel
   !$acc kernels present (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
   !$acc end kernels
+  !$acc serial present (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
+  !$acc end serial
   !$acc data present (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
   !$acc end data
 
@@ -144,9 +179,9 @@ contains
   !$acc end parallel
 
 
-  !$acc parallel present_or_copy (tip) ! { dg-error "POINTER" }
+  !$acc parallel present_or_copy (tip)
   !$acc end parallel
-  !$acc parallel present_or_copy (tia) ! { dg-error "ALLOCATABLE" }
+  !$acc parallel present_or_copy (tia)
   !$acc end parallel
   !$acc parallel deviceptr (i) present_or_copy (i) ! { dg-error "multiple clauses" }
   !$acc end parallel
@@ -165,13 +200,15 @@ contains
   !$acc end parallel
   !$acc kernels present_or_copy (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
   !$acc end kernels
+  !$acc serial present_or_copy (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
+  !$acc end serial
   !$acc data present_or_copy (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
   !$acc end data
 
 
-  !$acc parallel present_or_copyin (tip) ! { dg-error "POINTER" }
+  !$acc parallel present_or_copyin (tip)
   !$acc end parallel
-  !$acc parallel present_or_copyin (tia) ! { dg-error "ALLOCATABLE" }
+  !$acc parallel present_or_copyin (tia)
   !$acc end parallel
   !$acc parallel deviceptr (i) present_or_copyin (i) ! { dg-error "multiple clauses" }
   !$acc end parallel
@@ -192,13 +229,15 @@ contains
   !$acc end parallel
   !$acc kernels present_or_copyin (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
   !$acc end kernels
+  !$acc serial present_or_copyin (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
+  !$acc end serial
   !$acc data present_or_copyin (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
   !$acc end data
 
 
-  !$acc parallel present_or_copyout (tip) ! { dg-error "POINTER" }
+  !$acc parallel present_or_copyout (tip)
   !$acc end parallel
-  !$acc parallel present_or_copyout (tia) ! { dg-error "ALLOCATABLE" }
+  !$acc parallel present_or_copyout (tia)
   !$acc end parallel
   !$acc parallel deviceptr (i) present_or_copyout (i) ! { dg-error "multiple clauses" }
   !$acc end parallel
@@ -221,13 +260,15 @@ contains
   !$acc end parallel
   !$acc kernels present_or_copyout (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
   !$acc end kernels
+  !$acc serial present_or_copyout (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
+  !$acc end serial
   !$acc data present_or_copyout (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
   !$acc end data
 
 
-  !$acc parallel present_or_create (tip) ! { dg-error "POINTER" }
+  !$acc parallel present_or_create (tip)
   !$acc end parallel
-  !$acc parallel present_or_create (tia) ! { dg-error "ALLOCATABLE" }
+  !$acc parallel present_or_create (tia)
   !$acc end parallel
   !$acc parallel deviceptr (i) present_or_create (i) ! { dg-error "multiple clauses" }
   !$acc end parallel
@@ -252,6 +293,8 @@ contains
   !$acc end parallel
   !$acc kernels present_or_create (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
   !$acc end kernels
+  !$acc serial present_or_create (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
+  !$acc end serial
   !$acc data present_or_create (i, c, r, ia, ca, ra, asa, rp, ti, vi, aa)
   !$acc end data
 

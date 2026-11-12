@@ -4,12 +4,12 @@
  * Translated from MinGW Windows headers
  *
  * License: $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source: $(DRUNTIMESRC src/core/sys/windows/_docobj.d)
+ * Source: $(DRUNTIMESRC core/sys/windows/_docobj.d)
  */
 module core.sys.windows.docobj;
 version (Windows):
 
-private import core.sys.windows.basetyps, core.sys.windows.oaidl, core.sys.windows.objidl, core.sys.windows.oleidl,
+import core.sys.windows.basetyps, core.sys.windows.oaidl, core.sys.windows.objidl, core.sys.windows.oleidl,
   core.sys.windows.unknwn, core.sys.windows.windef, core.sys.windows.wtypes;
 
 // FIXME: remove inherited methods from interface definitions
@@ -81,8 +81,8 @@ struct OLECMD {
     DWORD cmdf;
 }
 
-alias IOleInPlaceSite LPOLEINPLACESITE;
-alias IEnumOleDocumentViews LPENUMOLEDOCUMENTVIEWS;
+alias LPOLEINPLACESITE = IOleInPlaceSite;
+alias LPENUMOLEDOCUMENTVIEWS = IEnumOleDocumentViews;
 
 extern (C) extern const IID
     IID_IContinueCallback,

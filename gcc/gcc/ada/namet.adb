@@ -6,23 +6,17 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
 -- ware  Foundation;  either version 3,  or (at your option) any later ver- --
 -- sion.  GNAT is distributed in the hope that it will be useful, but WITH- --
 -- OUT ANY WARRANTY;  without even the  implied warranty of MERCHANTABILITY --
--- or FITNESS FOR A PARTICULAR PURPOSE.                                     --
---                                                                          --
--- As a special exception under Section 7 of GPL version 3, you are granted --
--- additional permissions described in the GCC Runtime Library Exception,   --
--- version 3.1, as published by the Free Software Foundation.               --
---                                                                          --
--- You should have received a copy of the GNU General Public License and    --
--- a copy of the GCC Runtime Library Exception along with this program;     --
--- see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see    --
--- <http://www.gnu.org/licenses/>.                                          --
+-- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
+-- for  more details.  You should have  received  a copy of the GNU General --
+-- Public License  distributed with GNAT; see file COPYING3.  If not, go to --
+-- http://www.gnu.org/licenses for a complete copy of the license.          --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -33,11 +27,9 @@
 --  source file must be properly reflected in the C header file namet.h
 --  which is created manually from namet.ads and namet.adb.
 
-with Debug;    use Debug;
-with Opt;      use Opt;
-with Output;   use Output;
-with System;   use System;
-with Tree_IO;  use Tree_IO;
+with Debug;  use Debug;
+with Opt;    use Opt;
+with Output; use Output;
 with Widechar;
 
 with Interfaces; use Interfaces;
@@ -178,39 +170,39 @@ package body Namet is
      (Buf : in out Bounded_String;
       Id  : Valid_Name_Id)
    is
-      C    : Character;
-      P    : Natural;
       Temp : Bounded_String;
+
+      function Has_Encodings (Temp : Bounded_String) return Boolean;
+      --  True if Temp contains encoded characters. If not, we can set
+      --  Name_Has_No_Encodings to True below, and never call this again
+      --  on the same Name_Id.
+
+      function Has_Encodings (Temp : Bounded_String) return Boolean is
+      begin
+         for J in 1 .. Temp.Length loop
+            if Temp.Chars (J) in 'U' | 'W' | 'Q' | 'O' then
+               return True;
+            end if;
+         end loop;
+
+         return False;
+      end Has_Encodings;
 
    begin
       Append (Temp, Id);
 
-      --  Skip scan if we already know there are no encodings
+      --  Skip scan if we already know there are no encodings (i.e. the first
+      --  time this was called on Id, the Has_Encodings call below returned
+      --  False).
 
       if Name_Entries.Table (Id).Name_Has_No_Encodings then
          goto Done;
       end if;
 
-      --  Quick loop to see if there is anything special to do
-
-      P := 1;
-      loop
-         if P = Temp.Length then
-            Name_Entries.Table (Id).Name_Has_No_Encodings := True;
-            goto Done;
-
-         else
-            C := Temp.Chars (P);
-
-            exit when
-              C = 'U' or else
-              C = 'W' or else
-              C = 'Q' or else
-              C = 'O';
-
-            P := P + 1;
-         end if;
-      end loop;
+      if not Has_Encodings (Temp) then
+         Name_Entries.Table (Id).Name_Has_No_Encodings := True;
+         goto Done;
+      end if;
 
       --  Here we have at least some encoding that we must decode
 
@@ -243,8 +235,7 @@ package body Namet is
 
             if C = 'U'
               and then Old < Temp.Length
-              and then Temp.Chars (Old + 1) not in 'A' .. 'Z'
-              and then Temp.Chars (Old + 1) /= '_'
+              and then Temp.Chars (Old + 1) not in 'A' .. 'Z' | '_'
             then
                Old := Old + 1;
 
@@ -282,8 +273,7 @@ package body Namet is
 
             elsif C = 'W'
               and then Old < Temp.Length
-              and then Temp.Chars (Old + 1) not in 'A' .. 'Z'
-              and then Temp.Chars (Old + 1) /= '_'
+              and then Temp.Chars (Old + 1) not in 'A' .. 'Z' | '_'
             then
                Old := Old + 1;
                Widechar.Set_Wide (Char_Code (Hex (4)), New_Buf, New_Len);
@@ -309,7 +299,7 @@ package body Namet is
                C := Temp.Chars (Old);
                Old := Old + 1;
 
-               pragma Assert (C in '0' .. '9' or else C in 'a' .. 'f');
+               pragma Assert (C in '0' .. '9' | 'a' .. 'f');
 
                if C <= '9' then
                   T := 16 * T + Character'Pos (C) - Character'Pos ('0');
@@ -355,8 +345,7 @@ package body Namet is
 
             elsif Temp.Chars (Old) = 'O'
               and then Old < Temp.Length
-              and then Temp.Chars (Old + 1) not in 'A' .. 'Z'
-              and then Temp.Chars (Old + 1) /= '_'
+              and then Temp.Chars (Old + 1) not in 'A' .. 'Z' | '_'
             then
                Old := Old + 1;
 
@@ -485,7 +474,11 @@ package body Namet is
 
             P := 1;
             while P < Temp.Length loop
-               if Temp.Chars (P + 1) in 'A' .. 'Z' then
+               --  Cheap test for the common case of no encoding
+
+               if Temp.Chars (P + 1) in 'A' .. 'Z'
+                 and then Temp.Chars (P + 1) /= 'W'
+               then
                   P := P + 1;
 
                --  Uhh encoding
@@ -509,8 +502,7 @@ package body Namet is
                elsif Temp.Chars (P) = 'W'
                  and then P + 9 <= Temp.Length
                  and then Temp.Chars (P + 1) = 'W'
-                 and then Temp.Chars (P + 2) not in 'A' .. 'Z'
-                 and then Temp.Chars (P + 2) /= '_'
+                 and then Temp.Chars (P + 2) not in 'A' .. 'Z' | '_'
                then
                   Temp.Chars (P + 12 .. Temp.Length + 2) :=
                     Temp.Chars (P + 10 .. Temp.Length);
@@ -525,8 +517,7 @@ package body Namet is
 
                elsif Temp.Chars (P) = 'W'
                  and then P < Temp.Length
-                 and then Temp.Chars (P + 1) not in 'A' .. 'Z'
-                 and then Temp.Chars (P + 1) /= '_'
+                 and then Temp.Chars (P + 1) not in 'A' .. 'Z' | '_'
                then
                   Temp.Chars (P + 8 .. P + Temp.Length + 3) :=
                     Temp.Chars (P + 5 .. Temp.Length);
@@ -579,7 +570,7 @@ package body Namet is
          declare
             CC : constant Character := Get_Character (C);
          begin
-            if CC in 'a' .. 'z' or else CC in '0' .. '9' then
+            if CC in 'a' .. 'z' | '0' .. '9' then
                Buf.Chars (Buf.Length) := CC;
             else
                Buf.Chars (Buf.Length) := 'U';
@@ -632,6 +623,25 @@ package body Namet is
       Strip_Qualification_And_Suffixes (Temp);
       Append (Buf, Temp);
    end Append_Unqualified_Decoded;
+
+   --------------------------------
+   -- Destroy_Global_Name_Buffer --
+   --------------------------------
+
+   procedure Destroy_Global_Name_Buffer is
+      procedure Do_It;
+      --  Do the work. Needed only for "pragma Debug" below, so we don't do
+      --  anything in production mode.
+
+      procedure Do_It is
+      begin
+         Global_Name_Buffer.Length := Global_Name_Buffer.Max_Length;
+         Global_Name_Buffer.Chars := (others => '!');
+      end Do_It;
+      pragma Debug (Do_It);
+   begin
+      null;
+   end Destroy_Global_Name_Buffer;
 
    --------------
    -- Finalize --
@@ -998,9 +1008,7 @@ package body Namet is
    begin
       --  Any name starting or ending with underscore is internal
 
-      if Buf.Chars (1) = '_'
-        or else Buf.Chars (Buf.Length) = '_'
-      then
+      if Buf.Chars (1) = '_' or else Buf.Chars (Buf.Length) = '_' then
          return True;
 
       --  Allow quoted character
@@ -1067,12 +1075,7 @@ package body Namet is
 
    function Is_OK_Internal_Letter (C : Character) return Boolean is
    begin
-      return C in 'A' .. 'Z'
-        and then C /= 'O'
-        and then C /= 'Q'
-        and then C /= 'U'
-        and then C /= 'W'
-        and then C /= 'X';
+      return C in 'A' .. 'Z' and then C not in 'O' | 'Q' | 'U' | 'W' | 'X';
    end Is_OK_Internal_Letter;
 
    ----------------------
@@ -1095,6 +1098,15 @@ package body Namet is
    begin
       return Id in Name_Entries.First .. Name_Entries.Last;
    end Is_Valid_Name;
+
+   ------------------
+   -- Last_Name_Id --
+   ------------------
+
+   function Last_Name_Id return Name_Id is
+   begin
+      return Name_Id (Int (First_Name_Id) + Name_Entries_Count - 1);
+   end Last_Name_Id;
 
    --------------------
    -- Length_Of_Name --
@@ -1132,11 +1144,12 @@ package body Namet is
           Name_Len              => Short (Buf.Length),
           Byte_Info             => 0,
           Int_Info              => 0,
+          Hash_Link             => No_Name,
+          Name_Has_No_Encodings => False,
           Boolean1_Info         => False,
           Boolean2_Info         => False,
           Boolean3_Info         => False,
-          Name_Has_No_Encodings => False,
-          Hash_Link             => No_Name));
+          Spare                 => False));
 
       --  Set corresponding string entry in the Name_Chars table
 
@@ -1181,11 +1194,13 @@ package body Namet is
       Hash_Index : Hash_Index_Type;
       --  Computed hash index
 
+      Result : Valid_Name_Id;
+
    begin
       --  Quick handling for one character names
 
       if Buf.Length = 1 then
-         return Valid_Name_Id (First_Name_Id + Character'Pos (Buf.Chars (1)));
+         Result := First_Name_Id + Character'Pos (Buf.Chars (1));
 
       --  Otherwise search hash table for existing matching entry
 
@@ -1212,7 +1227,8 @@ package body Namet is
                   end if;
                end loop;
 
-               return New_Id;
+               Result := New_Id;
+               goto Done;
 
                --  Current entry in hash chain does not match
 
@@ -1235,12 +1251,13 @@ package body Namet is
            ((Name_Chars_Index      => Name_Chars.Last,
              Name_Len              => Short (Buf.Length),
              Hash_Link             => No_Name,
-             Name_Has_No_Encodings => False,
              Int_Info              => 0,
              Byte_Info             => 0,
+             Name_Has_No_Encodings => False,
              Boolean1_Info         => False,
              Boolean2_Info         => False,
-             Boolean3_Info         => False));
+             Boolean3_Info         => False,
+             Spare                 => False));
 
          --  Set corresponding string entry in the Name_Chars table
 
@@ -1250,8 +1267,11 @@ package body Namet is
 
          Name_Chars.Append (ASCII.NUL);
 
-         return Name_Entries.Last;
+         Result := Name_Entries.Last;
       end if;
+
+      <<Done>>
+      return Result;
    end Name_Find;
 
    function Name_Find (S : String) return Valid_Name_Id is
@@ -1260,230 +1280,6 @@ package body Namet is
       Append (Buf, S);
       return Name_Find (Buf);
    end Name_Find;
-
-   -------------
-   -- Nam_In --
-   -------------
-
-   function Nam_In
-     (T  : Name_Id;
-      V1 : Name_Id;
-      V2 : Name_Id) return Boolean
-   is
-   begin
-      return T = V1 or else
-             T = V2;
-   end Nam_In;
-
-   function Nam_In
-     (T  : Name_Id;
-      V1 : Name_Id;
-      V2 : Name_Id;
-      V3 : Name_Id) return Boolean
-   is
-   begin
-      return T = V1 or else
-             T = V2 or else
-             T = V3;
-   end Nam_In;
-
-   function Nam_In
-     (T  : Name_Id;
-      V1 : Name_Id;
-      V2 : Name_Id;
-      V3 : Name_Id;
-      V4 : Name_Id) return Boolean
-   is
-   begin
-      return T = V1 or else
-             T = V2 or else
-             T = V3 or else
-             T = V4;
-   end Nam_In;
-
-   function Nam_In
-     (T  : Name_Id;
-      V1 : Name_Id;
-      V2 : Name_Id;
-      V3 : Name_Id;
-      V4 : Name_Id;
-      V5 : Name_Id) return Boolean
-   is
-   begin
-      return T = V1 or else
-             T = V2 or else
-             T = V3 or else
-             T = V4 or else
-             T = V5;
-   end Nam_In;
-
-   function Nam_In
-     (T  : Name_Id;
-      V1 : Name_Id;
-      V2 : Name_Id;
-      V3 : Name_Id;
-      V4 : Name_Id;
-      V5 : Name_Id;
-      V6 : Name_Id) return Boolean
-   is
-   begin
-      return T = V1 or else
-             T = V2 or else
-             T = V3 or else
-             T = V4 or else
-             T = V5 or else
-             T = V6;
-   end Nam_In;
-
-   function Nam_In
-     (T  : Name_Id;
-      V1 : Name_Id;
-      V2 : Name_Id;
-      V3 : Name_Id;
-      V4 : Name_Id;
-      V5 : Name_Id;
-      V6 : Name_Id;
-      V7 : Name_Id) return Boolean
-   is
-   begin
-      return T = V1 or else
-             T = V2 or else
-             T = V3 or else
-             T = V4 or else
-             T = V5 or else
-             T = V6 or else
-             T = V7;
-   end Nam_In;
-
-   function Nam_In
-     (T  : Name_Id;
-      V1 : Name_Id;
-      V2 : Name_Id;
-      V3 : Name_Id;
-      V4 : Name_Id;
-      V5 : Name_Id;
-      V6 : Name_Id;
-      V7 : Name_Id;
-      V8 : Name_Id) return Boolean
-   is
-   begin
-      return T = V1 or else
-             T = V2 or else
-             T = V3 or else
-             T = V4 or else
-             T = V5 or else
-             T = V6 or else
-             T = V7 or else
-             T = V8;
-   end Nam_In;
-
-   function Nam_In
-     (T  : Name_Id;
-      V1 : Name_Id;
-      V2 : Name_Id;
-      V3 : Name_Id;
-      V4 : Name_Id;
-      V5 : Name_Id;
-      V6 : Name_Id;
-      V7 : Name_Id;
-      V8 : Name_Id;
-      V9 : Name_Id) return Boolean
-   is
-   begin
-      return T = V1 or else
-             T = V2 or else
-             T = V3 or else
-             T = V4 or else
-             T = V5 or else
-             T = V6 or else
-             T = V7 or else
-             T = V8 or else
-             T = V9;
-   end Nam_In;
-
-   function Nam_In
-     (T   : Name_Id;
-      V1  : Name_Id;
-      V2  : Name_Id;
-      V3  : Name_Id;
-      V4  : Name_Id;
-      V5  : Name_Id;
-      V6  : Name_Id;
-      V7  : Name_Id;
-      V8  : Name_Id;
-      V9  : Name_Id;
-      V10 : Name_Id) return Boolean
-   is
-   begin
-      return T = V1 or else
-             T = V2 or else
-             T = V3 or else
-             T = V4 or else
-             T = V5 or else
-             T = V6 or else
-             T = V7 or else
-             T = V8 or else
-             T = V9 or else
-             T = V10;
-   end Nam_In;
-
-   function Nam_In
-     (T   : Name_Id;
-      V1  : Name_Id;
-      V2  : Name_Id;
-      V3  : Name_Id;
-      V4  : Name_Id;
-      V5  : Name_Id;
-      V6  : Name_Id;
-      V7  : Name_Id;
-      V8  : Name_Id;
-      V9  : Name_Id;
-      V10 : Name_Id;
-      V11 : Name_Id) return Boolean
-   is
-   begin
-      return T = V1  or else
-             T = V2  or else
-             T = V3  or else
-             T = V4  or else
-             T = V5  or else
-             T = V6  or else
-             T = V7  or else
-             T = V8  or else
-             T = V9  or else
-             T = V10 or else
-             T = V11;
-   end Nam_In;
-
-   function Nam_In
-     (T   : Name_Id;
-      V1  : Name_Id;
-      V2  : Name_Id;
-      V3  : Name_Id;
-      V4  : Name_Id;
-      V5  : Name_Id;
-      V6  : Name_Id;
-      V7  : Name_Id;
-      V8  : Name_Id;
-      V9  : Name_Id;
-      V10 : Name_Id;
-      V11 : Name_Id;
-      V12 : Name_Id) return Boolean
-   is
-   begin
-      return T = V1  or else
-             T = V2  or else
-             T = V3  or else
-             T = V4  or else
-             T = V5  or else
-             T = V6  or else
-             T = V7  or else
-             T = V8  or else
-             T = V9  or else
-             T = V10 or else
-             T = V11 or else
-             T = V12;
-   end Nam_In;
 
    -----------------
    -- Name_Equals --
@@ -1496,6 +1292,15 @@ package body Namet is
    begin
       return N1 = N2 or else Get_Name_String (N1) = Get_Name_String (N2);
    end Name_Equals;
+
+   -------------
+   -- Present --
+   -------------
+
+   function Present (Nam : Name_Id) return Boolean is
+   begin
+      return Nam /= No_Name;
+   end Present;
 
    ------------------
    -- Reinitialize --
@@ -1514,11 +1319,12 @@ package body Namet is
              Name_Len              => 1,
              Byte_Info             => 0,
              Int_Info              => 0,
+             Hash_Link             => No_Name,
+             Name_Has_No_Encodings => True,
              Boolean1_Info         => False,
              Boolean2_Info         => False,
              Boolean3_Info         => False,
-             Name_Has_No_Encodings => True,
-             Hash_Link             => No_Name));
+             Spare                 => False));
 
          Name_Chars.Append (C);
          Name_Chars.Append (ASCII.NUL);
@@ -1637,9 +1443,7 @@ package body Namet is
             exit;
          end if;
 
-         exit when Buf.Chars (J) /= 'b'
-           and then Buf.Chars (J) /= 'n'
-           and then Buf.Chars (J) /= 'p';
+         exit when Buf.Chars (J) not in 'b' | 'n' | 'p';
       end loop;
 
       --  Find rightmost __ or $ separator if one exists. First we position
@@ -1702,33 +1506,16 @@ package body Namet is
       return Buf.Chars (1 .. Buf.Length);
    end To_String;
 
-   ---------------
-   -- Tree_Read --
-   ---------------
+   ----------------------
+   -- Unlock_If_Locked --
+   ----------------------
 
-   procedure Tree_Read is
+   procedure Unlock_If_Locked is
    begin
-      Name_Chars.Tree_Read;
-      Name_Entries.Tree_Read;
-
-      Tree_Read_Data
-        (Hash_Table'Address,
-         Hash_Table'Length * (Hash_Table'Component_Size / Storage_Unit));
-   end Tree_Read;
-
-   ----------------
-   -- Tree_Write --
-   ----------------
-
-   procedure Tree_Write is
-   begin
-      Name_Chars.Tree_Write;
-      Name_Entries.Tree_Write;
-
-      Tree_Write_Data
-        (Hash_Table'Address,
-         Hash_Table'Length * (Hash_Table'Component_Size / Storage_Unit));
-   end Tree_Write;
+      if Name_Chars.Locked then
+         Unlock;
+      end if;
+   end Unlock_If_Locked;
 
    ------------
    -- Unlock --
@@ -1750,25 +1537,7 @@ package body Namet is
 
    procedure wn (Id : Name_Id) is
    begin
-      if Is_Valid_Name (Id) then
-         declare
-            Buf : Bounded_String (Max_Length => Natural (Length_Of_Name (Id)));
-         begin
-            Append (Buf, Id);
-            Write_Str (Buf.Chars (1 .. Buf.Length));
-         end;
-
-      elsif Id = No_Name then
-         Write_Str ("<No_Name>");
-
-      elsif Id = Error_Name then
-         Write_Str ("<Error_Name>");
-
-      else
-         Write_Str ("<invalid name_id>");
-         Write_Int (Int (Id));
-      end if;
-
+      Write_Name_For_Debug (Id);
       Write_Eol;
    end wn;
 
@@ -1793,6 +1562,37 @@ package body Namet is
       Append_Decoded (Buf, Id);
       Write_Str (Buf.Chars (1 .. Buf.Length));
    end Write_Name_Decoded;
+
+   --------------------------
+   -- Write_Name_For_Debug --
+   --------------------------
+
+   procedure Write_Name_For_Debug (Id : Name_Id; Quote : String := "") is
+   begin
+      if Is_Valid_Name (Id) then
+         Write_Str (Quote);
+
+         declare
+            Buf : Bounded_String (Max_Length => Natural (Length_Of_Name (Id)));
+         begin
+            Append (Buf, Id);
+            Write_Str (Buf.Chars (1 .. Buf.Length));
+         end;
+
+         Write_Str (Quote);
+
+      elsif Id = No_Name then
+         Write_Str ("<No_Name>");
+
+      elsif Id = Error_Name then
+         Write_Str ("<Error_Name>");
+
+      else
+         Write_Str ("<invalid name ");
+         Write_Int (Int (Id));
+         Write_Str (">");
+      end if;
+   end Write_Name_For_Debug;
 
 --  Package initialization, initialize tables
 

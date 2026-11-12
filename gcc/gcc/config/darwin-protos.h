@@ -1,5 +1,5 @@
 /* Prototypes.
-   Copyright (C) 2001-2019 Free Software Foundation, Inc.
+   Copyright (C) 2001-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -16,6 +16,9 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
+
+#ifndef CONFIG_DARWIN_PROTOS_H
+#define CONFIG_DARWIN_PROTOS_H
 
 extern void darwin_init_sections (void);
 extern int name_needs_quotes (const char *);
@@ -53,12 +56,10 @@ extern void darwin_set_default_type_attributes (tree);
 
 #endif /* TREE_CODE */
 
-extern void machopic_finish (FILE *);
-
 extern int machopic_reloc_rw_mask (void);
 extern section *machopic_select_section (tree, int, unsigned HOST_WIDE_INT);
 
-extern section *darwin_function_section (tree, enum node_frequency, bool, bool); 
+extern section *darwin_function_section (tree, enum node_frequency, bool, bool);
 extern section *darwin_tm_clone_table_section (void);
 extern void darwin_function_switched_text_sections (FILE *, tree, bool);
 
@@ -68,6 +69,8 @@ extern void darwin_non_lazy_pcrel (FILE *, rtx);
 
 extern void darwin_emit_unwind_label (FILE *, tree, int, int);
 extern void darwin_emit_except_table_label (FILE *);
+extern rtx darwin_make_eh_symbol_indirect (rtx, bool);
+extern bool darwin_should_restore_cfa_state (void);
 
 extern void darwin_pragma_ignore (struct cpp_reader *);
 extern void darwin_pragma_options (struct cpp_reader *);
@@ -102,11 +105,11 @@ extern void darwin_asm_declare_constant_name (FILE *, const char *,
 extern void darwin_output_aligned_bss (FILE *, tree, const char *,
 				       unsigned HOST_WIDE_INT, unsigned int);
 
-extern void darwin_asm_output_aligned_decl_local (FILE *, tree, const char *, 
-						  unsigned HOST_WIDE_INT, 
+extern void darwin_asm_output_aligned_decl_local (FILE *, tree, const char *,
+						  unsigned HOST_WIDE_INT,
 						  unsigned int);
 extern void darwin_asm_output_aligned_decl_common (FILE *, tree, const char *,
-						   unsigned HOST_WIDE_INT, 
+						   unsigned HOST_WIDE_INT,
 						   unsigned int);
 
 extern bool darwin_binds_local_p (const_tree);
@@ -124,4 +127,17 @@ extern bool darwin_kextabi_p (void);
 extern void darwin_override_options (void);
 extern void darwin_patch_builtins (void);
 extern void darwin_rename_builtins (void);
-extern bool darwin_libc_has_function (enum function_class fn_class);
+extern bool darwin_libc_has_function (enum function_class fn_class, tree);
+
+/* For this port, there are several possible sources for external toolchain
+   components (e.g. as, ld, dsymutil) and we have to alter the allowable
+   output in response to which version and source is in use.  */
+enum darwin_external_toolchain {
+  DET_UNKNOWN=0,
+  CCTOOLS,
+  DWARFUTILS,
+  LLVM,
+  CLANG
+};
+
+#endif /* CONFIG_DARWIN_PROTOS_H */

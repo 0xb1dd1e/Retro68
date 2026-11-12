@@ -1,5 +1,5 @@
 /* basic_blocks.h
-   Copyright (C) 2000-2018 Free Software Foundation, Inc.
+   Copyright (C) 2000-2026 Free Software Foundation, Inc.
 
    This file is part of GNU Binutils.
 
@@ -17,12 +17,12 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston,
    MA 02110-1301, USA.  */
-
+
 #ifndef basic_blocks_h
 #define basic_blocks_h
 
 /* Options:  */
-extern bfd_boolean bb_annotate_all_lines; /* Force annotation of all lines?  */
+extern bool bb_annotate_all_lines;	/* Force annotation of all lines?  */
 extern int bb_table_length;		/* Length of most-used bb table.  */
 extern unsigned long bb_min_calls;	/* Minimum execution count.  */
 

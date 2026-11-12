@@ -6,7 +6,7 @@
 --                                                                          --
 --                                  B o d y                                 --
 --                                                                          --
---         Copyright (C) 1992-2019, Free Software Foundation, Inc.          --
+--         Copyright (C) 1992-2026, Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -34,40 +34,32 @@
 --  This package contains all the GNULL primitives that interface directly with
 --  the underlying OS.
 
-pragma Polling (Off);
---  Turn off polling, we do not want ATC polling to take place during tasking
---  operations. It causes infinite loops and other problems.
-
 with Interfaces.C;
 
-with System.Multiprocessors;
-with System.Tasking.Debug;
+with System.C_Time;
 with System.Interrupt_Management;
+with System.Multiprocessors;
 with System.OS_Constants;
 with System.OS_Primitives;
 with System.Task_Info;
+with System.Tasking.Debug;
 
 pragma Warnings (Off);
 with System.OS_Lib;
 pragma Warnings (On);
 
-with System.Soft_Links;
---  We use System.Soft_Links instead of System.Tasking.Initialization
---  because the later is a higher level package that we shouldn't depend on.
---  For example when using the restricted run time, it is replaced by
---  System.Tasking.Restricted.Stages.
-
 package body System.Task_Primitives.Operations is
 
    package OSC renames System.OS_Constants;
-   package SSL renames System.Soft_Links;
 
-   use System.Tasking.Debug;
-   use System.Tasking;
    use Interfaces.C;
+
    use System.OS_Interface;
-   use System.Parameters;
+   use System.OS_Locks;
    use System.OS_Primitives;
+   use System.Parameters;
+   use System.Tasking;
+   use System.Tasking.Debug;
 
    ----------------
    -- Local Data --
@@ -91,7 +83,7 @@ package body System.Task_Primitives.Operations is
    Single_RTS_Lock : aliased RTS_Lock;
    --  This is a lock to allow only one thread of control in the RTS at
    --  a time; it is used to execute in mutual exclusion from all other tasks.
-   --  Used mainly in Single_Lock mode, but also to protect All_Tasks_List
+   --  Used to protect All_Tasks_List
 
    Next_Serial_Number : Task_Serial_Number := 100;
    --  We start at 100, to reserve some special values for
@@ -132,13 +124,13 @@ package body System.Task_Primitives.Operations is
    -- External Configuration Values --
    -----------------------------------
 
-   Time_Slice_Val : Integer;
+   Time_Slice_Val : constant Integer;
    pragma Import (C, Time_Slice_Val, "__gl_time_slice_val");
 
-   Locking_Policy : Character;
+   Locking_Policy : constant Character;
    pragma Import (C, Locking_Policy, "__gl_locking_policy");
 
-   Dispatching_Policy : Character;
+   Dispatching_Policy : constant Character;
    pragma Import (C, Dispatching_Policy, "__gl_task_dispatching_policy");
 
    Foreign_Task_Elaborated : aliased Boolean := True;
@@ -426,6 +418,7 @@ package body System.Task_Primitives.Operations is
 
    begin
       Environment_Task_Id := Environment_Task;
+      Environment_Task.Common.LL.Thread := thr_self;
 
       Interrupt_Management.Initialize;
 
@@ -653,29 +646,22 @@ package body System.Task_Primitives.Operations is
       pragma Assert (Record_Lock (Lock_Ptr (L)));
    end Write_Lock;
 
-   procedure Write_Lock
-     (L          : not null access RTS_Lock;
-     Global_Lock : Boolean := False)
-   is
+   procedure Write_Lock (L : not null access RTS_Lock) is
       Result : Interfaces.C.int;
    begin
-      if not Single_Lock or else Global_Lock then
-         pragma Assert (Check_Lock (To_Lock_Ptr (RTS_Lock_Ptr (L))));
-         Result := mutex_lock (L.L'Access);
-         pragma Assert (Result = 0);
-         pragma Assert (Record_Lock (To_Lock_Ptr (RTS_Lock_Ptr (L))));
-      end if;
+      pragma Assert (Check_Lock (To_Lock_Ptr (RTS_Lock_Ptr (L))));
+      Result := mutex_lock (L.L'Access);
+      pragma Assert (Result = 0);
+      pragma Assert (Record_Lock (To_Lock_Ptr (RTS_Lock_Ptr (L))));
    end Write_Lock;
 
    procedure Write_Lock (T : Task_Id) is
       Result : Interfaces.C.int;
    begin
-      if not Single_Lock then
-         pragma Assert (Check_Lock (To_Lock_Ptr (T.Common.LL.L'Access)));
-         Result := mutex_lock (T.Common.LL.L.L'Access);
-         pragma Assert (Result = 0);
-         pragma Assert (Record_Lock (To_Lock_Ptr (T.Common.LL.L'Access)));
-      end if;
+      pragma Assert (Check_Lock (To_Lock_Ptr (T.Common.LL.L'Access)));
+      Result := mutex_lock (T.Common.LL.L.L'Access);
+      pragma Assert (Result = 0);
+      pragma Assert (Record_Lock (To_Lock_Ptr (T.Common.LL.L'Access)));
    end Write_Lock;
 
    ---------------
@@ -717,27 +703,20 @@ package body System.Task_Primitives.Operations is
       end if;
    end Unlock;
 
-   procedure Unlock
-     (L           : not null access RTS_Lock;
-      Global_Lock : Boolean := False)
-   is
+   procedure Unlock (L : not null access RTS_Lock) is
       Result : Interfaces.C.int;
    begin
-      if not Single_Lock or else Global_Lock then
-         pragma Assert (Check_Unlock (To_Lock_Ptr (RTS_Lock_Ptr (L))));
-         Result := mutex_unlock (L.L'Access);
-         pragma Assert (Result = 0);
-      end if;
+      pragma Assert (Check_Unlock (To_Lock_Ptr (RTS_Lock_Ptr (L))));
+      Result := mutex_unlock (L.L'Access);
+      pragma Assert (Result = 0);
    end Unlock;
 
    procedure Unlock (T : Task_Id) is
       Result : Interfaces.C.int;
    begin
-      if not Single_Lock then
-         pragma Assert (Check_Unlock (To_Lock_Ptr (T.Common.LL.L'Access)));
-         Result := mutex_unlock (T.Common.LL.L.L'Access);
-         pragma Assert (Result = 0);
-      end if;
+      pragma Assert (Check_Unlock (To_Lock_Ptr (T.Common.LL.L'Access)));
+      Result := mutex_unlock (T.Common.LL.L.L'Access);
+      pragma Assert (Result = 0);
    end Unlock;
 
    -----------------
@@ -777,12 +756,12 @@ package body System.Task_Primitives.Operations is
    ---------------------
 
    function Monotonic_Clock return Duration is
-      TS     : aliased timespec;
+      TS     : aliased C_Time.timespec;
       Result : Interfaces.C.int;
    begin
       Result := clock_gettime (OSC.CLOCK_RT_Ada, TS'Unchecked_Access);
       pragma Assert (Result = 0);
-      return To_Duration (TS);
+      return C_Time.To_Duration (TS);
    end Monotonic_Clock;
 
    -------------------
@@ -790,13 +769,13 @@ package body System.Task_Primitives.Operations is
    -------------------
 
    function RT_Resolution return Duration is
-      TS     : aliased timespec;
+      TS     : aliased C_Time.timespec;
       Result : Interfaces.C.int;
    begin
       Result := clock_getres (OSC.CLOCK_REALTIME, TS'Unchecked_Access);
       pragma Assert (Result = 0);
 
-      return To_Duration (TS);
+      return C_Time.To_Duration (TS);
    end RT_Resolution;
 
    -----------
@@ -884,8 +863,7 @@ package body System.Task_Primitives.Operations is
 
    procedure Enter_Task (Self_ID : Task_Id) is
    begin
-      Self_ID.Common.LL.Thread := thr_self;
-      Self_ID.Common.LL.LWP    := lwp_self;
+      Self_ID.Common.LL.LWP := lwp_self;
 
       Set_Task_Affinity (Self_ID);
       Specific.Set (Self_ID);
@@ -929,14 +907,12 @@ package body System.Task_Primitives.Operations is
 
       Self_ID.Common.LL.Thread := Null_Thread_Id;
 
-      if not Single_Lock then
-         Result :=
-           mutex_init
-             (Self_ID.Common.LL.L.L'Access, USYNC_THREAD, System.Null_Address);
-         Self_ID.Common.LL.L.Level :=
-           Private_Task_Serial_Number (Self_ID.Serial_Number);
-         pragma Assert (Result = 0 or else Result = ENOMEM);
-      end if;
+      Result :=
+        mutex_init
+          (Self_ID.Common.LL.L.L'Access, USYNC_THREAD, System.Null_Address);
+      Self_ID.Common.LL.L.Level :=
+        Private_Task_Serial_Number (Self_ID.Serial_Number);
+      pragma Assert (Result = 0 or else Result = ENOMEM);
 
       if Result = 0 then
          Result := cond_init (Self_ID.Common.LL.CV'Access, USYNC_THREAD, 0);
@@ -946,10 +922,8 @@ package body System.Task_Primitives.Operations is
       if Result = 0 then
          Succeeded := True;
       else
-         if not Single_Lock then
-            Result := mutex_destroy (Self_ID.Common.LL.L.L'Access);
-            pragma Assert (Result = 0);
-         end if;
+         Result := mutex_destroy (Self_ID.Common.LL.L.L'Access);
+         pragma Assert (Result = 0);
 
          Succeeded := False;
       end if;
@@ -1017,11 +991,11 @@ package body System.Task_Primitives.Operations is
          Opts := THR_DETACHED + THR_BOUND;
       end if;
 
-      --  Note: the use of Unrestricted_Access in the following call is needed
-      --  because otherwise we have an error of getting a access-to-volatile
-      --  value which points to a non-volatile object. But in this case it is
-      --  safe to do this, since we know we have no problems with aliasing and
-      --  Unrestricted_Access bypasses this check.
+      --  The write to T.Common.LL.Thread is not racy with regard to the
+      --  created thread because the created thread will not access it until
+      --  we release the RTS lock (or the current task's lock when
+      --  Restricted.Stages is used). One can verify that by inspecting the
+      --  Task_Wrapper procedures.
 
       Result :=
         thr_create
@@ -1030,7 +1004,7 @@ package body System.Task_Primitives.Operations is
            Thread_Body_Access (Wrapper),
            To_Address (T),
            Opts,
-           T.Common.LL.Thread'Unrestricted_Access);
+           T.Common.LL.Thread'Access);
 
       Succeeded := Result = 0;
       pragma Assert
@@ -1049,10 +1023,8 @@ package body System.Task_Primitives.Operations is
    begin
       T.Common.LL.Thread := Null_Thread_Id;
 
-      if not Single_Lock then
-         Result := mutex_destroy (T.Common.LL.L.L'Access);
-         pragma Assert (Result = 0);
-      end if;
+      Result := mutex_destroy (T.Common.LL.L.L'Access);
+      pragma Assert (Result = 0);
 
       Result := cond_destroy (T.Common.LL.CV'Access);
       pragma Assert (Result = 0);
@@ -1107,15 +1079,9 @@ package body System.Task_Primitives.Operations is
    begin
       pragma Assert (Check_Sleep (Reason));
 
-      if Single_Lock then
-         Result :=
-           cond_wait
-             (Self_ID.Common.LL.CV'Access, Single_RTS_Lock.L'Access);
-      else
-         Result :=
-           cond_wait
-             (Self_ID.Common.LL.CV'Access, Self_ID.Common.LL.L.L'Access);
-      end if;
+      Result :=
+        cond_wait
+          (Self_ID.Common.LL.CV'Access, Self_ID.Common.LL.L.L'Access);
 
       pragma Assert
         (Record_Wakeup (To_Lock_Ptr (Self_ID.Common.LL.L'Access), Reason));
@@ -1203,7 +1169,7 @@ package body System.Task_Primitives.Operations is
       Base_Time  : constant Duration := Monotonic_Clock;
       Check_Time : Duration := Base_Time;
       Abs_Time   : Duration;
-      Request    : aliased timespec;
+      Request    : aliased C_Time.timespec;
       Result     : Interfaces.C.int;
 
    begin
@@ -1217,25 +1183,17 @@ package body System.Task_Primitives.Operations is
          else Duration'Min (Check_Time + Max_Sensible_Delay, Time));
 
       if Abs_Time > Check_Time then
-         Request := To_Timespec (Abs_Time);
+         Request := C_Time.To_Timespec (Abs_Time);
          loop
             exit when Self_ID.Pending_ATC_Level < Self_ID.ATC_Nesting_Level;
 
-            if Single_Lock then
-               Result :=
-                 cond_timedwait
-                   (Self_ID.Common.LL.CV'Access,
-                    Single_RTS_Lock.L'Access, Request'Access);
-            else
-               Result :=
-                 cond_timedwait
-                   (Self_ID.Common.LL.CV'Access,
-                    Self_ID.Common.LL.L.L'Access, Request'Access);
-            end if;
-
+            Result :=
+              cond_timedwait
+                (Self_ID.Common.LL.CV'Access,
+                 Self_ID.Common.LL.L.L'Access, Request'Access);
             Yielded := True;
-
             Check_Time := Monotonic_Clock;
+
             exit when Abs_Time <= Check_Time or else Check_Time < Base_Time;
 
             if Result = 0 or Result = EINTR then
@@ -1266,15 +1224,11 @@ package body System.Task_Primitives.Operations is
       Base_Time  : constant Duration := Monotonic_Clock;
       Check_Time : Duration := Base_Time;
       Abs_Time   : Duration;
-      Request    : aliased timespec;
+      Request    : aliased C_Time.timespec;
       Result     : Interfaces.C.int;
       Yielded    : Boolean := False;
 
    begin
-      if Single_Lock then
-         Lock_RTS;
-      end if;
-
       Write_Lock (Self_ID);
 
       Abs_Time :=
@@ -1283,7 +1237,7 @@ package body System.Task_Primitives.Operations is
          else Duration'Min (Check_Time + Max_Sensible_Delay, Time));
 
       if Abs_Time > Check_Time then
-         Request := To_Timespec (Abs_Time);
+         Request := C_Time.To_Timespec (Abs_Time);
          Self_ID.Common.State := Delay_Sleep;
 
          pragma Assert (Check_Sleep (Delay_Sleep));
@@ -1291,23 +1245,14 @@ package body System.Task_Primitives.Operations is
          loop
             exit when Self_ID.Pending_ATC_Level < Self_ID.ATC_Nesting_Level;
 
-            if Single_Lock then
-               Result :=
-                 cond_timedwait
-                   (Self_ID.Common.LL.CV'Access,
-                    Single_RTS_Lock.L'Access,
-                    Request'Access);
-            else
-               Result :=
-                 cond_timedwait
-                   (Self_ID.Common.LL.CV'Access,
-                    Self_ID.Common.LL.L.L'Access,
-                    Request'Access);
-            end if;
-
+            Result :=
+              cond_timedwait
+                (Self_ID.Common.LL.CV'Access,
+                 Self_ID.Common.LL.L.L'Access,
+                 Request'Access);
             Yielded := True;
-
             Check_Time := Monotonic_Clock;
+
             exit when Abs_Time <= Check_Time or else Check_Time < Base_Time;
 
             pragma Assert
@@ -1324,10 +1269,6 @@ package body System.Task_Primitives.Operations is
       end if;
 
       Unlock (Self_ID);
-
-      if Single_Lock then
-         Unlock_RTS;
-      end if;
 
       if not Yielded then
          thr_yield;
@@ -1412,10 +1353,6 @@ package body System.Task_Primitives.Operations is
          return False;
       end if;
 
-      if Single_Lock then
-         return True;
-      end if;
-
       --  Check that TCB lock order rules are satisfied
 
       P := Self_ID.Common.LL.Locks;
@@ -1451,16 +1388,12 @@ package body System.Task_Primitives.Operations is
 
       L.Owner := To_Owner_ID (To_Address (Self_ID));
 
-      if Single_Lock then
-         return True;
-      end if;
-
       --  Check that TCB lock order rules are satisfied
 
       P := Self_ID.Common.LL.Locks;
 
       if P /= null then
-         L.Next := P;
+         L.Next := To_RTS_Lock_Ptr (P);
       end if;
 
       Self_ID.Common.LL.Locking := null;
@@ -1485,10 +1418,6 @@ package body System.Task_Primitives.Operations is
          return False;
       end if;
 
-      if Single_Lock then
-         return True;
-      end if;
-
       --  Check that caller is holding own lock, on top of list
 
       if Self_ID.Common.LL.Locks /=
@@ -1505,7 +1434,7 @@ package body System.Task_Primitives.Operations is
 
       Self_ID.Common.LL.L.Owner := null;
       P := Self_ID.Common.LL.Locks;
-      Self_ID.Common.LL.Locks := Self_ID.Common.LL.Locks.Next;
+      Self_ID.Common.LL.Locks := To_Lock_Ptr (Self_ID.Common.LL.Locks.Next);
       P.Next := null;
       return True;
    end Check_Sleep;
@@ -1528,16 +1457,12 @@ package body System.Task_Primitives.Operations is
 
       L.Owner := To_Owner_ID (To_Address (Self_ID));
 
-      if Single_Lock then
-         return True;
-      end if;
-
       --  Check that TCB lock order rules are satisfied
 
       P := Self_ID.Common.LL.Locks;
 
       if P /= null then
-         L.Next := P;
+         L.Next := To_RTS_Lock_Ptr (P);
       end if;
 
       Self_ID.Common.LL.Locking := null;
@@ -1618,7 +1543,7 @@ package body System.Task_Primitives.Operations is
 
       L.Owner := null;
       P := Self_ID.Common.LL.Locks;
-      Self_ID.Common.LL.Locks := Self_ID.Common.LL.Locks.Next;
+      Self_ID.Common.LL.Locks := To_Lock_Ptr (Self_ID.Common.LL.Locks.Next);
       P.Next := null;
       return True;
    end Check_Unlock;
@@ -1646,184 +1571,6 @@ package body System.Task_Primitives.Operations is
       L.Frozen := True;
       return True;
    end Check_Finalize_Lock;
-
-   ----------------
-   -- Initialize --
-   ----------------
-
-   procedure Initialize (S : in out Suspension_Object) is
-      Result : Interfaces.C.int;
-
-   begin
-      --  Initialize internal state (always to zero (RM D.10(6)))
-
-      S.State := False;
-      S.Waiting := False;
-
-      --  Initialize internal mutex
-
-      Result := mutex_init (S.L'Access, USYNC_THREAD, System.Null_Address);
-      pragma Assert (Result = 0 or else Result = ENOMEM);
-
-      if Result = ENOMEM then
-         raise Storage_Error with "Failed to allocate a lock";
-      end if;
-
-      --  Initialize internal condition variable
-
-      Result := cond_init (S.CV'Access, USYNC_THREAD, 0);
-      pragma Assert (Result = 0 or else Result = ENOMEM);
-
-      if Result /= 0 then
-         Result := mutex_destroy (S.L'Access);
-         pragma Assert (Result = 0);
-
-         if Result = ENOMEM then
-            raise Storage_Error;
-         end if;
-      end if;
-   end Initialize;
-
-   --------------
-   -- Finalize --
-   --------------
-
-   procedure Finalize (S : in out Suspension_Object) is
-      Result  : Interfaces.C.int;
-
-   begin
-      --  Destroy internal mutex
-
-      Result := mutex_destroy (S.L'Access);
-      pragma Assert (Result = 0);
-
-      --  Destroy internal condition variable
-
-      Result := cond_destroy (S.CV'Access);
-      pragma Assert (Result = 0);
-   end Finalize;
-
-   -------------------
-   -- Current_State --
-   -------------------
-
-   function Current_State (S : Suspension_Object) return Boolean is
-   begin
-      --  We do not want to use lock on this read operation. State is marked
-      --  as Atomic so that we ensure that the value retrieved is correct.
-
-      return S.State;
-   end Current_State;
-
-   ---------------
-   -- Set_False --
-   ---------------
-
-   procedure Set_False (S : in out Suspension_Object) is
-      Result  : Interfaces.C.int;
-
-   begin
-      SSL.Abort_Defer.all;
-
-      Result := mutex_lock (S.L'Access);
-      pragma Assert (Result = 0);
-
-      S.State := False;
-
-      Result := mutex_unlock (S.L'Access);
-      pragma Assert (Result = 0);
-
-      SSL.Abort_Undefer.all;
-   end Set_False;
-
-   --------------
-   -- Set_True --
-   --------------
-
-   procedure Set_True (S : in out Suspension_Object) is
-      Result : Interfaces.C.int;
-
-   begin
-      SSL.Abort_Defer.all;
-
-      Result := mutex_lock (S.L'Access);
-      pragma Assert (Result = 0);
-
-      --  If there is already a task waiting on this suspension object then
-      --  we resume it, leaving the state of the suspension object to False,
-      --  as it is specified in ARM D.10 par. 9. Otherwise, it just leaves
-      --  the state to True.
-
-      if S.Waiting then
-         S.Waiting := False;
-         S.State := False;
-
-         Result := cond_signal (S.CV'Access);
-         pragma Assert (Result = 0);
-
-      else
-         S.State := True;
-      end if;
-
-      Result := mutex_unlock (S.L'Access);
-      pragma Assert (Result = 0);
-
-      SSL.Abort_Undefer.all;
-   end Set_True;
-
-   ------------------------
-   -- Suspend_Until_True --
-   ------------------------
-
-   procedure Suspend_Until_True (S : in out Suspension_Object) is
-      Result : Interfaces.C.int;
-
-   begin
-      SSL.Abort_Defer.all;
-
-      Result := mutex_lock (S.L'Access);
-      pragma Assert (Result = 0);
-
-      if S.Waiting then
-
-         --  Program_Error must be raised upon calling Suspend_Until_True
-         --  if another task is already waiting on that suspension object
-         --  (RM D.10(10)).
-
-         Result := mutex_unlock (S.L'Access);
-         pragma Assert (Result = 0);
-
-         SSL.Abort_Undefer.all;
-
-         raise Program_Error;
-
-      else
-         --  Suspend the task if the state is False. Otherwise, the task
-         --  continues its execution, and the state of the suspension object
-         --  is set to False (ARM D.10 par. 9).
-
-         if S.State then
-            S.State := False;
-         else
-            S.Waiting := True;
-
-            loop
-               --  Loop in case pthread_cond_wait returns earlier than expected
-               --  (e.g. in case of EINTR caused by a signal).
-
-               Result := cond_wait (S.CV'Access, S.L'Access);
-               pragma Assert (Result = 0 or else Result = EINTR);
-
-               exit when not S.Waiting;
-            end loop;
-         end if;
-
-         Result := mutex_unlock (S.L'Access);
-         pragma Assert (Result = 0);
-
-         SSL.Abort_Undefer.all;
-      end if;
-   end Suspend_Until_True;
 
    ----------------
    -- Check_Exit --
@@ -1880,7 +1627,7 @@ package body System.Task_Primitives.Operations is
 
    procedure Lock_RTS is
    begin
-      Write_Lock (Single_RTS_Lock'Access, Global_Lock => True);
+      Write_Lock (Single_RTS_Lock'Access);
    end Lock_RTS;
 
    ----------------
@@ -1889,7 +1636,7 @@ package body System.Task_Primitives.Operations is
 
    procedure Unlock_RTS is
    begin
-      Unlock (Single_RTS_Lock'Access, Global_Lock => True);
+      Unlock (Single_RTS_Lock'Access);
    end Unlock_RTS;
 
    ------------------
@@ -2037,7 +1784,7 @@ package body System.Task_Primitives.Operations is
       then
          declare
             CPU_Set : aliased psetid_t;
-            Result  : int;
+            Result  : Interfaces.C.int;
 
          begin
             Result := pset_create (CPU_Set'Access);
@@ -2065,4 +1812,12 @@ package body System.Task_Primitives.Operations is
       end if;
    end Set_Task_Affinity;
 
+   ---------------------
+   -- Is_Task_Context --
+   ---------------------
+
+   function Is_Task_Context return Boolean is
+   begin
+      return True;
+   end Is_Task_Context;
 end System.Task_Primitives.Operations;

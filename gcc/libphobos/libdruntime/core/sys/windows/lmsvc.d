@@ -4,7 +4,7 @@
  * Translated from MinGW Windows headers
  *
  * License: $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source: $(DRUNTIMESRC src/core/sys/windows/_lmsvc.d)
+ * Source: $(DRUNTIMESRC core/sys/windows/_lmsvc.d)
  */
 module core.sys.windows.lmsvc;
 version (Windows):
@@ -16,7 +16,7 @@ version (Windows):
 */
 // TODO: 5 macros
 
-private import core.sys.windows.lmcons, core.sys.windows.lmsname, core.sys.windows.windef;
+import core.sys.windows.lmcons, core.sys.windows.lmsname, core.sys.windows.windef;
 
 const TCHAR[] SERVICE_DOS_ENCRYPTION = "ENCRYPT";
 
@@ -117,7 +117,7 @@ enum SERVICE_UIC_M_DATABASE_ERROR = SERVICE2_BASE+2;
 struct SERVICE_INFO_0 {
     LPWSTR svci0_name;
 }
-alias SERVICE_INFO_0* PSERVICE_INFO_0, LPSERVICE_INFO_0;
+alias PSERVICE_INFO_0 = SERVICE_INFO_0*, LPSERVICE_INFO_0 = SERVICE_INFO_0*;
 
 struct SERVICE_INFO_1 {
     LPWSTR svci1_name;
@@ -125,7 +125,7 @@ struct SERVICE_INFO_1 {
     DWORD svci1_code;
     DWORD svci1_pid;
 }
-alias SERVICE_INFO_1* PSERVICE_INFO_1, LPSERVICE_INFO_1;
+alias PSERVICE_INFO_1 = SERVICE_INFO_1*, LPSERVICE_INFO_1 = SERVICE_INFO_1*;
 
 struct SERVICE_INFO_2 {
     LPWSTR svci2_name;
@@ -136,7 +136,7 @@ struct SERVICE_INFO_2 {
     DWORD svci2_specific_error;
     LPWSTR svci2_display_name;
 }
-alias SERVICE_INFO_2* PSERVICE_INFO_2, LPSERVICE_INFO_2;
+alias PSERVICE_INFO_2 = SERVICE_INFO_2*, LPSERVICE_INFO_2 = SERVICE_INFO_2*;
 
 extern (Windows) {
     deprecated {

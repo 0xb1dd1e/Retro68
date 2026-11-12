@@ -1,6 +1,6 @@
 // -*- C++ -*-
 
-// Copyright (C) 2009-2019 Free Software Foundation, Inc.
+// Copyright (C) 2009-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the terms
@@ -20,10 +20,10 @@
 #ifndef _GLIBCXX_TESTSUITE_CONTAINERS_H
 #define _GLIBCXX_TESTSUITE_CONTAINERS_H
 
-#include <bits/boost_concept_check.h>
 #include <cassert>
-#include <testsuite_container_traits.h>
 #include <utility> // for rel_ops.
+#include <bits/boost_concept_check.h>
+#include <testsuite_container_traits.h>
 
 // Container requirement testing.
 namespace __gnu_test
@@ -168,7 +168,7 @@ namespace __gnu_test
   template<typename _Tp>
     struct reverse_members<_Tp, false>
     {
-      reverse_members(_Tp& container) { }
+      reverse_members(_Tp&) { }
     };
 
   template<typename _Iterator,
@@ -183,9 +183,12 @@ namespace __gnu_test
     {
       forward_members_unordered(const typename _Tp::value_type& v)
       {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 	// Make sure that even if rel_ops is injected there is no ambiguity
 	// when comparing iterators.
 	using namespace std::rel_ops;
+#pragma GCC diagnostic pop
 
 	typedef _Tp					test_type;
 	test_type container;
@@ -205,6 +208,9 @@ namespace __gnu_test
 	assert( clit == container.end(bn) );
 
 	clit = container.cbegin(bn);
+	assert( ++clit == container.cend(bn) );
+
+	clit = container.begin(bn);
 	assert( ++clit == container.cend(bn) );
 
 	assert( container.begin(bn) != container.cend(bn) );
@@ -283,9 +289,12 @@ namespace __gnu_test
     {
       forward_members(_Tp& container)
       {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 	// Make sure that even if rel_ops is injected there is no ambiguity
 	// when comparing iterators.
 	using namespace std::rel_ops;
+#pragma GCC diagnostic pop
 
 	typedef traits<_Tp> traits_type;
 	iterator_concept_checks<typename _Tp::iterator,
@@ -298,6 +307,9 @@ namespace __gnu_test
 	assert( container.cbegin() != container.cend() );
 	assert( container.cbegin() != container.end() );
 	assert( container.begin() != container.cend() );
+
+	auto cit = container.begin();
+	assert( cit == container.cbegin() );
       }
   };
 
@@ -318,9 +330,12 @@ namespace __gnu_test
       category_members(_Tp& container)
 	: forward_members<_Tp>(container)
       {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 	// Make sure that even if rel_ops is injected there is no ambiguity
 	// when comparing iterators.
 	using namespace std::rel_ops;
+#pragma GCC diagnostic pop
 
 	assert( !(container.begin() < container.begin()) );
 	assert( !(container.cbegin() < container.cbegin()) );
@@ -408,8 +423,9 @@ namespace __gnu_test
   void
   erase_external_iterators(std::multimap<int, int>& s);
 
-// NB: "must be compiled with C++11"
-#if __cplusplus >= 201103L
+#if __cplusplus < 201103L
+# error "must be compiled with C++11 (or later)"
+#else
 template<typename _Tp>
   void
   linkage_check_cxx98_cxx11_erase(_Tp& container)

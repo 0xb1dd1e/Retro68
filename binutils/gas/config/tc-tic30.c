@@ -1,5 +1,5 @@
 /* tc-c30.c -- Assembly code for the Texas Instruments TMS320C30
-   Copyright (C) 1998-2018 Free Software Foundation, Inc.
+   Copyright (C) 1998-2026 Free Software Foundation, Inc.
    Contributed by Steven Haworth (steve@pm.cse.rmit.edu.au)
 
    This file is part of GAS, the GNU Assembler.
@@ -40,13 +40,13 @@ const char comment_chars[]        = ";";
 const char line_comment_chars[]   = "*";
 const char line_separator_chars[] = "";
 
-const char *md_shortopts = "";
-struct option md_longopts[] =
+const char md_shortopts[] = "";
+const struct option md_longopts[] =
 {
   {NULL, no_argument, NULL, 0}
 };
 
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 /* Chars that mean this number is a floating point constant.
    As in 0f12.456
@@ -99,78 +99,56 @@ debug (const char *string, ...)
 }
 
 /* Hash table for opcode lookup.  */
-static struct hash_control *op_hash;
+static htab_t op_hash;
 /* Hash table for parallel opcode lookup.  */
-static struct hash_control *parop_hash;
+static htab_t parop_hash;
 /* Hash table for register lookup.  */
-static struct hash_control *reg_hash;
+static htab_t reg_hash;
 /* Hash table for indirect addressing lookup.  */
-static struct hash_control *ind_hash;
+static htab_t ind_hash;
 
 void
 md_begin (void)
 {
-  const char *hash_err;
-
   debug ("In md_begin()\n");
-  op_hash = hash_new ();
+  op_hash = str_htab_create ();
 
   {
     const insn_template *current_optab = tic30_optab;
 
     for (; current_optab < tic30_optab_end; current_optab++)
-      {
-	hash_err = hash_insert (op_hash, current_optab->name,
-				(char *) current_optab);
-	if (hash_err)
-	  as_fatal ("Internal Error: Can't Hash %s: %s",
-		    current_optab->name, hash_err);
-      }
+      if (str_hash_insert (op_hash, current_optab->name, current_optab, 0))
+	as_fatal (_("duplicate %s"), current_optab->name);
   }
 
-  parop_hash = hash_new ();
+  parop_hash = str_htab_create ();
 
   {
     const partemplate *current_parop = tic30_paroptab;
 
     for (; current_parop < tic30_paroptab_end; current_parop++)
-      {
-	hash_err = hash_insert (parop_hash, current_parop->name,
-				(char *) current_parop);
-	if (hash_err)
-	  as_fatal ("Internal Error: Can't Hash %s: %s",
-		    current_parop->name, hash_err);
-      }
+      if (str_hash_insert (parop_hash, current_parop->name, current_parop, 0))
+	as_fatal (_("duplicate %s"), current_parop->name);
   }
 
-  reg_hash = hash_new ();
+  reg_hash = str_htab_create ();
 
   {
     const reg *current_reg = tic30_regtab;
 
     for (; current_reg < tic30_regtab_end; current_reg++)
-      {
-	hash_err = hash_insert (reg_hash, current_reg->name,
-				(char *) current_reg);
-	if (hash_err)
-	  as_fatal ("Internal Error: Can't Hash %s: %s",
-		    current_reg->name, hash_err);
-      }
+      if (str_hash_insert (reg_hash, current_reg->name, current_reg, 0))
+	as_fatal (_("duplicate %s"), current_reg->name);
   }
 
-  ind_hash = hash_new ();
+  ind_hash = str_htab_create ();
 
   {
     const ind_addr_type *current_ind = tic30_indaddr_tab;
 
     for (; current_ind < tic30_indaddrtab_end; current_ind++)
-      {
-	hash_err = hash_insert (ind_hash, current_ind->syntax,
-				(char *) current_ind);
-	if (hash_err)
-	  as_fatal ("Internal Error: Can't Hash %s: %s",
-		    current_ind->syntax, hash_err);
-      }
+      if (str_hash_insert (ind_hash, current_ind->syntax, current_ind, 0))
+	as_fatal (_("duplicate %s"), current_ind->syntax);
   }
 
   /* Fill in lexical tables:  opcode_chars, operand_chars, space_chars.  */
@@ -202,7 +180,7 @@ md_begin (void)
 	if (ISALPHA (c) || c == '_' || c == '.' || ISDIGIT (c))
 	  identifier_chars[c] = c;
 
-	if (c == ' ' || c == '\t')
+	if (is_whitespace (c))
 	  space_chars[c] = c;
 
 	if (c == '_')
@@ -309,7 +287,7 @@ tic30_find_parallel_insn (char *current_line, char *next_line)
   char *parallel_insn;
 
   debug ("In tic30_find_parallel_insn()\n");
-  while (!is_end_of_line[(unsigned char) *next_line])
+  while (!is_end_of_stmt (*next_line))
     {
       if (*next_line == PARALLEL_SEPARATOR
 	  && *(next_line + 1) == PARALLEL_SEPARATOR)
@@ -348,7 +326,7 @@ tic30_find_parallel_insn (char *current_line, char *next_line)
 	  int char_ptr = 0;
 	  char c;
 
-	  while (!is_end_of_line[(unsigned char) (c = *line)])
+	  while (!is_end_of_stmt (c = *line))
 	    {
 	      if (is_opcode_char (c) && search_status == NONE)
 		{
@@ -476,7 +454,7 @@ tic30_operand (char *token)
 	      && (*(token + count) == 'r' || *(token + count) == 'R'))
 	    {
 	      /* AR reference is found, so get its number and remove
-		 it from the buffer so it can pass through hash_find().  */
+		 it from the buffer so it can pass through str_hash_find().  */
 	      if (found_ar)
 		{
 		  as_bad (_("More than one AR register found in indirect reference"));
@@ -538,7 +516,7 @@ tic30_operand (char *token)
 	  return NULL;
 	}
 
-      ind_addr_op = (ind_addr_type *) hash_find (ind_hash, ind_buffer);
+      ind_addr_op = str_hash_find (ind_hash, ind_buffer);
       if (ind_addr_op)
 	{
 	  debug ("Found indirect reference: %s\n", ind_addr_op->syntax);
@@ -577,7 +555,7 @@ tic30_operand (char *token)
     }
   else
     {
-      reg *regop = (reg *) hash_find (reg_hash, token);
+      reg *regop = str_hash_find (reg_hash, token);
 
       if (regop)
 	{
@@ -620,7 +598,7 @@ tic30_operand (char *token)
 		  current_op->immediate.s_number
 		    = current_op->immediate.imm_expr.X_add_number;
 		  current_op->immediate.u_number
-		    = (unsigned int) current_op->immediate.imm_expr.X_add_number;
+		    = current_op->immediate.imm_expr.X_add_number;
 		  current_op->immediate.resolved = 1;
 		}
 	    }
@@ -632,8 +610,8 @@ tic30_operand (char *token)
 		  current_op->immediate.decimal_found = 1;
 	      current_op->immediate.label = xstrdup (token);
 	      current_op->immediate.f_number = (float) atof (token);
-	      current_op->immediate.s_number = (int) atoi (token);
-	      current_op->immediate.u_number = (unsigned int) atoi (token);
+	      current_op->immediate.s_number = atoi (token);
+	      current_op->immediate.u_number = atoi (token);
 	      current_op->immediate.resolved = 1;
 	    }
 	  current_op->op_type = Disp | Abs24 | Imm16 | Imm24;
@@ -674,7 +652,7 @@ tic30_parallel_insn (char *token)
     /* Find instruction.  */
     save_char = *current_posn;
     *current_posn = '\0';
-    p_opcode = (partemplate *) hash_find (parop_hash, token);
+    p_opcode = str_hash_find (parop_hash, token);
     if (p_opcode)
       {
 	debug ("Found instruction %s\n", p_opcode->name);
@@ -719,7 +697,7 @@ tic30_parallel_insn (char *token)
 	debug ("first_opcode = %s\n", first_opcode);
 	debug ("second_opcode = %s\n", second_opcode);
 	sprintf (token, "q_%s_%s", second_opcode, first_opcode);
-	p_opcode = (partemplate *) hash_find (parop_hash, token);
+	p_opcode = str_hash_find (parop_hash, token);
 
 	if (p_opcode)
 	  {
@@ -1083,7 +1061,7 @@ tic30_parallel_insn (char *token)
     char *p;
 
     p = frag_more (INSN_SIZE);
-    md_number_to_chars (p, (valueT) p_insn.opcode, INSN_SIZE);
+    md_number_to_chars (p, p_insn.opcode, INSN_SIZE);
   }
 
   {
@@ -1173,7 +1151,7 @@ symbolS *
 md_undefined_symbol (char *name ATTRIBUTE_UNUSED)
 {
   debug ("In md_undefined_symbol()\n");
-  return (symbolS *) 0;
+  return NULL;
 }
 
 valueT
@@ -1228,7 +1206,7 @@ md_atof (int what_statement_type,
   debug ("literal = %s\n", literalP);
   debug ("line = ");
   token = input_line_pointer;
-  while (!is_end_of_line[(unsigned char) *input_line_pointer]
+  while (!is_end_of_stmt (*input_line_pointer)
 	 && (*input_line_pointer != ','))
     {
       debug ("%c", *input_line_pointer);
@@ -1301,7 +1279,7 @@ md_atof (int what_statement_type,
 	      if (mant == 0)
 		{
 		  mant |= 0x00800000;
-		  exp = (long) exp - 0x01000000;
+		  exp = exp - 0x01000000;
 		}
 	    }
 	  tmsfloat = exp | mant;
@@ -1389,9 +1367,8 @@ tc_gen_reloc (asection *section ATTRIBUTE_UNUSED, fixS *fixP)
 #undef MAP
 #undef F
 
-  rel = XNEW (arelent);
-  gas_assert (rel != 0);
-  rel->sym_ptr_ptr = XNEW (asymbol *);
+  rel = notes_alloc (sizeof (arelent));
+  rel->sym_ptr_ptr = notes_alloc (sizeof (asymbol *));
   *rel->sym_ptr_ptr = symbol_get_bfdsym (fixP->fx_addsy);
   rel->address = fixP->fx_frag->fr_address + fixP->fx_where;
   rel->addend = 0;
@@ -1466,7 +1443,7 @@ md_assemble (char *line)
     /* Find instruction.  */
     save_char = *current_posn;
     *current_posn = '\0';
-    op = (insn_template *) hash_find (op_hash, token_start);
+    op = str_hash_find (op_hash, token_start);
     if (op)
       {
 	debug ("Found instruction %s\n", op->name);
@@ -1695,7 +1672,7 @@ md_assemble (char *line)
 
       insn.opcode |= insn.addressing_mode;
       p = frag_more (INSN_SIZE);
-      md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+      md_number_to_chars (p, insn.opcode, INSN_SIZE);
     }
   else
     {
@@ -1746,12 +1723,12 @@ md_assemble (char *line)
 		     into instruction word, and output.  */
 		  insn.opcode |=
 		    (insn.operand_type[am_insn]->direct.address & 0x0000FFFF);
-		  md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+		  md_number_to_chars (p, insn.opcode, INSN_SIZE);
 		}
 	      else
 		{
 		  /* Unresolved direct addressing mode instruction.  */
-		  md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+		  md_number_to_chars (p, insn.opcode, INSN_SIZE);
 		  fix_new_exp (frag_now, p + 2 - (frag_now->fr_literal), 2,
 			       & insn.operand_type[am_insn]->direct.direct_expr,
 			       0, 0);
@@ -1771,7 +1748,7 @@ md_assemble (char *line)
 		    {
 		    case Imm_Float:
 		      debug ("Floating point first operand\n");
-		      md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+		      md_number_to_chars (p, insn.opcode, INSN_SIZE);
 
 		      keeploc = input_line_pointer;
 		      input_line_pointer =
@@ -1794,7 +1771,7 @@ md_assemble (char *line)
 			as_warn (_("only lower 16-bits of first operand are used"));
 		      insn.opcode |=
 			(insn.operand_type[0]->immediate.u_number & 0x0000FFFFL);
-		      md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+		      md_number_to_chars (p, insn.opcode, INSN_SIZE);
 		      break;
 
 		    case Imm_SInt:
@@ -1811,7 +1788,7 @@ md_assemble (char *line)
 			}
 		      insn.opcode |=
 			(insn.operand_type[0]->immediate.s_number & 0x0000FFFFL);
-		      md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+		      md_number_to_chars (p, insn.opcode, INSN_SIZE);
 		      break;
 		    }
 		}
@@ -1820,7 +1797,7 @@ md_assemble (char *line)
 		  /* Unresolved immediate label.  */
 		  if (insn.operands > 1)
 		    insn.opcode |= (insn.operand_type[1]->reg.opcode << 16);
-		  md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+		  md_number_to_chars (p, insn.opcode, INSN_SIZE);
 		  fix_new_exp (frag_now, p + 2 - (frag_now->fr_literal), 2,
 			       & insn.operand_type[0]->immediate.imm_expr,
 			       0, 0);
@@ -1837,7 +1814,7 @@ md_assemble (char *line)
 		{
 		  insn.opcode |= (insn.operand_type[0]->reg.opcode);
 		  insn.opcode |= PC_Register;
-		  md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+		  md_number_to_chars (p, insn.opcode, INSN_SIZE);
 		}
 	      else
 		{
@@ -1846,11 +1823,11 @@ md_assemble (char *line)
 		    {
 		      insn.opcode |=
 			(insn.operand_type[0]->immediate.s_number & 0x0000FFFF);
-		      md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+		      md_number_to_chars (p, insn.opcode, INSN_SIZE);
 		    }
 		  else
 		    {
-		      md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+		      md_number_to_chars (p, insn.opcode, INSN_SIZE);
 		      fix_new_exp (frag_now, p + 2 - (frag_now->fr_literal),
 				   2, & insn.operand_type[0]->immediate.imm_expr,
 				   1, 0);
@@ -1865,7 +1842,7 @@ md_assemble (char *line)
 		{
 		  insn.opcode |= (insn.operand_type[1]->reg.opcode);
 		  insn.opcode |= PC_Register;
-		  md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+		  md_number_to_chars (p, insn.opcode, INSN_SIZE);
 		}
 	      else if (insn.operand_type[1]->immediate.resolved == 1)
 		{
@@ -1882,12 +1859,12 @@ md_assemble (char *line)
 		    }
 		  insn.opcode |= (insn.operand_type[1]->immediate.s_number);
 		  insn.opcode |= PC_Relative;
-		  md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+		  md_number_to_chars (p, insn.opcode, INSN_SIZE);
 		}
 	      else
 		{
 		  insn.opcode |= PC_Relative;
-		  md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+		  md_number_to_chars (p, insn.opcode, INSN_SIZE);
 		  fix_new_exp (frag_now, p + 2 - frag_now->fr_literal, 2,
 			       & insn.operand_type[1]->immediate.imm_expr,
 			       1, 0);
@@ -1905,14 +1882,14 @@ md_assemble (char *line)
 	      as_bad (_("interrupt vector for trap instruction out of range"));
 	      return;
 	    }
-	  md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+	  md_number_to_chars (p, insn.opcode, INSN_SIZE);
 	}
       else if (insn.tm->opcode_modifier == StackOp
 	       || insn.tm->opcode_modifier == Rotate)
 	{
 	  /* Push, Pop and Rotate instructions.  */
 	  insn.opcode |= (insn.operand_type[0]->reg.opcode << 16);
-	  md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+	  md_number_to_chars (p, insn.opcode, INSN_SIZE);
 	}
       else if ((insn.tm->operand_types[0] & (Abs24 | Direct))
 	       == (Abs24 | Direct))
@@ -1926,13 +1903,13 @@ md_assemble (char *line)
 		  /* Direct addressing uses lower 8 bits of direct address.  */
 		  insn.opcode |=
 		    (insn.operand_type[0]->direct.address & 0x00FF0000) >> 16;
-		  md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+		  md_number_to_chars (p, insn.opcode, INSN_SIZE);
 		}
 	      else
 		{
 		  fixS *fix;
 
-		  md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+		  md_number_to_chars (p, insn.opcode, INSN_SIZE);
 		  fix = fix_new_exp (frag_now, p + 3 - (frag_now->fr_literal),
 				     1, &insn.operand_type[0]->direct.direct_expr, 0, 0);
 		  /* Ensure that the assembler doesn't complain
@@ -1952,12 +1929,12 @@ md_assemble (char *line)
 		    }
 		  insn.opcode |=
 		    ((insn.operand_type[0]->immediate.u_number & 0x00FF0000) >> 16);
-		  md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+		  md_number_to_chars (p, insn.opcode, INSN_SIZE);
 		}
 	      else
 		{
 		  fixS *fix;
-		  md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+		  md_number_to_chars (p, insn.opcode, INSN_SIZE);
 		  fix = fix_new_exp (frag_now, p + 3 - (frag_now->fr_literal),
 				     1, &insn.operand_type[0]->immediate.imm_expr,
 				     0, 0);
@@ -1974,22 +1951,22 @@ md_assemble (char *line)
 		as_warn (_("first operand is too large for a 24-bit displacement"));
 	      insn.opcode |=
 		(insn.operand_type[0]->immediate.u_number & 0x00FFFFFF);
-	      md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+	      md_number_to_chars (p, insn.opcode, INSN_SIZE);
 	    }
 	  else
 	    {
-	      md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+	      md_number_to_chars (p, insn.opcode, INSN_SIZE);
 	      fix_new_exp (frag_now, p + 1 - (frag_now->fr_literal), 3,
 			   & insn.operand_type[0]->immediate.imm_expr, 0, 0);
 	    }
 	}
       else if (insn.tm->operand_types[0] & NotReq)
 	/* Check for NOP instruction without arguments.  */
-	md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+	md_number_to_chars (p, insn.opcode, INSN_SIZE);
 
       else if (insn.tm->operands == 0)
 	/* Check for instructions without operands.  */
-	md_number_to_chars (p, (valueT) insn.opcode, INSN_SIZE);
+	md_number_to_chars (p, insn.opcode, INSN_SIZE);
     }
   debug ("Addressing mode: %08X\n", insn.addressing_mode);
   {
@@ -1997,8 +1974,7 @@ md_assemble (char *line)
 
     for (i = 0; i < insn.operands; i++)
       {
-	if (insn.operand_type[i]->immediate.label)
-	  free (insn.operand_type[i]->immediate.label);
+	free (insn.operand_type[i]->immediate.label);
 	free (insn.operand_type[i]);
       }
   }

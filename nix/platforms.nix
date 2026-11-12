@@ -1,8 +1,30 @@
-{
-  m68k = {
+{ lib }: 
+let
+  inspect = lib.systems.inspect;
+  elaborate = systemDict:
+    systemDict // lib.mapAttrs (n: v: v systemDict) inspect.predicates
+    // { 
+      uname = { system = systemDict.cmakeSystemName or "MacOS"; processor = systemDict.parsed.cpu.name; release = null; }; 
+      rust = {rustcTarget = systemDict.config; rustcTargetSpec = systemDict.config; };
+      go = {};
+      node = {};
+      useiOSPrebuilt = false;
+      useAndroidPrebuilt = false;
+      linker = "bfd";
+      libdir = null;
+      extensions = {
+        staticLibarary = ".a";
+        library = ".a";
+        executable = "";
+      };
+      hasSharedLibraries = false;
+      useLLVM = false;
+    };
+in {
+  m68k = elaborate {
     system = "m68k-macos";
     config = "m68k-apple-macos";
-    libc = "retro68";
+    libc = null;
     parsed = {
       cpu = {
         name = "m68k";
@@ -14,6 +36,8 @@
         name = "macos";
         execFormat = { name = "unknown"; };
       };
+      vendor = { name = "apple"; };
+      abi = { name = "macos"; };
     };
     bfdEmulation = "m68k";
     isStatic = true;
@@ -22,10 +46,10 @@
     retro68 = true;
     cmakeSystemName = "Retro68";
   };
-  powerpc = {
+  powerpc = elaborate {
     system = "powerpc-macos";
     config = "powerpc-apple-macos";
-    libc = "retro68";
+    libc = null;
     parsed = {
       cpu = {
         name = "powerpc";
@@ -37,6 +61,8 @@
         name = "macos";
         execFormat = { name = "unknown"; };
       };
+      vendor = { name = "apple"; };
+      abi = { name = "macos"; };
     };
 
     isStatic = true;
@@ -45,10 +71,10 @@
     retro68 = true;
     cmakeSystemName = "RetroPPC";
   };
-  carbon = {
+  carbon = elaborate {
     system = "powerpc-carbon";
     config = "powerpc-apple-macos";
-    libc = "retro68";
+    libc = null;
     parsed = {
       cpu = {
         name = "powerpc";
@@ -60,6 +86,8 @@
         name = "carbon";
         execFormat = { name = "unknown"; };
       };
+      vendor = { name = "apple"; };
+      abi = { name = "macos"; };
     };
     isStatic = true;
     retro68BinutilsConfig = [ "--disable-plugins" ];
@@ -67,9 +95,4 @@
     retro68 = true;
     cmakeSystemName = "RetroCarbon";
   };
-
-  isStatic = true;
-  retro68BinutilsConfig = [ "--disable-plugins" ];
-  retro68GccConfig = [ "--disable-lto" ];
-  retro68 = true;
 }

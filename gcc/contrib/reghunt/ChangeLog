@@ -1,6 +1,11 @@
-2019-05-03  Release Manager
+2026-04-30  Release Manager
 
-	* GCC 9.1.0 released.
+	* GCC 16.1.0 released.
+
+2023-05-18  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR bootstrap/105831
+	* bin/reg-hunt: Use = operator instead of ==.
 
 2010-06-27  Ralf Wildenhues  <Ralf.Wildenhues@gmx.de>
 

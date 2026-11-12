@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1982, 1986, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -10,7 +12,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -43,6 +45,7 @@
 #define INHERIT_SHARE	0
 #define INHERIT_COPY	1
 #define INHERIT_NONE	2
+#define INHERIT_ZERO	3
 #endif
 
 /*
@@ -52,6 +55,14 @@
 #define	PROT_READ	0x01	/* pages can be read */
 #define	PROT_WRITE	0x02	/* pages can be written */
 #define	PROT_EXEC	0x04	/* pages can be executed */
+#if __BSD_VISIBLE
+#define	_PROT_ALL	(PROT_READ | PROT_WRITE | PROT_EXEC)
+#define	PROT_EXTRACT(prot)	((prot) & _PROT_ALL)
+
+#define	_PROT_MAX_SHIFT	16
+#define	PROT_MAX(prot)		((prot) << _PROT_MAX_SHIFT)
+#define	PROT_MAX_EXTRACT(prot)	(((prot) >> _PROT_MAX_SHIFT) & _PROT_ALL)
+#endif
 
 /*
  * Flags contain sharing type and options.
@@ -69,8 +80,8 @@
 #define	MAP_FIXED	 0x0010	/* map addr must be exactly as requested */
 
 #if __BSD_VISIBLE
-#define	MAP_RENAME	 0x0020	/* Sun: rename private pages to file */
-#define	MAP_NORESERVE	 0x0040	/* Sun: don't reserve needed swap area */
+#define	MAP_RESERVED0020 0x0020	/* previously unimplemented MAP_RENAME */
+#define	MAP_RESERVED0040 0x0040	/* previously unimplemented MAP_NORESERVE */
 #define	MAP_RESERVED0080 0x0080	/* previously misimplemented MAP_INHERIT */
 #define	MAP_RESERVED0100 0x0100	/* previously unimplemented MAP_NOEXTEND */
 #define	MAP_HASSEMAPHORE 0x0200	/* region may contain semaphores */
@@ -89,8 +100,13 @@
 /*
  * Extended flags
  */
+#define	MAP_GUARD	 0x00002000 /* reserve but don't map address range */
+#define	MAP_EXCL	 0x00004000 /* for MAP_FIXED, fail if address is used */
 #define	MAP_NOCORE	 0x00020000 /* dont include these pages in a coredump */
 #define	MAP_PREFAULT_READ 0x00040000 /* prefault mapping for reading */
+#ifdef __LP64__
+#define	MAP_32BIT	 0x00080000 /* map in the low 2GB of address space */
+#endif
 
 /*
  * Request specific alignment (n == log2 of the desired alignment).
@@ -102,6 +118,15 @@
 #define	MAP_ALIGNMENT_SHIFT	24
 #define	MAP_ALIGNMENT_MASK	MAP_ALIGNED(0xff)
 #define	MAP_ALIGNED_SUPER	MAP_ALIGNED(1) /* align on a superpage */
+
+/*
+ * Flags provided to shm_rename
+ */
+/* Don't overwrite dest, if it exists */
+#define SHM_RENAME_NOREPLACE	(1 << 0)
+/* Atomically swap src and dest */
+#define SHM_RENAME_EXCHANGE	(1 << 1)
+
 #endif /* __BSD_VISIBLE */
 
 #if __POSIX_VISIBLE >= 199309
@@ -154,12 +179,54 @@
 #define	MINCORE_MODIFIED	 0x4 /* Page has been modified by us */
 #define	MINCORE_REFERENCED_OTHER 0x8 /* Page has been referenced */
 #define	MINCORE_MODIFIED_OTHER	0x10 /* Page has been modified */
-#define	MINCORE_SUPER		0x20 /* Page is a "super" page */
+#define	MINCORE_SUPER		0x60 /* Page is a "super" page */
+#define	MINCORE_PSIND(i)	(((i) << 5) & MINCORE_SUPER) /* Page size */
 
 /*
  * Anonymous object constant for shm_open().
  */
 #define	SHM_ANON		((char *)1)
+
+/*
+ * shmflags for shm_open2()
+ */
+#define	SHM_ALLOW_SEALING		0x00000001
+#define	SHM_GROW_ON_WRITE		0x00000002
+#define	SHM_LARGEPAGE			0x00000004
+
+#define	SHM_LARGEPAGE_ALLOC_DEFAULT	0
+#define	SHM_LARGEPAGE_ALLOC_NOWAIT	1
+#define	SHM_LARGEPAGE_ALLOC_HARD	2
+
+struct shm_largepage_conf {
+	int psind;
+	int alloc_policy;
+	int pad[10];
+};
+
+/*
+ * Flags for memfd_create().
+ */
+#define	MFD_CLOEXEC			0x00000001
+#define	MFD_ALLOW_SEALING		0x00000002
+
+#define	MFD_HUGETLB			0x00000004
+
+#define	MFD_HUGE_MASK			0xFC000000
+#define	MFD_HUGE_SHIFT			26
+#define	MFD_HUGE_64KB			(16 << MFD_HUGE_SHIFT)
+#define	MFD_HUGE_512KB			(19 << MFD_HUGE_SHIFT)
+#define	MFD_HUGE_1MB			(20 << MFD_HUGE_SHIFT)
+#define	MFD_HUGE_2MB			(21 << MFD_HUGE_SHIFT)
+#define	MFD_HUGE_8MB			(23 << MFD_HUGE_SHIFT)
+#define	MFD_HUGE_16MB			(24 << MFD_HUGE_SHIFT)
+#define	MFD_HUGE_32MB			(25 << MFD_HUGE_SHIFT)
+#define	MFD_HUGE_256MB			(28 << MFD_HUGE_SHIFT)
+#define	MFD_HUGE_512MB			(29 << MFD_HUGE_SHIFT)
+#define	MFD_HUGE_1GB			(30 << MFD_HUGE_SHIFT)
+#define	MFD_HUGE_2GB			(31 << MFD_HUGE_SHIFT)
+#define	MFD_HUGE_16GB			(34 << MFD_HUGE_SHIFT)
+
 #endif /* __BSD_VISIBLE */
 
 /*
@@ -189,43 +256,7 @@ typedef	__size_t	size_t;
 #define	_SIZE_T_DECLARED
 #endif
 
-#if defined(_KERNEL) || defined(_WANT_FILE)
-#include <vm/vm.h>
-
-struct file;
-
-struct shmfd {
-	size_t		shm_size;
-	vm_object_t	shm_object;
-	int		shm_refs;
-	uid_t		shm_uid;
-	gid_t		shm_gid;
-	mode_t		shm_mode;
-	int		shm_kmappings;
-
-	/*
-	 * Values maintained solely to make this a better-behaved file
-	 * descriptor for fstat() to run on.
-	 */
-	struct timespec	shm_atime;
-	struct timespec	shm_mtime;
-	struct timespec	shm_ctime;
-	struct timespec	shm_birthtime;
-	ino_t		shm_ino;
-
-	struct label	*shm_label;		/* MAC label */
-	const char	*shm_path;
-};
-#endif
-
-#ifdef _KERNEL
-int	shm_mmap(struct shmfd *shmfd, vm_size_t objsize, vm_ooffset_t foff,
-	    vm_object_t *obj);
-int	shm_map(struct file *fp, size_t size, off_t offset, void **memp);
-int	shm_unmap(struct file *fp, void *mem, size_t size);
-void	shm_path(struct shmfd *shmfd, char *path, size_t size);
-
-#else /* !_KERNEL */
+#ifndef _KERNEL
 
 __BEGIN_DECLS
 /*
@@ -243,7 +274,7 @@ int	mlock(const void *, size_t);
 #define	_MMAP_DECLARED
 void *	mmap(void *, size_t, int, int, int, off_t);
 #endif
-int	mprotect(const void *, size_t, int);
+int	mprotect(void *, size_t, int);
 int	msync(void *, size_t, int);
 int	munlock(const void *, size_t);
 int	munmap(void *, size_t);
@@ -256,8 +287,17 @@ int	munlockall(void);
 int	shm_open(const char *, int, mode_t);
 int	shm_unlink(const char *);
 #endif
+#if __BSD_VISIBLE
+int	memfd_create(const char *, unsigned int);
+int	shm_create_largepage(const char *, int, int, int, mode_t);
+int	shm_rename(const char *, const char *, int);
+#endif
 __END_DECLS
 
 #endif /* !_KERNEL */
 
+#ifdef _KERNEL
+/* Header file provided outside of Newlib */
+#include <machine/_kernel_mman.h>
+#endif
 #endif /* !_SYS_MMAN_H_ */

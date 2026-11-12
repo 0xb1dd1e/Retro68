@@ -1,7 +1,15 @@
 /* { dg-do compile { target { powerpc*-*-* } } } */
 /* { dg-skip-if "" { powerpc*-*-darwin* } } */
-/* { dg-require-effective-target powerpc_vsx_ok } */
-/* { dg-options "-O2 -mdejagnu-cpu=power7" } */
+/* { dg-options "-O2 -mdejagnu-cpu=power7 -fno-inline-functions -fno-ipa-icf" } */
+/* { dg-require-effective-target powerpc_vsx } */
+
+/* PR testsuite/119382
+   Note: Added -fno-ipa-icf to disable Interprocedural Identical Code
+   Folding (ICF). Without this, insert_di_0_v2 is merged with insert_di_0
+   due to improved alias analysis introduced in commit r15-7961-gdc47161c1f32c3.
+   This results in the compiler replacing insert_di_0_v2 with a tail call to
+   insert_di_0, altering expected test behavior. Disabling ICF ensures correct
+   execution of the test.  */
 
 /* Test simple extract/insert/slat operations.  Make sure all types are
    supported with various options.  */
@@ -191,10 +199,11 @@ vector unsigned __int128 splat_uint128 (unsigned __int128 x) { return vec_splats
  */
 
 /* { dg-final { scan-assembler-times {\mrldic\M} 0  { target { be && ilp32 } } } } */
-/* { dg-final { scan-assembler-times {\mrldic\M} 64 { target { be && lp64 } } } } */
-/* { dg-final { scan-assembler-times {\mrldic\M} 64 { target le } } } */
-/* { dg-final { scan-assembler-times "xxpermdi" 4 { target be } } } */
-/* { dg-final { scan-assembler-times "xxpermdi" 6 { target le } } } */
+/* { dg-final { scan-assembler-times {\mrldic\M} 65 { target { be && lp64 } } } } */
+/* { dg-final { scan-assembler-times {\mrldic\M} 65 { target le } } } */
+/* { dg-final { scan-assembler-times "xxpermdi" 33 { target be } } } */
+/* { dg-final { scan-assembler-times "xxpermdi" 35 { target le } } } */
 /* { dg-final { scan-assembler-times "vspltisb" 2 } } */
 /* { dg-final { scan-assembler-times "vspltish" 2 } } */
-/* { dg-final { scan-assembler-times "vspltisw" 2 } } */
+/* { dg-final { scan-assembler-times "vspltisw" 2 { target be } } } */
+/* { dg-final { scan-assembler-times "vspltisw" 23 { target le } } } */

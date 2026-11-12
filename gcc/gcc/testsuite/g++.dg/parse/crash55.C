@@ -1,8 +1,10 @@
 // PR c++/42038
 
-extern int __cxa_begin_catch;	// { dg-error "declared incorrectly" }
+// Explicit { dg-require-effective-target exceptions_enabled } to avoid verify compiler messages FAILs for '-fno-exceptions'.
+
+extern int __cxa_begin_catch;	// { dg-message "previous declaration" }
 
 void f(void)
 {
-  try { } catch (int) { }
+  try { } catch (int) { }  // { dg-error "redeclared"  }
 }

@@ -1,5 +1,5 @@
 ;; GCC machine description for SPARC synchronization instructions.
-;; Copyright (C) 2005-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2005-2026 Free Software Foundation, Inc.
 ;;
 ;; This file is part of GCC.
 ;;
@@ -64,21 +64,20 @@
   "stbar"
   [(set_attr "type" "multi")])
 
-;; For LEON3, STB has the effect of membar #StoreLoad.
-(define_insn "*membar_storeload_leon3"
-  [(set (match_operand:BLK 0 "" "")
-	(unspec:BLK [(match_dup 0) (const_int 2)] UNSPEC_MEMBAR))]
-  "TARGET_LEON3"
-  "stb\t%%g0, [%%sp-1]"
-  [(set_attr "type" "store")])
-
 ;; For V8, LDSTUB has the effect of membar #StoreLoad.
-(define_insn "*membar_storeload"
+(define_insn "membar_storeload"
   [(set (match_operand:BLK 0 "" "")
 	(unspec:BLK [(match_dup 0) (const_int 2)] UNSPEC_MEMBAR))]
-  "TARGET_V8 && !TARGET_LEON3"
-  "ldstub\t[%%sp-1], %%g0"
-  [(set_attr "type" "multi")])
+  "TARGET_V8"
+{
+  if (sparc_fix_gr712rc)
+    return ".align\t16\n\tldstub\t[%%sp-1], %%g0";
+  else
+    return "ldstub\t[%%sp-1], %%g0";
+}
+  [(set_attr "type" "multi")
+   (set (attr "length") (if_then_else (eq_attr "fix_gr712rc" "true")
+		      (const_int 4) (const_int 1)))])
 
 ;; Put the two together, in combination with the fact that V8 implements PSO
 ;; as its weakest memory model, means a full barrier.  Match all remaining
@@ -88,9 +87,15 @@
 	(unspec:BLK [(match_dup 0) (match_operand:SI 1 "const_int_operand")]
 		    UNSPEC_MEMBAR))]
   "TARGET_V8"
-  "stbar\n\tldstub\t[%%sp-1], %%g0"
+{
+  if (sparc_fix_gr712rc)
+    return "stbar\n.align\t16\n\tldstub\t[%%sp-1], %%g0";
+  else
+    return "stbar\n\tldstub\t[%%sp-1], %%g0";
+}
   [(set_attr "type" "multi")
-   (set_attr "length" "2")])
+   (set (attr "length") (if_then_else (eq_attr "fix_gr712rc" "true")
+		      (const_int 5) (const_int 2)))])
 
 ;; For V9, we have the full membar instruction.
 (define_insn "*membar"
@@ -202,7 +207,7 @@
 
 (define_insn "*atomic_compare_and_swap<mode>_1"
   [(set (match_operand:I48MODE 0 "register_operand" "=r")
-	(match_operand:I48MODE 1 "mem_noofs_operand" "+w"))
+	(match_operand:I48MODE 1 "mem_noofs_operand" "+W"))
    (set (match_dup 1)
 	(unspec_volatile:I48MODE
 	  [(match_operand:I48MODE 2 "register_operand" "r")
@@ -214,7 +219,7 @@
 
 (define_insn "atomic_compare_and_swap_leon3_1"
   [(set (match_operand:SI 0 "register_operand" "=r")
-	(match_operand:SI 1 "mem_noofs_operand" "+w"))
+	(match_operand:SI 1 "mem_noofs_operand" "+W"))
    (set (match_dup 1)
 	(unspec_volatile:SI
 	  [(match_operand:SI 2 "register_operand" "r")
@@ -235,7 +240,7 @@
 
 (define_insn "*atomic_compare_and_swapdi_v8plus"
   [(set (match_operand:DI 0 "register_operand" "=h")
-	(match_operand:DI 1 "mem_noofs_operand" "+w"))
+	(match_operand:DI 1 "mem_noofs_operand" "+W"))
    (set (match_dup 1)
 	(unspec_volatile:DI
 	  [(match_operand:DI 2 "register_operand" "h")

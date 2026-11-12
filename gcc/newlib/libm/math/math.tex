@@ -3,32 +3,14 @@
 
 This chapter groups a wide variety of mathematical functions.  The
 corresponding definitions and declarations are in @file{math.h}.  
-Two definitions from @file{math.h} are of particular interest.  
+The definition of HUGE_VAL from @file{math.h} is of particular interest.
 
 @enumerate
 @item
 The representation of infinity as a @code{double} is defined as
 @code{HUGE_VAL}; this number is returned on overflow by many functions.
 The macro @code{HUGE_VALF} is a corresponding value for @code{float}.
-
-@item
-The structure @code{exception} is used when you write customized error
-handlers for the mathematical functions.  You can customize error
-handling for most of these functions by defining your own version of
-@code{matherr}; see the section on @code{matherr} for details.
 @end enumerate
-
-@cindex system calls
-@cindex support subroutines
-@cindex stubs
-@cindex OS stubs
-Since the error handling code calls @code{fputs}, the mathematical
-subroutines require stubs or minimal implementations for the same list
-of OS subroutines as @code{fputs}: @code{close}, @code{fstat},
-@code{isatty}, @code{lseek}, @code{read}, @code{sbrk}, @code{write}.
-@xref{syscalls,,System Calls, libc.info, The Red Hat newlib C Library},
-for a discussion and for sample minimal implementations of these support
-subroutines.
 
 Alternative declarations of the mathematical functions, which exploit
 specific machine capabilities to operate faster---but generally have
@@ -38,103 +20,85 @@ machines---are available when you include @file{fastmath.h} instead of
 
 @menu 
 * version::	Version of library
-* acos::	Arccosine
-* acosh::	Inverse hyperbolic cosine
-* asin::	Arcsine
-* asinh::	Inverse hyperbolic sine
-* atan::	Arctangent
-* atan2::	Arctangent of y/x
-* atanh::	Inverse hyperbolic tangent
-* jN::	        Bessel functions (jN, yN)
-* cbrt::	Cube root
-* copysign::	Sign of Y, magnitude of X
-* cosh::	Hyperbolic cosine
-* erf::		Error function (erf, erfc)
-* exp::		Exponential, base e
-* exp10::	Exponential, base 10
-* exp2::	Exponential, base 2
-* expm1::	Exponential, base e, of x - 1
-* fabs::	Absolute value (magnitude)
-* fdim::	Positive difference
-* floor::	Floor and ceiling (floor, ceil)
-* fma::		Floating multiply add
-* fmax::	Maximum
-* fmin::	Minimum
-* fmod::	Floating-point remainder (modulo)
-* fpclassify::	Floating-point classification macro
-* frexp::	Split floating-point number
-* gamma::	Logarithmic gamma function
-* hypot::	Distance from origin
-* ilogb::	Get exponent
-* infinity::	Floating infinity
-* isgreater::	Comparison macros
-* ldexp::	Scale by a power of 2
-* log::		Natural logarithms
-* log10::	Base 10 logarithms
-* log1p::	Log of 1 + X
-* log2::	Base 2 logarithms
-* logb::	Get exponent
-* lrint::	Round to integer
-* lround::	Round to integer, away from zero (lround, llround)
-* matherr::	Modifiable math error handler
-* modf::	Split fractional and integer parts
-* nan::		Floating Not a Number
-* nearbyint::	Round to integer
-* nextafter::	Get next representable number
-* pow::		X to the power Y
-* pow10::	10 to the power X
-* remainder::	remainder of X divided by Y 
-* remquo::	Remainder and part of quotient
-* rint::	Round to integer
-* round::	Round to integer, away from zero
-* scalbn::	Scale by a power of FLT_RADIX (2)
-* signbit::	Does floating-point number have negative sign?
-* sin::		Sine or cosine (sin, cos)
-* sinh::	Hyperbolic sine
-* sqrt::	Positive square root
-* tan::		Tangent
-* tanh::	Hyperbolic tangent
-* trunc::	Round to integer, towards zero
+* Function acos::	Arccosine
+* Function acosh::	Inverse hyperbolic cosine
+* Function asin::	Arcsine
+* Function asinh::	Inverse hyperbolic sine
+* Function atan::	Arctangent
+* Function atan2::	Arctangent of y/x
+* Function atanh::	Inverse hyperbolic tangent
+* Function jN::	        Bessel functions (jN, yN)
+* Function cbrt::	Cube root
+* Function copysign::	Sign of Y, magnitude of X
+* Function cosh::	Hyperbolic cosine
+* Function erf::		Error function (erf, erfc)
+* Function exp::		Exponential, base e
+* Function exp10::	Exponential, base 10
+* Function exp2::	Exponential, base 2
+* Function expm1::	Exponential, base e, of x - 1
+* Function fabs::	Absolute value (magnitude)
+* Function fdim::	Positive difference
+* Function floor::	Floor and ceiling (floor, ceil)
+* Function fma::		Floating multiply add
+* Function fmax::	Maximum
+* Function fmin::	Minimum
+* Function fmod::	Floating-point remainder (modulo)
+* Function fpclassify::	Floating-point classification macro
+* Function frexp::	Split floating-point number
+* Function gamma::	Logarithmic gamma function
+* Function hypot::	Distance from origin
+* Function ilogb::	Get exponent
+* Function infinity::	Floating infinity
+* Function isgreater::	Comparison macros
+* Function ldexp::	Scale by a power of 2
+* Function log::		Natural logarithms
+* Function log10::	Base 10 logarithms
+* Function log1p::	Log of 1 + X
+* Function log2::	Base 2 logarithms
+* Function logb::	Get exponent
+* Function lrint::	Round to integer
+* Function lround::	Round to integer, away from zero (lround, llround)
+* Function modf::	Split fractional and integer parts
+* Function nan::		Floating Not a Number
+* Function nearbyint::	Round to integer
+* Function nextafter::	Get next representable number
+* Function pow::		X to the power Y
+* Function pow10::	10 to the power X
+* Function remainder::	remainder of X divided by Y
+* Function remquo::	Remainder and part of quotient
+* Function rint::	Round to integer
+* Function round::	Round to integer, away from zero
+* Function scalbn::	Scale by a power of FLT_RADIX (2)
+* Function signbit::	Does floating-point number have negative sign?
+* Function sin::		Sine or cosine (sin, cos)
+* Function sinh::	Hyperbolic sine
+* Function sqrt::	Positive square root
+* Function tan::		Tangent
+* Function tanh::	Hyperbolic tangent
+* Function trunc::	Round to integer, towards zero
 @end menu
 
 @page
 @node version
 @section Error Handling
 
-There are four different versions of the math library routines: IEEE,
-POSIX, X/Open, or SVID.  The version may be selected at runtime by
+There are two different versions of the math library routines: IEEE
+and POSIX.  The version may be selected at runtime by
 setting the global variable @code{_LIB_VERSION}, defined in
 @file{math.h}.  It may be set to one of the following constants defined
-in @file{math.h}: @code{_IEEE_}, @code{_POSIX_}, @code{_XOPEN_}, or
-@code{_SVID_}.  The @code{_LIB_VERSION} variable is not specific to any
+in @file{math.h}: @code{_IEEE_} or @code{_POSIX_}.
+The @code{_LIB_VERSION} variable is not specific to any
 thread, and changing it will affect all threads.
 
-The versions of the library differ only in how errors are handled.
+The versions of the library differ only in the setting of @code{errno}.
 
-In IEEE mode, the @code{matherr} function is never called, no warning
-messages are printed, and @code{errno} is never set.
+In IEEE mode, @code{errno} is never set.
 
-In POSIX mode, @code{errno} is set correctly, but the @code{matherr}
-function is never called and no warning messages are printed.
+In POSIX mode, @code{errno} is set correctly.
 
-In X/Open mode, @code{errno} is set correctly, and @code{matherr} is
-called, but warning message are not printed.
+The library is set to IEEE mode by default.
 
-In SVID mode, functions which overflow return 3.40282346638528860e+38,
-the maximum single-precision floating-point value, rather than infinity.
-Also, @code{errno} is set correctly, @code{matherr} is called, and, if
-@code{matherr} returns 0, warning messages are printed for some errors.
-For example, by default @samp{log(-1.0)} writes this message on standard
-error output:
-
-@example
-log: DOMAIN error
-@end example
-
-The library is set to X/Open mode by default.
-
-The aforementioned error reporting is the supported Newlib libm error
-handling method.  However, the majority of the functions are written
+The majority of the floating-point math functions are written
 so as to produce the floating-point exceptions (e.g. "invalid",
 "divide-by-zero") as required by the C and POSIX standards, for
 floating-point implementations that support them.  Newlib does not provide
@@ -240,8 +204,6 @@ registered trademark of The IEEE.
 @include common/s_lrint.def
 @page
 @include common/s_lround.def
-@page
-@include common/s_matherr.def
 @page
 @include common/s_modf.def
 @page

@@ -1,4 +1,3 @@
-/* { dg-do run } */
 /* { dg-additional-options "-fdump-tree-optimized" } */
 
 #include "tree-vect.h"
@@ -52,4 +51,4 @@ main ()
 
 /* ??? We need more constant folding for this to work with fully-masked
    loops.  */
-/* { dg-final { scan-tree-dump-not {REDUC_PLUS} "optimized" { xfail aarch64_sve } } } */
+/* { dg-final { scan-tree-dump-not {REDUC_PLUS} "optimized" { xfail { aarch64_sve || riscv_v } } } } */

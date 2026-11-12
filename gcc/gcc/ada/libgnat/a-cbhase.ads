@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 2004-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 2004-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -36,7 +36,8 @@ with Ada.Iterator_Interfaces;
 private with Ada.Containers.Hash_Tables;
 with Ada.Containers.Helpers;
 private with Ada.Streams;
-private with Ada.Finalization; use Ada.Finalization;
+private with Ada.Finalization;
+private with Ada.Strings.Text_Buffers;
 
 generic
    type Element_Type is private;
@@ -48,7 +49,9 @@ generic
 
    with function "=" (Left, Right : Element_Type) return Boolean is <>;
 
-package Ada.Containers.Bounded_Hashed_Sets is
+package Ada.Containers.Bounded_Hashed_Sets with
+  SPARK_Mode => Off
+is
    pragma Annotate (CodePeer, Skip_Analysis);
    pragma Pure;
    pragma Remote_Types;
@@ -56,16 +59,19 @@ package Ada.Containers.Bounded_Hashed_Sets is
    type Set (Capacity : Count_Type; Modulus : Hash_Type) is tagged private
      with Constant_Indexing => Constant_Reference,
           Default_Iterator  => Iterate,
-          Iterator_Element  => Element_Type;
+          Iterator_Element  => Element_Type,
+          Aggregate         => (Empty       => Empty,
+                                Add_Unnamed => Include),
+          Preelaborable_Initialization
+                            => Element_Type'Preelaborable_Initialization;
 
-   pragma Preelaborable_Initialization (Set);
-
-   type Cursor is private;
-   pragma Preelaborable_Initialization (Cursor);
+   type Cursor is private with Preelaborable_Initialization;
 
    Empty_Set : constant Set;
    --  Set objects declared without an initialization expression are
    --  initialized to the value Empty_Set.
+
+   function Empty (Capacity : Count_Type := 10) return Set;
 
    No_Element : constant Cursor;
    --  Cursor objects declared without an initialization expression are
@@ -120,7 +126,8 @@ package Ada.Containers.Bounded_Hashed_Sets is
    --  Equivalent to Length (Container) = 0
 
    procedure Clear (Container : in out Set);
-   --  Removes all of the items from the set
+   --  Removes all of the items from the set. This will deallocate all memory
+   --  associated with this set.
 
    function Element (Position : Cursor) return Element_Type;
    --  Returns the element of the node designated by the cursor
@@ -147,8 +154,9 @@ package Ada.Containers.Bounded_Hashed_Sets is
    --  designated by the cursor.
 
    type Constant_Reference_Type
-     (Element : not null access constant Element_Type) is private
-        with Implicit_Dereference => Element;
+     (Element : not null access constant Element_Type) is limited private
+   with
+      Implicit_Dereference => Element;
 
    function Constant_Reference
      (Container : aliased Set;
@@ -362,6 +370,25 @@ package Ada.Containers.Bounded_Hashed_Sets is
      (Container : Set)
       return Set_Iterator_Interfaces.Forward_Iterator'Class;
 
+   --  Ada 2022 features:
+
+   function Has_Element (Container : Set; Position : Cursor) return Boolean;
+
+   function Tampering_With_Cursors_Prohibited (Container : Set) return Boolean;
+
+   function Element (Container : Set; Position : Cursor) return Element_Type;
+
+   procedure Query_Element
+     (Container : Set;
+      Position  : Cursor;
+      Process   : not null access procedure (Element : Element_Type));
+
+   function Next (Container : Set; Position : Cursor) return Cursor;
+
+   procedure Next (Container : Set; Position : in out Cursor);
+
+   ----------------
+
    generic
       type Key_Type (<>) is private;
 
@@ -376,6 +403,9 @@ package Ada.Containers.Bounded_Hashed_Sets is
       function Key (Position : Cursor) return Key_Type;
       --  Applies generic formal operation Key to the element of the node
       --  designated by Position.
+
+      function Key (Container : Set; Position : Cursor) return Key_Type is
+        (Key (Element (Container, Position)));
 
       function Element (Container : Set; Key : Key_Type) return Element_Type;
       --  Searches (as per the key-based Find) for the node containing Key, and
@@ -430,8 +460,10 @@ package Ada.Containers.Bounded_Hashed_Sets is
       --  completes. Otherwise, the node is removed from the map and
       --  Program_Error is raised.
 
-      type Reference_Type (Element : not null access Element_Type) is private
-        with Implicit_Dereference => Element;
+      type Reference_Type
+        (Element : not null access Element_Type) is limited private
+      with
+         Implicit_Dereference => Element;
 
       function Reference_Preserving_Key
         (Container : aliased in out Set;
@@ -495,7 +527,11 @@ private
      new Hash_Tables.Generic_Bounded_Hash_Table_Types (Node_Type);
 
    type Set (Capacity : Count_Type; Modulus : Hash_Type) is
-     new HT_Types.Hash_Table_Type (Capacity, Modulus) with null record;
+     new HT_Types.Hash_Table_Type (Capacity, Modulus)
+      with null record with Put_Image => Put_Image;
+
+   procedure Put_Image
+     (S : in out Ada.Strings.Text_Buffers.Root_Buffer_Type'Class; V : Set);
 
    use HT_Types, HT_Types.Implementation;
    use Ada.Streams;
@@ -563,10 +599,9 @@ private
 
    for Constant_Reference_Type'Write use Write;
 
-   --  Three operations are used to optimize in the expansion of "for ... of"
-   --  loops: the Next(Cursor) procedure in the visible part, and the following
-   --  Pseudo_Reference and Get_Element_Access functions. See Sem_Ch5 for
-   --  details.
+   --  See Ada.Containers.Vectors for documentation on the following
+
+   procedure _Next (Position : in out Cursor) renames Next;
 
    function Pseudo_Reference
      (Container : aliased Set'Class) return Reference_Control_Type;
@@ -587,7 +622,7 @@ private
 
    No_Element : constant Cursor := (Container => null, Node => 0);
 
-   type Iterator is new Limited_Controlled and
+   type Iterator is new Ada.Finalization.Limited_Controlled and
      Set_Iterator_Interfaces.Forward_Iterator with
    record
       Container : Set_Access;

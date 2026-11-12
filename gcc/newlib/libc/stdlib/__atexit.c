@@ -39,7 +39,9 @@
 #include "atexit.h"
 
 /* Make this a weak reference to avoid pulling in malloc.  */
+#ifndef MALLOC_PROVIDED
 void * malloc(size_t) _ATTRIBUTE((__weak__));
+#endif
 
 #ifdef _LITE_EXIT
 /* As __call_exitprocs is weak reference in lite exit, make a
@@ -51,12 +53,7 @@ const void * __atexit_dummy = &__call_exitprocs;
 extern _LOCK_RECURSIVE_T __atexit_recursive_mutex;
 #endif
 
-#ifdef _REENT_GLOBAL_ATEXIT
-static struct _atexit _global_atexit0 = _ATEXIT_INIT;
-# define _GLOBAL_ATEXIT0 (&_global_atexit0)
-#else
-# define _GLOBAL_ATEXIT0 (&_GLOBAL_REENT->_atexit0)
-#endif
+struct _atexit __atexit0 = _ATEXIT_INIT;
 
 /*
  * Register a function to be performed at exit or on shared library unload.
@@ -75,10 +72,10 @@ __register_exitproc (int type,
   __lock_acquire_recursive(__atexit_recursive_mutex);
 #endif
 
-  p = _GLOBAL_ATEXIT;
+  p = __atexit;
   if (p == NULL)
     {
-      _GLOBAL_ATEXIT = p = _GLOBAL_ATEXIT0;
+      __atexit = p = &__atexit0;
 #ifdef _REENT_SMALL
       extern struct _on_exit_args * const __on_exit_args _ATTRIBUTE ((weak));
       if (&__on_exit_args != NULL)
@@ -87,22 +84,12 @@ __register_exitproc (int type,
     }
   if (p->_ind >= _ATEXIT_SIZE)
     {
-#ifndef _ATEXIT_DYNAMIC_ALLOC
+#if !defined (_ATEXIT_DYNAMIC_ALLOC) || !defined (MALLOC_PROVIDED)
 #ifndef __SINGLE_THREAD__
       __lock_release_recursive(__atexit_recursive_mutex);
 #endif
       return -1;
 #else
-      /* Don't dynamically allocate the atexit array if malloc is not
-	 available.  */
-      if (!malloc)
-	{
-#ifndef __SINGLE_THREAD__
-	  __lock_release_recursive(__atexit_recursive_mutex);
-#endif
-	  return -1;
-	}
-
       p = (struct _atexit *) malloc (sizeof *p);
       if (p == NULL)
 	{
@@ -112,8 +99,8 @@ __register_exitproc (int type,
 	  return -1;
 	}
       p->_ind = 0;
-      p->_next = _GLOBAL_ATEXIT;
-      _GLOBAL_ATEXIT = p;
+      p->_next = __atexit;
+      __atexit = p;
 #ifndef _REENT_SMALL
       p->_on_exit_args._fntypes = 0;
       p->_on_exit_args._is_cxa = 0;
@@ -141,7 +128,7 @@ __register_exitproc (int type,
 	  if (args == NULL)
 	    {
 #ifndef __SINGLE_THREAD__
-	      __lock_release(__atexit_recursive_mutex);
+	      __lock_release_recursive(__atexit_recursive_mutex);
 #endif
 	      return -1;
 	    }

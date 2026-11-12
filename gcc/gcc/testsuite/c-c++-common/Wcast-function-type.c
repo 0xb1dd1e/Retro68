@@ -1,5 +1,6 @@
 /* { dg-do compile } */
 /* { dg-options "-Wcast-function-type" } */
+/* { dg-additional-options "-std=gnu17" { target c } } */
 
 int f(long);
 
@@ -24,8 +25,8 @@ void
 foo (void)
 {
   a = (f1 *) f; /* { dg-bogus   "incompatible function types" } */
-  b = (f2 *) f; /* { dg-warning "incompatible function types" } */
+  b = (f2 *) f; /* { dg-warning "7:cast between incompatible function types" } */
   c = (f3 *) f; /* { dg-bogus   "incompatible function types" } */
-  d = (f4 *) f; /* { dg-warning "incompatible function types" } */
+  d = (f4 *) f; /* { dg-warning "7:cast between incompatible function types" } */
   e = (f5 *) f; /* { dg-bogus   "incompatible function types" } */
 }

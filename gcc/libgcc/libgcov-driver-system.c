@@ -1,6 +1,6 @@
 /* Routines required for instrumenting a program.  */
 /* Compile this one with gcc.  */
-/* Copyright (C) 1989-2019 Free Software Foundation, Inc.
+/* Copyright (C) 1989-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -115,7 +115,7 @@ create_file_directory (char *filename)
         /* Try to make directory if it doesn't already exist.  */
         if (access (filename, F_OK) == -1
 #ifdef TARGET_POSIX_IO
-            && mkdir (filename, 0755) == -1
+	    && mkdir (filename, 0777) == -1
 #else
 #ifdef mkdir
 #undef mkdir
@@ -186,13 +186,14 @@ replace_filename_variables (char *filename)
 	  /* Concat beginning of the path, replacement and
 	     ending of the path.  */
 	  unsigned end = length - (p - filename);
-	  unsigned repl_length = strlen (replacement);
+	  unsigned repl_length = replacement != NULL ? strlen (replacement) : 0;
 
 	  char *buffer = (char *)xmalloc (start + end + repl_length + 1);
 	  char *buffer_ptr = buffer;
 	  buffer_ptr = (char *)memcpy (buffer_ptr, filename, start);
 	  buffer_ptr += start;
-	  buffer_ptr = (char *)memcpy (buffer_ptr, replacement, repl_length);
+	  if (replacement != NULL)
+	    buffer_ptr = (char *)memcpy (buffer_ptr, replacement, repl_length);
 	  buffer_ptr += repl_length;
 	  buffer_ptr = (char *)memcpy (buffer_ptr, p, end);
 	  buffer_ptr += end;
@@ -231,7 +232,7 @@ allocate_filename_struct (struct gcov_filename *gf)
   /* Get file name relocation prefix.  Non-absolute values are ignored. */
   gcov_prefix = getenv("GCOV_PREFIX");
   prefix_length = gcov_prefix ? strlen (gcov_prefix) : 0;
-  
+
   /* Remove an unnecessary trailing '/' */
   if (prefix_length && IS_DIR_SEPARATOR (gcov_prefix[prefix_length - 1]))
     prefix_length--;
@@ -260,12 +261,11 @@ allocate_filename_struct (struct gcov_filename *gf)
 
 static int
 gcov_exit_open_gcda_file (struct gcov_info *gi_ptr,
-			  struct gcov_filename *gf)
+			  struct gcov_filename *gf,
+			  int mode)
 {
-  const char *fname = gi_ptr->filename;
   int append_slash = 0;
-
-  fname = gi_ptr->filename;
+  const char *fname = gi_ptr->filename;
 
   /* Build relocated filename, stripping off leading
      directories from the initial filename if requested. */
@@ -301,6 +301,11 @@ gcov_exit_open_gcda_file (struct gcov_info *gi_ptr,
 
   size_t prefix_length = gf->prefix ? strlen (gf->prefix) : 0;
   gf->filename = (char *) xmalloc (prefix_length + strlen (fname) + 2);
+  if (!gf->filename)
+    {
+      fprintf (stderr, "profiling:Failed to allocate memory for filename");
+      return -1;
+    }
   *gf->filename = '\0';
   if (prefix_length)
     strcat (gf->filename, gf->prefix);
@@ -310,7 +315,7 @@ gcov_exit_open_gcda_file (struct gcov_info *gi_ptr,
 
   gf->filename = replace_filename_variables (gf->filename);
 
-  if (!gcov_open (gf->filename))
+  if (!gcov_open (gf->filename, mode))
     {
       /* Open failed likely due to missed directory.
          Create directory and retry to open file. */
@@ -319,7 +324,7 @@ gcov_exit_open_gcda_file (struct gcov_info *gi_ptr,
           fprintf (stderr, "profiling:%s:Skip\n", gf->filename);
           return -1;
         }
-      if (!gcov_open (gf->filename))
+      if (!gcov_open (gf->filename, mode))
         {
           fprintf (stderr, "profiling:%s:Cannot open\n", gf->filename);
           return -1;

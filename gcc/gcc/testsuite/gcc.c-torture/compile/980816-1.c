@@ -1,3 +1,5 @@
+/* { dg-skip-if "too many arguments in function call" { bpf-*-* } } */
+
 typedef __SIZE_TYPE__ size_t;
 typedef void *XtPointer;
 
@@ -14,6 +16,8 @@ typedef void (*XtCallbackProc)(
 
 extern const  char XtStrings[];
 
+extern Widget XtVaCreateManagedWidget(const char *, WidgetClass, Widget, ...);
+extern void XtAddCallback(const char *, XtCallbackProc, XtPointer);
 
 typedef struct						 
 {

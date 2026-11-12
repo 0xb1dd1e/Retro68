@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #   Copyright 2014 Wolfgang Thaller.
 #
 #   This file is part of Retro68.
@@ -23,6 +23,7 @@ SRC=$(cd `dirname $0` && pwd -P)
 DEFAULT_PREFIX=`pwd -P`/toolchain/
 PREFIX=$DEFAULT_PREFIX
 BINUTILS=`pwd -P`/binutils-build
+BUILD_JOBS=$(nproc || sysctl -n hw.activecpu)
 
 ##################### Prerequisites check
 
@@ -218,6 +219,21 @@ if [ $SKIP_THIRDPARTY != true ]; then
 			export LDFLAGS="$LDFLAGS -L/opt/local/lib"
 		fi
 	fi
+
+	# Workaround a specific problem with the nix development shell on macOS.
+    # On macOS, nix's bison has a hardcoded path to nix's GNU m4 (which
+	# supports --gnu). However, binutils' configure finds /usr/bin/gm4
+	# (Apple's, slightly older version,which lacks --gnu) and records M4=gm4 in its Makefiles.
+	# At runtime, M4=gm4 overrides bison's hardcoded path, so bison calls
+	# Apple's gm4 with --gnu → failure. Work around by pointing M4 to the
+	# GNU m4 that nix provides in PATH as "m4" (no "g" prefix).
+	if [ `uname` = Darwin ] && [ -z "$M4" ]; then
+		if command -v gm4 >/dev/null 2>&1 && gm4 --help 2>&1 | grep -q -- '--gnu'; then
+			: # gm4 already supports --gnu
+		elif command -v m4 >/dev/null 2>&1; then
+			export M4="$(command -v m4)"
+		fi
+	fi
 		
 	# Components needed for targeting 68K: binutils, gcc
 	if [ $BUILD_68K != false ]; then
@@ -227,20 +243,20 @@ if [ $SKIP_THIRDPARTY != true ]; then
 		# Build binutils for 68K
 		mkdir -p binutils-build
 		cd binutils-build
-		$SRC/binutils/configure --target=m68k-apple-macos --prefix=$PREFIX --disable-doc
-		make -j8
+		$SRC/binutils/configure --target=m68k-apple-macos --prefix=$PREFIX --disable-doc --disable-werror
+		make -j$BUILD_JOBS
 		make install
 		cd ..
 
 		# Build gcc for 68K
 		mkdir -p gcc-build
 		cd gcc-build
-		export target_configargs="--disable-nls --enable-libstdcxx-dual-abi=no --disable-libstdcxx-verbose"
+		export target_configargs="--disable-nls --enable-libstdcxx-dual-abi=yes --disable-libstdcxx-verbose"
 		$SRC/gcc/configure --target=m68k-apple-macos --prefix=$PREFIX \
 				--enable-languages=c,c++ --with-arch=m68k --with-cpu=m68000 \
 				--disable-libssp MAKEINFO=missing
 		# There seems to be a build failure in parallel builds; ignore any errors and try again without -j8.
-		make -j8 || make
+		make -j$BUILD_JOBS || make
 		make install
 		unset target_configargs
 		cd ..
@@ -270,18 +286,18 @@ if [ $SKIP_THIRDPARTY != true ]; then
 		# Build binutils for PPC
 		mkdir -p binutils-build-ppc
 		cd binutils-build-ppc
-		$SRC/binutils/configure --disable-plugins --target=powerpc-apple-macos --prefix=$PREFIX --disable-doc
-		make -j8
+		$SRC/binutils/configure --disable-plugins --target=powerpc-apple-macos --prefix=$PREFIX --disable-doc --disable-werror
+		make -j$BUILD_JOBS
 		make install
 		cd ..
 
 		# Build gcc for PPC
 		mkdir -p gcc-build-ppc
 		cd gcc-build-ppc
-		export target_configargs="--disable-nls --enable-libstdcxx-dual-abi=no --disable-libstdcxx-verbose"
+		export target_configargs="--disable-nls --enable-libstdcxx-dual-abi=yes --disable-libstdcxx-verbose"
 		$SRC/gcc/configure --target=powerpc-apple-macos --prefix=$PREFIX \
 			--enable-languages=c,c++ --disable-libssp --disable-lto MAKEINFO=missing
-		make -j8
+		make -j$BUILD_JOBS
 		make install
 		unset target_configargs
 		cd ..

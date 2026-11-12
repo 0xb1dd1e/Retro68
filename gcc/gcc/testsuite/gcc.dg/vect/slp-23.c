@@ -1,3 +1,5 @@
+/* Disabling epilogues until we find a better way to deal with scans.  */
+/* { dg-additional-options "--param vect-epilogues-nomask=0" } */
 /* { dg-require-effective-target vect_int } */
 
 #include <stdarg.h>
@@ -37,6 +39,7 @@ main1 (s *arr)
     } 
    
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     { 
       if (res[i].c != arr[i].c + arr[i].c
@@ -65,6 +68,7 @@ main1 (s *arr)
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
       if (res[i].c != arr[i].c + arr[i].c

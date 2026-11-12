@@ -21,6 +21,7 @@ main1 ()
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
       if (da[i] != (double) fb[i])
@@ -38,4 +39,4 @@ main (void)
   return main1 ();
 }
 
-/* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect" { xfail spu*-*-* } } } */
+/* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect" } } */

@@ -1,4 +1,4 @@
-// Copyright (C) 2019 Free Software Foundation, Inc.
+// Copyright (C) 2019-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -15,11 +15,11 @@
 // with this library; see the file COPYING3.  If not see
 // <http://www.gnu.org/licenses/>.
 
-// { dg-options "-std=gnu++2a" }
-// { dg-do run { target c++2a } }
+// { dg-do run { target c++20 } }
 
 #include <numeric>
 #include <limits>
+#include <cfloat>
 #include <testsuite_hooks.h>
 
 void
@@ -55,6 +55,19 @@ test03()
   VERIFY( std::midpoint(0.0l, 0.4l) == 0.2l );
   VERIFY( std::midpoint(0.0l, -0.0l) == 0.0l );
   VERIFY( std::midpoint(9e9l, -9e9l) == 0.0l );
+}
+
+namespace test04
+{
+  // https://gcc.gnu.org/ml/libstdc++/2019-03/msg00065.html
+  constexpr double d = DBL_MIN + DBL_TRUE_MIN;
+  static_assert( std::midpoint(d, d) == d );
+
+  constexpr float f = FLT_MIN + FLT_TRUE_MIN;
+  static_assert( std::midpoint(f, f) == f );
+
+  constexpr long double l = LDBL_MIN + LDBL_TRUE_MIN;
+  static_assert( std::midpoint(l, l) == l );
 }
 
 int main()

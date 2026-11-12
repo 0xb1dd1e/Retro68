@@ -1,4 +1,4 @@
-# Copyright (C) 2011-2019 Free Software Foundation, Inc.
+# Copyright (C) 2011-2026 Free Software Foundation, Inc.
 #
 # This file is part of GCC.
 #
@@ -31,6 +31,7 @@ BEGIN {
     FS ="[(, \t]+"
     option[""] = ""
     comment = 1
+    cols_expected = -1
 
     dir_tiny = "tiny-stack"
     opt_tiny = "msp8"
@@ -43,10 +44,40 @@ BEGIN {
     #    m_options     <->    MULTILIB_OPTIONS
     #    m_dirnames    <->    MULTILIB_DIRNAMES
     #    m_required    <->    MULTILIB_REQUIRED
+    #    m_reuse       <->    MULTILIB_REUSE
     m_sep = ""
     m_options    = "\nMULTILIB_OPTIONS = "
     m_dirnames   = "\nMULTILIB_DIRNAMES ="
     m_required   = "\nMULTILIB_REQUIRED ="
+    m_reuse      = "\nMULTILIB_REUSE ="
+
+    have_long_double_is_double = (HAVE_LONG_DOUBLE_IS_DOUBLE \
+				  == "HAVE_LONG_DOUBLE_IS_DOUBLE")
+    have_double32 = (HAVE_DOUBLE32 == "HAVE_DOUBLE32")
+    have_double64 = (HAVE_DOUBLE64 == "HAVE_DOUBLE64")
+    have_long_double32 = (HAVE_LONG_DOUBLE32 == "HAVE_LONG_DOUBLE32")
+    have_long_double64 = (HAVE_LONG_DOUBLE64 == "HAVE_LONG_DOUBLE64")
+
+    have_double_multi = (have_double32 && have_double64)
+    have_long_double_multi = (! have_long_double_is_double \
+			      && have_long_double32 && have_long_double64)
+
+    # How to switch away from the default.
+    dir_double = "double"   (96 - with_double)
+    opt_double = "mdouble=" (96 - with_double)
+
+    dir_long_double = "long-double"   (96 - with_long_double)
+    opt_long_double = "mlong-double=" (96 - with_long_double)
+
+    if (with_multilib_list != "")
+    {
+	split(with_multilib_list, multilib_list, ",")
+
+	for (i in multilib_list)
+	{
+	    multilibs[multilib_list[i]] = 1
+	}
+    }
 }
 
 ##################################################################
@@ -75,6 +106,26 @@ BEGIN {
     # The first empty line stops copy-pasting the GPL comments
     # from this file to the generated file.
 
+    if (comment)
+    {
+	print
+
+	if (have_double_multi)
+	{
+	    print "# dir_double = " dir_double
+	    print "# opt_double = -" opt_double
+	}
+	else
+	    print "# No multilib for double."
+
+	if (have_long_double_multi)
+	{
+	    print "# dir_long_double = " dir_long_double
+	    print "# opt_long_double = -" opt_long_double
+	}
+	else
+	    print "# No multilib for long double."
+    }
     comment = 0
 }
 
@@ -86,15 +137,44 @@ BEGIN {
 ##################################################################
 
 /^AVR_MCU/ {
-    name = $2
-    gsub ("\"", "", name)
+    line = $0
+    gsub (/\(/, ",", line)
+    gsub (/[ \t")]/, "", line)
+    n_cols = split (line, col, ",")
 
-    if ($5 == "NULL")
+    # Now we have col[] something like:
+    # col[1] = AVR_MCU
+    # col[2] = avr2              # Device name
+    # col[3] = ARCH_AVR2         # Core
+    # col[4] = AVR_ERRATA_SKIP   # Device Attributes
+    # col[5] = NULL              # Device Macro like __AVR_ATtiny22__
+    # col[6] = 0x0060            # Tdata
+    # col[7] = 0x0               # Ttext
+    # col[8] = 0x60000           # Flash Size
+    # col[9] = 0                 # PM Offset
+
+    # Sanity check the number of columns.
+    if (cols_expected == -1)
+	cols_expected = n_cols
+    else if (n_cols != cols_expected)
+    {
+	msg = "genmultilib.awk: error: wrong number of columns"
+	print msg | "cat 1>&2"
+	print $0 | "cat 1>&2"
+	exit 1
+    }
+
+    name = col[2]
+
+    if (col[5] == "NULL")
     {
 	core = name
 
 	# avr1 is supported for Assembler only:  It gets no multilib
 	if (core == "avr1")
+	    next
+
+	if (with_multilib_list != "" && !(core in multilibs))
 	    next
 
 	option[core] = "mmcu=" core
@@ -110,12 +190,15 @@ BEGIN {
     if (core == "avr1")
 	next
 
+    if (with_multilib_list != "" && !(core in multilibs))
+	next
+
     opts = option[core]
 
     # split device specific feature list
-    n = split($4,dev_attribute,"|")
+    n = split (col[4], dev_attribute, "|")
 
-    for (i=1; i <= n; i++)
+    for (i = 1; i <= n; i++)
     {
       if (dev_attribute[i] == "AVR_SHORT_SP")
         opts = opts "/" opt_tiny
@@ -130,7 +213,35 @@ BEGIN {
 	# leading "mmcu=avr2/" in order not to confuse genmultilib.
 	gsub (/^mmcu=avr2\//, "", opts)
 	if (opts != "mmcu=avr2")
+	{
 	    m_required = m_required " \\\n\t" opts
+	    if (have_double_multi && have_long_double_multi)
+	    {
+		m_required = m_required " \\\n\t" opts "/" opt_double
+		m_required = m_required " \\\n\t" opts "/" opt_long_double
+
+		# We have only 3 different combinations because -mdouble=64
+		# implies -mlong-double=64, and -mlong-double=32 implies
+		# -mdouble=32, hence add respective reuses.  The reuse is
+		# not needed in the case with_double != with_long_double
+		# which means with_double=32 with_long_double=64 because
+		# the driver will rectify combining -mdouble=64 and
+		# -mlong-double=32.
+		if (with_double == with_long_double)
+		{
+		    d_opts = with_double == 32 ? opt_double : opt_long_double
+		    d_opts  = opts "/" d_opts
+		    d_reuse = opts "/" opt_double "/" opt_long_double
+		    gsub (/=/, ".", d_opts)
+		    gsub (/=/, ".", d_reuse)
+		    m_reuse = m_reuse " \\\n\t" d_opts "=" d_reuse
+		}
+	    }
+	    else if (have_double_multi)
+		m_required = m_required " \\\n\t" opts "/" opt_double
+	    else if (have_long_double_multi)
+		m_required = m_required " \\\n\t" opts "/" opt_long_double
+	}
     }
 }
 
@@ -143,9 +254,45 @@ END {
     # Output that Stuff
     ############################################################
 
-    # Intended Target: ./gcc/config/avr/t-multilib
+    # Intended Target: $(top_builddir)/gcc/t-multilib-avr
 
-    print m_options  " " opt_tiny " " opt_rcall
-    print m_dirnames " " dir_tiny " " dir_rcall
+    if (have_double_multi && have_long_double_multi)
+    {
+	print m_options  " " opt_tiny " " opt_rcall " " opt_double "/" opt_long_double
+	print m_dirnames " " dir_tiny " " dir_rcall " " dir_double " " dir_long_double
+	# Notice that the ./double* and ./long-double* variants cannot
+	# be copied by t-avrlibc because the . default multilib is built
+	# after all the others.
+	m_required = m_required " \\\n\t" opt_double
+	m_required = m_required " \\\n\t" opt_long_double
+	if (with_double == with_long_double)
+	{
+	    d_opts  = with_double == 32 ? opt_double : opt_long_double
+	    d_reuse = opt_double "/" opt_long_double
+	    gsub (/=/, ".", d_opts)
+	    gsub (/=/, ".", d_reuse)
+	    m_reuse = m_reuse " \\\n\t" d_opts "=" d_reuse
+
+	}
+    }
+    else if (have_double_multi)
+    {
+	print m_options  " " opt_tiny " " opt_rcall " " opt_double
+	print m_dirnames " " dir_tiny " " dir_rcall " " dir_double
+	m_required = m_required " \\\n\t" opt_double
+    }
+    else if (have_long_double_multi)
+    {
+	print m_options  " " opt_tiny " " opt_rcall " " opt_long_double
+	print m_dirnames " " dir_tiny " " dir_rcall " " dir_long_double
+	m_required = m_required " \\\n\t" opt_long_double
+    }
+    else
+    {
+	print m_options  " " opt_tiny " " opt_rcall
+	print m_dirnames " " dir_tiny " " dir_rcall
+    }
+
     print m_required
+    print m_reuse
 }

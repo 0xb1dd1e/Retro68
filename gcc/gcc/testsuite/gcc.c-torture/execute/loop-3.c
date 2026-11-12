@@ -1,3 +1,5 @@
+/* { dg-additional-options "-std=gnu89" } */
+
 #include <limits.h>
 
 int n = 0;
@@ -13,7 +15,7 @@ f (m)
   i = m;
   do
     {
-      g (i * INT_MAX / 2);
+      g ((int)((unsigned)i * INT_MAX) / 2);
     }
   while (--i > 0);
 }

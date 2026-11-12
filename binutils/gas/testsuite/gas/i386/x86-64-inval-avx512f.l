@@ -38,6 +38,11 @@
 .*:52: Error: .*
 .*:55: Error: .*
 .*:56: Error: .*
+.*:58: Error: .*
+.*:61: Error: .*unsupported broadcast for `vdpbf16ps'
+.*:62: Error: .*unsupported broadcast for `vcvtne2ps2bf16'
+.*:64: Error: .* `vcvtusi2sd'
+.*:65: Error: .* `vcvtusi2sd'
 GAS LISTING .*
 
 
@@ -97,3 +102,14 @@ GAS LISTING .*
 [ 	]*54[ 	]+\.intel_syntax noprefix
 [ 	]*55[ 	]+vaddps zmm2\{rcx\}, zmm1, zmm0
 [ 	]*56[ 	]+vaddps zmm2\{z\}, zmm1, zmm0
+[ 	]*57[ 	]*
+GAS LISTING .*
+[ 	]*58[ 	]+vcvtps2qq xmm0, DWORD PTR \[rax\]
+[ 	]*59[ 	]*
+[ 	]*60[ 	]+\.att_syntax prefix
+[ 	]*61[ 	]+vdpbf16ps 8\(%rax\)\{1to8\}, %zmm2, %zmm2
+[ 	]*62[ 	]+vcvtne2ps2bf16 8\(%rax\)\{1to8\}, %zmm2, %zmm2
+[ 	]*63[ 	]*
+[ 	]*64[ 	]+vcvtusi2sdq %eax, %xmm0, %xmm0
+[ 	]*65[ 	]+vcvtusi2sdl %rax, \{rn-sae\}, %xmm0, %xmm0
+#pass

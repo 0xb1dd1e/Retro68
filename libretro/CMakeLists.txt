@@ -30,7 +30,6 @@ if(CMAKE_SYSTEM_NAME MATCHES Retro68)
         PoorMansDebugging.h
         MultiSegApp.c
         LoadSeg.s
-        # glue.c
         qdglobals.c
         Retro68.r
         Retro68APPL.r
@@ -45,8 +44,9 @@ elseif(CMAKE_SYSTEM_NAME MATCHES RetroPPC)
         ppcstart.c
         ppcfpsave.s
         qdglobals.c
-        RetroPPCAPPL.r)
-    install(FILES RetroPPCAPPL.r DESTINATION RIncludes)
+        RetroPPCAPPL.r
+        RetroPPCndrv.r)
+    install(FILES RetroPPCAPPL.r RetroPPCndrv.r DESTINATION RIncludes)
 elseif(CMAKE_SYSTEM_NAME MATCHES RetroCarbon)
     enable_language(ASM)
     set(ARCH_FILES
@@ -60,6 +60,7 @@ add_library(retrocrt
     malloc.c
     syscalls.c
     consolehooks.c
+    atomic.c
     ${ARCH_FILES}
 )
 set_target_properties(retrocrt

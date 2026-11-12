@@ -6,7 +6,7 @@
 --                                                                          --
 --                                B o d y                                   --
 --                                                                          --
---          Copyright (C) 2002-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 2002-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -53,6 +53,7 @@ begin
 
    Local_ATCB.Common.LL.Thread := Thread;
    Local_ATCB.Common.Current_Priority := System.Priority'First;
+   Local_ATCB.Common.Global_Task_Lock_Nesting := 0;
    Specific.Set (Local_ATCB'Unchecked_Access);
 
    --  It is now safe to use an allocator
@@ -65,8 +66,8 @@ begin
    System.Tasking.Initialize_ATCB
      (Self_Id, null, Null_Address, Null_Task,
       Foreign_Task_Elaborated'Access,
-      System.Priority'First, System.Multiprocessors.Not_A_Specific_CPU, null,
-      Task_Info.Unspecified_Task_Info, 0, Self_Id, Succeeded);
+      System.Priority'First, System.Multiprocessors.Not_A_Specific_CPU, False,
+      null, Task_Info.Unspecified_Task_Info, 0, Self_Id, Succeeded);
    Unlock_RTS;
    pragma Assert (Succeeded);
 
@@ -97,6 +98,7 @@ begin
    System.Soft_Links.Create_TSD
      (Self_Id.Common.Compiler_Data, null, Sec_Stack_Size);
 
+   Self_Id.Common.LL.Thread := Thread;
    Enter_Task (Self_Id);
 
    return Self_Id;

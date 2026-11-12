@@ -29,6 +29,7 @@ typedef unsigned long long ull;
   }
 
 #define DO_TEST(TYPE)						\
+  _Pragma("GCC novector")					\
   for (int i = 0; i < DIST * 2; ++i)				\
     {								\
       for (int j = 0; j < N + DIST * 2; ++j)			\
@@ -58,3 +59,7 @@ main (void)
   FOR_EACH_TYPE (DO_TEST)
   return 0;
 }
+
+/* { dg-final { scan-tree-dump {flags: *WAR\n} "vect" { target vect_int } } } */
+/* { dg-final { scan-tree-dump "using an index-based WAR/WAW test" "vect" } } */
+/* { dg-final { scan-tree-dump-not "using an address-based" "vect" } } */

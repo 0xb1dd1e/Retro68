@@ -92,19 +92,25 @@ target_triplet = @target@
 @SANITIZER_SUPPORTED_TRUE@am__append_1 = include/sanitizer/common_interface_defs.h \
 @SANITIZER_SUPPORTED_TRUE@	include/sanitizer/lsan_interface.h \
 @SANITIZER_SUPPORTED_TRUE@	include/sanitizer/asan_interface.h \
-@SANITIZER_SUPPORTED_TRUE@	include/sanitizer/tsan_interface.h
+@SANITIZER_SUPPORTED_TRUE@	include/sanitizer/tsan_interface.h \
+@SANITIZER_SUPPORTED_TRUE@	include/sanitizer/hwasan_interface.h
 @SANITIZER_SUPPORTED_TRUE@@USING_MAC_INTERPOSE_FALSE@am__append_2 = interception
 @LIBBACKTRACE_SUPPORTED_TRUE@@SANITIZER_SUPPORTED_TRUE@am__append_3 = libbacktrace
 @SANITIZER_SUPPORTED_TRUE@@TSAN_SUPPORTED_TRUE@am__append_4 = tsan
+@HWASAN_SUPPORTED_TRUE@@SANITIZER_SUPPORTED_TRUE@am__append_5 = hwasan
 subdir = .
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/../config/acx.m4 \
+	$(top_srcdir)/../config/clang-plugin.m4 \
 	$(top_srcdir)/../config/depstand.m4 \
+	$(top_srcdir)/../config/gcc-plugin.m4 \
 	$(top_srcdir)/../config/lead-dot.m4 \
 	$(top_srcdir)/../config/libstdc++-raw-cxx.m4 \
 	$(top_srcdir)/../config/multi.m4 \
 	$(top_srcdir)/../config/override.m4 \
 	$(top_srcdir)/../config/stdint.m4 \
+	$(top_srcdir)/../config/toolexeclibdir.m4 \
+	$(top_srcdir)/../config/warnings.m4 \
 	$(top_srcdir)/../ltoptions.m4 $(top_srcdir)/../ltsugar.m4 \
 	$(top_srcdir)/../ltversion.m4 $(top_srcdir)/../lt~obsolete.m4 \
 	$(top_srcdir)/acinclude.m4 $(top_srcdir)/../libtool.m4 \
@@ -205,13 +211,12 @@ am__define_uniq_tagged_files = \
 ETAGS = etags
 CTAGS = ctags
 CSCOPE = cscope
-DIST_SUBDIRS = sanitizer_common interception libbacktrace lsan asan \
-	ubsan tsan
 ACLOCAL = @ACLOCAL@
 ALLOC_FILE = @ALLOC_FILE@
 AMTAR = @AMTAR@
 AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
 AR = @AR@
+AS_SYM_ASSIGN_DEFS = @AS_SYM_ASSIGN_DEFS@
 AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
@@ -260,6 +265,7 @@ LIBSTDCXX_RAW_CXX_CXXFLAGS = @LIBSTDCXX_RAW_CXX_CXXFLAGS@
 LIBSTDCXX_RAW_CXX_LDFLAGS = @LIBSTDCXX_RAW_CXX_LDFLAGS@
 LIBTOOL = @LIBTOOL@
 LIPO = @LIPO@
+LLVM_CONFIG = @LLVM_CONFIG@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
 MAINT = @MAINT@
@@ -289,6 +295,7 @@ STRIP = @STRIP@
 TSAN_TARGET_DEPENDENT_OBJECTS = @TSAN_TARGET_DEPENDENT_OBJECTS@
 VERSION = @VERSION@
 VIEW_FILE = @VIEW_FILE@
+WARN_FLAGS = @WARN_FLAGS@
 abs_builddir = @abs_builddir@
 abs_srcdir = @abs_srcdir@
 abs_top_builddir = @abs_top_builddir@
@@ -328,6 +335,7 @@ install_sh = @install_sh@
 libdir = @libdir@
 libexecdir = @libexecdir@
 link_libasan = @link_libasan@
+link_libhwasan = @link_libhwasan@
 link_liblsan = @link_liblsan@
 link_libtsan = @link_libtsan@
 link_libubsan = @link_libubsan@
@@ -361,7 +369,8 @@ sanincludedir = $(libdir)/gcc/$(target_alias)/$(gcc_version)/include/sanitizer
 nodist_saninclude_HEADERS = $(am__append_1)
 @SANITIZER_SUPPORTED_TRUE@SUBDIRS = sanitizer_common $(am__append_2) \
 @SANITIZER_SUPPORTED_TRUE@	$(am__append_3) lsan asan ubsan \
-@SANITIZER_SUPPORTED_TRUE@	$(am__append_4)
+@SANITIZER_SUPPORTED_TRUE@	$(am__append_4) $(am__append_5)
+DIST_SUBDIRS = $(SUBDIRS)
 gcc_version := $(shell @get_gcc_base_ver@ $(top_srcdir)/../gcc/BASE-VER)
 
 # Work around what appears to be a GNU make bug handling MAKEFLAGS

@@ -3,48 +3,84 @@
 /* { dg-options "-O2" }  */
 /* { dg-add-options arm_v8_2a_fp16_scalar }  */
 /* { dg-additional-options "-mfloat-abi=hard" } */
+/* { dg-final { check-function-bodies "**" "" } } */
 
+/*
+**test_load_1:
+**	...
+**	vldr.16	s[0-9]+, \[r[0-9]+\]
+**	...
+*/
 __fp16
 test_load_1 (__fp16* a)
 {
   return *a;
 }
 
+/*
+**test_load_2:
+**	...
+**	vldr.16	s[0-9]+, \[r[0-9]+\]
+**	...
+*/
 __fp16
 test_load_2 (__fp16* a, int i)
 {
   return a[i];
 }
 
-
+/*
+**test_store_1:
+**	...
+**	vstr.16	s[0-9]+, \[r[0-9]+\]
+**	...
+*/
 void
 test_store_1 (__fp16* a, __fp16 b)
 {
   *a = b;
 }
 
+/*
+**test_store_2:
+**	...
+**	vstr.16	s[0-9]+, \[r[0-9]+\]
+**	...
+*/
 void
 test_store_2 (__fp16* a, int i, __fp16 b)
 {
   a[i] = b;
 }
 
-
+/*
+**test_load_store_1:
+**	...
+**	vldr.16	s[0-9]+, \[r[0-9]+\]
+**	...
+**	vstr.16	s[0-9]+, \[r[0-9]+\]
+**	...
+*/
 __fp16
 test_load_store_1 (__fp16* a, int i, __fp16* b)
 {
   a[i] = b[i];
 }
 
+/*
+**test_load_store_2:
+**	...
+**	vldr.16	s[0-9]+, \[r[0-9]+\, #4]
+**	...
+**	vstr.16	s[0-9]+, \[r[0-9]+\]
+**	...
+*/
 __fp16
 test_load_store_2 (__fp16* a, int i, __fp16* b)
 {
   a[i] = b[i + 2];
   return a[i];
 }
-
-/* { dg-final { scan-assembler-times {vst1\.16\t\{d[0-9]+\[[0-9]+\]\}, \[r[0-9]+\]} 3 } }  */
-/* { dg-final { scan-assembler-times {vld1\.16\t\{d[0-9]+\[[0-9]+\]\}, \[r[0-9]+\]} 3 } }  */
 
 __fp16
 test_select_1 (int sel, __fp16 a, __fp16 b)
@@ -98,8 +134,8 @@ test_select_8 (__fp16 a, __fp16 b, __fp16 c)
 }
 
 /* { dg-final { scan-assembler-times {vseleq\.f16\ts[0-9]+, s[0-9]+, s[0-9]+} 4 } } */
-/* { dg-final { scan-assembler-times {vselgt\.f16\ts[0-9]+, s[0-9]+, s[0-9]+} 1 } }  */
-/* { dg-final { scan-assembler-times {vselge\.f16\ts[0-9]+, s[0-9]+, s[0-9]+} 1 } }  */
+/* { dg-final { scan-assembler-times {vselgt\.f16\ts[0-9]+, s[0-9]+, s[0-9]+} 2 } }  */
+/* { dg-final { scan-assembler-times {vselge\.f16\ts[0-9]+, s[0-9]+, s[0-9]+} 2 } }  */
 
 /* { dg-final { scan-assembler-not {vmov\.f16} } }  */
 
@@ -160,5 +196,4 @@ test_compare_5 (__fp16 a, __fp16 b)
 /* { dg-final { scan-assembler-not {vcmp\.f16} } }  */
 /* { dg-final { scan-assembler-not {vcmpe\.f16} } }  */
 
-/* { dg-final { scan-assembler-times {vcmp\.f32} 4 } }  */
-/* { dg-final { scan-assembler-times {vcmpe\.f32} 8 } }  */
+/* { dg-final { scan-assembler-times {vcmpe?\.f32} 12 } }  */

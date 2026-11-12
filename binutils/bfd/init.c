@@ -1,5 +1,5 @@
 /* bfd initialization stuff
-   Copyright (C) 1990-2018 Free Software Foundation, Inc.
+   Copyright (C) 1990-2026 Free Software Foundation, Inc.
    Written by Steve Chamberlain of Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -33,22 +33,3 @@ SUBSECTION
 	These are the functions that handle initializing a BFD.
 */
 
-/*
-FUNCTION
-	bfd_init
-
-SYNOPSIS
-	void bfd_init (void);
-
-DESCRIPTION
-	This routine must be called before any other BFD function to
-	initialize magical internal data structures.
-*/
-
-/* Actually, there is currently nothing for this function to do.
-   However, someday it may be needed, so keep it around.  */
-
-void
-bfd_init (void)
-{
-}

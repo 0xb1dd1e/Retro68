@@ -199,7 +199,7 @@ Disassembly of section \.text:
   7e:	0041      	ldq	r4-r7, \(r1\)
 
 0+080 <loopt>:
-  80:	048e      	loopt	r8, 0x64
+  80:	048e      	loopt	r8, 0x7e
 
 0+082 <LRW>:
   82:	7901      	lrw	r9, 0x3C0C1BBA
@@ -394,5 +394,7 @@ Disassembly of section \.text:
 
 0+0106 <zexth>:
  106:	0164      	zexth	r4
- 108:	0f00      	cmpne	r0, r0
+
+0+0108 <Bmaski>:
+ 108:	2c04      	bmaski	r4, 32
  10a:	0f00      	cmpne	r0, r0

@@ -2,8 +2,8 @@
    inputs produce the right code.  */
 
 /* { dg-do compile } */
-/* { dg-require-effective-target powerpc_altivec_ok } */
 /* { dg-options "-maltivec -O2" } */
+/* { dg-require-effective-target powerpc_altivec } */
 
 #include <altivec.h>
 
@@ -91,4 +91,4 @@ testst_cst7 (vector bool char vbc1, int i1, signed char * vscp)
 	return vec_st(vbc1, 36, vscp);
 }
 
-/* { dg-final { scan-assembler-times {\mstvx\M} 14 } } */
+/* { dg-final { scan-assembler-times {\m(?:stvx|stxv|stxvx)\M} 14 } } */

@@ -1,6 +1,6 @@
 // The template and inlines for the -*- C++ -*- slice_array class.
 
-// Copyright (C) 1997-2019 Free Software Foundation, Inc.
+// Copyright (C) 1997-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -32,7 +32,9 @@
 #ifndef _SLICE_ARRAY_H
 #define _SLICE_ARRAY_H 1
 
+#ifdef _GLIBCXX_SYSHDR
 #pragma GCC system_header
+#endif
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
@@ -78,6 +80,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     ///  Return array stride of slice.
     size_t stride() const;
 
+#if __cpp_impl_three_way_comparison >= 201907L
+    /// Equality comparison
+    friend bool operator==(const slice&, const slice&) = default;
+#endif
+
   private:
     size_t _M_off;                      // offset
     size_t _M_sz;			// size
@@ -87,7 +94,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   // _GLIBCXX_RESOLVE_LIB_DEFECTS
   // 543. valarray slice default constructor
   inline
-  slice::slice() 
+  slice::slice()
   : _M_off(0), _M_sz(0), _M_st(0) {}
 
   inline
@@ -240,6 +247,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     slice_array<_Tp>::operator=(const _Expr<_Dom,_Tp>& __e) const
     { std::__valarray_copy(__e, _M_sz, _M_array, _M_stride); }
 
+  /// @cond undocumented
 #undef _DEFINE_VALARRAY_OPERATOR
 #define _DEFINE_VALARRAY_OPERATOR(_Op,_Name)				\
   template<typename _Tp>						\
@@ -270,8 +278,9 @@ _DEFINE_VALARRAY_OPERATOR(<<, __shift_left)
 _DEFINE_VALARRAY_OPERATOR(>>, __shift_right)
 
 #undef _DEFINE_VALARRAY_OPERATOR
+  /// @endcond
 
-  // @} group numeric_arrays
+  /// @} group numeric_arrays
 
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace

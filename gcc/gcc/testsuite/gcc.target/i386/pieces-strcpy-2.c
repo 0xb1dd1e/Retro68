@@ -1,5 +1,5 @@
 /* { dg-do compile { target { ! ia32 } } } */
-/* { dg-options "-O2 -mno-avx2 -mavx -mtune=sandybridge" } */
+/* { dg-options "-O2 -mno-avx2 -mavx -mprefer-vector-width=128 -mtune=sandybridge" } */
 
 extern char *strcpy (char *, const char *);
 
@@ -12,4 +12,4 @@ foo (char *s)
 }
 
 /* { dg-final { scan-assembler-times "vmovdqa\[ \\t\]+\[^\n\]*%xmm" 4 } } */
-/* { dg-final { scan-assembler-times "vmovups\[ \\t\]+\[^\n\]*%xmm" 4 } } */
+/* { dg-final { scan-assembler-times "vmovdqu\[ \\t\]+\[^\n\]*%xmm" 4 } } */

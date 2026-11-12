@@ -1,4 +1,5 @@
 /* { dg-require-effective-target vect_int } */
+/* { dg-additional-options "--param vect-max-version-for-alias-checks=0" } */
 
 #include <stdlib.h>
 #include <stdarg.h>
@@ -28,12 +29,14 @@ int main1 (int x, int y) {
     }
 
   /* Not vectorizable: distance 1.  */
+#pragma GCC unroll 0
   for (i = 0; i < N - 1; i++)
     {
        *((int *)p + x + i + 1) = *((int *)p + x + i);
     }
 
   /* check results: */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
        if (p->a[i] != 1) 

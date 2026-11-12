@@ -1,7 +1,8 @@
 // -*- C++ -*-
-// { dg-options "-std=gnu++17 -ltbb" }
+// { dg-options "-ltbb" }
 // { dg-do run { target c++17 } }
-// { dg-require-effective-target tbb-backend }
+// { dg-timeout-factor 3 }
+// { dg-require-effective-target tbb_backend }
 
 //===-- reverse.pass.cpp --------------------------------------------------===//
 //
@@ -29,17 +30,17 @@ using namespace TestUtils;
 
 struct test_one_policy
 {
-#if __PSTL_ICC_18_VC141_TEST_SIMD_LAMBDA_RELEASE_BROKEN || __PSTL_ICC_17_VC141_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN ||     \
-    __PSTL_ICC_16_VC14_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN // dummy specialization by policy type, in case of broken configuration
+#if defined(_PSTL_ICC_18_VC141_TEST_SIMD_LAMBDA_RELEASE_BROKEN) || defined(_PSTL_ICC_17_VC141_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN) ||       \
+    defined(_PSTL_ICC_16_VC14_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN) // dummy specialization by policy type, in case of broken configuration
     template <typename Iterator1, typename Iterator2>
     typename std::enable_if<is_same_iterator_category<Iterator1, std::random_access_iterator_tag>::value, void>::type
-    operator()(pstl::execution::unsequenced_policy, Iterator1 data_b, Iterator1 data_e, Iterator2 actual_b,
+    operator()(__pstl::execution::unsequenced_policy, Iterator1 data_b, Iterator1 data_e, Iterator2 actual_b,
                Iterator2 actual_e)
     {
     }
     template <typename Iterator1, typename Iterator2>
     typename std::enable_if<is_same_iterator_category<Iterator1, std::random_access_iterator_tag>::value, void>::type
-    operator()(pstl::execution::parallel_unsequenced_policy, Iterator1 data_b, Iterator1 data_e, Iterator2 actual_b,
+    operator()(__pstl::execution::parallel_unsequenced_policy, Iterator1 data_b, Iterator1 data_e, Iterator2 actual_b,
                Iterator2 actual_e)
     {
     }
@@ -62,7 +63,7 @@ struct test_one_policy
 
     template <typename ExecutionPolicy, typename Iterator1, typename Iterator2>
     typename std::enable_if<is_same_iterator_category<Iterator1, std::forward_iterator_tag>::value>::type
-    operator()(ExecutionPolicy&& exec, Iterator1 data_b, Iterator1 data_e, Iterator2 actual_b, Iterator2 actual_e)
+    operator()(ExecutionPolicy&&, Iterator1, Iterator1, Iterator2, Iterator2)
     {
     }
 };
@@ -97,13 +98,13 @@ struct wrapper
     }
 };
 
-int32_t
+int
 main()
 {
     test<int32_t>();
     test<uint16_t>();
     test<float64_t>();
-#if !__PSTL_ICC_17_TEST_MAC_RELEASE_32_BROKEN
+#if !defined(_PSTL_ICC_17_TEST_MAC_RELEASE_32_BROKEN)
     test<wrapper<float64_t>>();
 #endif
 

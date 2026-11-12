@@ -1,4 +1,4 @@
-// Copyright (C) 2010-2019 Free Software Foundation, Inc.
+// Copyright (C) 2010-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -49,7 +49,9 @@ void test02()
 }
 
 // Ignore the reasons for deduction/substitution failure in the headers.
-// { dg-prune-output "/include/(functional|bits/invoke.h):" }
+// Arrange for the match to work on installed trees as well as build trees.
+// { dg-prune-output "no type named 'type' in 'struct std::__invoke_result" }
+// { dg-prune-output "no type named 'type' in 'struct std::enable_if<false" }
 
 int main()
 {

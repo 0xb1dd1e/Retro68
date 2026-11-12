@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O2 -fdump-tree-vrp1" } */
+/* { dg-options "-Wno-old-style-definition -O2 -fdump-tree-vrp1" } */
   
 extern void abort (void);
 
@@ -34,4 +34,4 @@ simplify_condition (cond_p)
 }
 
 /* There should be exactly one IF conditional.  */
-/* { dg-final { scan-tree-dump-times "if " 1 "vrp1" } } */
+/* { dg-final { scan-tree-dump-times "if " 1 "vrp1" { xfail *-*-* } } } */

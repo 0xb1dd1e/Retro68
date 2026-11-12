@@ -56,7 +56,7 @@ enum ReferenceFlags {    // flags field of kReference
 
     kUnknownReferenceFlags = 0x6E    // rather a lot, isn't it?
         // The following flags are known to exist from DumpOBJ,
-        // but their value is unkown as I haven't actually seen them yet:
+        // but their value is unknown as I haven't actually seen them yet:
         // k32BitOffsets (default k16BitOffsets)
 };
 
@@ -301,14 +301,14 @@ int main(int argc, char* argv[])
 {
     if(argc != 2)
     {
-        std::cerr << "Usage: ConvertOBJ mpw.o > retro68.s\n";
+        std::cerr << "Usage: ConvertObj mpw.o > retro68.s\n";
         return 1;
     }
     std::ifstream in(argv[1]);
     if(!in)
     {
-        std::cerr << "Could not read imput file \"" << argv[1] << "\"\n";
-        std::cerr << "Usage: ConvertOBJ mpw.o > retro68.s\n";
+        std::cerr << "Could not read input file \"" << argv[1] << "\"\n";
+        std::cerr << "Usage: ConvertObj mpw.o > retro68.s\n";
         return 1;
     }
     

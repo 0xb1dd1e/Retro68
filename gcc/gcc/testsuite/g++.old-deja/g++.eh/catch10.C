@@ -1,4 +1,5 @@
 // { dg-do assemble  }
+// Explicit { dg-require-effective-target exceptions_enabled } to avoid verify compiler messages FAILs for '-fno-exceptions'.
 // Test that we notice unfortunate handler ordering.
 
 struct A { };
@@ -13,8 +14,8 @@ void g()
   catch (A*) { }
 
   try { f(); }
-  catch (A*) { }		// { dg-warning "" } A* before B*
-  catch (B*) { }		// { dg-warning "" } A* before B*
+  catch (A*) { }		// { dg-message "for type" } A* before B*
+  catch (B*) { }		// { dg-warning "will be caught" } A* before B*
 
   try { f(); }
   catch (A*) { }

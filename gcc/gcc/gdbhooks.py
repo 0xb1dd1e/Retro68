@@ -1,5 +1,5 @@
 # Python hooks for gdb for debugging GCC
-# Copyright (C) 2013-2019 Free Software Foundation, Inc.
+# Copyright (C) 2013-2026 Free Software Foundation, Inc.
 
 # Contributed by David Malcolm <dmalcolm@redhat.com>
 
@@ -133,10 +133,10 @@ vector: attempting to do so instead gives you the vec itself (for vec[0]),
 or a (probably) invalid cast to vec<> for the memory after the vec (for
 vec[1] onwards).
 
-Instead (for now) you must access m_vecdata:
-  (gdb) p bb->preds->m_vecdata[0]
+Instead (for now) you must access the payload directly:
+  (gdb) p ((edge_def**)(bb->preds+1))[0]
   $20 = <edge 0x7ffff044d380 (3 -> 5)>
-  (gdb) p bb->preds->m_vecdata[1]
+  (gdb) p ((edge_def**)(bb->preds+1))[1]
   $21 = <edge 0x7ffff044d3b8 (4 -> 5)>
 """
 import os.path
@@ -154,6 +154,7 @@ tree_code_dict = gdb.types.make_enum_dict(gdb.lookup_type('enum tree_code'))
 # ...and look up specific values for use later:
 IDENTIFIER_NODE = tree_code_dict['IDENTIFIER_NODE']
 TYPE_DECL = tree_code_dict['TYPE_DECL']
+SSA_NAME = tree_code_dict['SSA_NAME']
 
 # Similarly for "enum tree_code_class" (tree.h):
 tree_code_class_dict = gdb.types.make_enum_dict(gdb.lookup_type('enum tree_code_class'))
@@ -219,17 +220,33 @@ class TreePrinter:
 
         val_TREE_CODE = self.node.TREE_CODE()
 
-        # extern const enum tree_code_class tree_code_type[];
+        # constexpr inline enum tree_code_class tree_code_type[] = { ... };
         # #define TREE_CODE_CLASS(CODE)	tree_code_type[(int) (CODE)]
+        # or
+        # template <int N>
+        # struct tree_code_type_tmpl {
+        # static constexpr enum tree_code_class tree_code_type[] = { ... };
+        # }; };
+        # #define TREE_CODE_CLASS(CODE) \
+        # tree_code_type_tmpl <0>::tree_code_type[(int) (CODE)]
 
-        val_tree_code_type = gdb.parse_and_eval('tree_code_type')
+        if val_TREE_CODE == 0xa5a5:
+            return '<ggc_freed 0x%x>' % intptr(self.gdbval)
+
+        try:
+            val_tree_code_type = gdb.parse_and_eval('tree_code_type')
+        except:
+            val_tree_code_type = gdb.parse_and_eval('tree_code_type_tmpl<0>::tree_code_type')
         val_tclass = val_tree_code_type[val_TREE_CODE]
 
         val_tree_code_name = gdb.parse_and_eval('tree_code_name')
         val_code_name = val_tree_code_name[intptr(val_TREE_CODE)]
         #print(val_code_name.string())
 
-        result = '<%s 0x%x' % (val_code_name.string(), intptr(self.gdbval))
+        try:
+            result = '<%s 0x%x' % (val_code_name.string(), intptr(self.gdbval))
+        except:
+            return '<tree 0x%x>' % intptr(self.gdbval)
         if intptr(val_tclass) == tcc_declaration:
             tree_DECL_NAME = self.node.DECL_NAME()
             if tree_DECL_NAME.is_nonnull():
@@ -246,6 +263,8 @@ class TreePrinter:
                         result += ' %s' % tree_TYPE_NAME.DECL_NAME().IDENTIFIER_POINTER()
         if self.node.TREE_CODE() == IDENTIFIER_NODE:
             result += ' %s' % self.node.IDENTIFIER_POINTER()
+        elif self.node.TREE_CODE() == SSA_NAME:
+            result += ' %u' % self.gdbval['base']['u']['version']
         # etc
         result += '>'
         return result
@@ -370,6 +389,32 @@ class CfgEdgePrinter:
         return result
 
 ######################################################################
+# Pretty-printers for -fanalyzer (namespace ana)
+######################################################################
+
+class AnaSupernodePrinter:
+    def __init__(self, gdbval):
+        self.gdbval = gdbval
+
+    def to_string (self):
+        result = '<ana::supernode 0x%x' % intptr(self.gdbval)
+        if intptr(self.gdbval):
+            result += ' (SN %i)' % intptr(self.gdbval['m_id'])
+        result += '>'
+        return result
+
+class AnaExplodedNodePrinter:
+    def __init__(self, gdbval):
+        self.gdbval = gdbval
+
+    def to_string (self):
+        result = '<ana::exploded_node 0x%x' % intptr(self.gdbval)
+        if intptr(self.gdbval):
+            result += ' (EN %i)' % intptr(self.gdbval['m_index'])
+        result += '>'
+        return result
+
+######################################################################
 
 class Rtx:
     def __init__(self, gdbval):
@@ -434,6 +479,30 @@ class PassPrinter:
 
 ######################################################################
 
+VEC_KIND_EMBED = 0
+VEC_KIND_PTR = 1
+
+"""
+Given a vec or pointer to vec, return its layout (embedded or space
+efficient).
+"""
+def get_vec_kind(val):
+    typ = val.type
+    if typ.code == gdb.TYPE_CODE_PTR:
+        typ = typ.target()
+    kind = typ.template_argument(2).name
+    if kind == "vl_embed":
+        return VEC_KIND_EMBED
+    elif kind == "vl_ptr":
+        return VEC_KIND_PTR
+    else:
+        assert False, f"unexpected vec kind {kind}"
+
+def strip_ref(gdbval):
+    if gdbval.type.code == gdb.TYPE_CODE_REF:
+        return gdbval.referenced_value ()
+    return gdbval
+
 class VecPrinter:
     #    -ex "up" -ex "p bb->preds"
     def __init__(self, gdbval):
@@ -445,16 +514,28 @@ class VecPrinter:
     def to_string (self):
         # A trivial implementation; prettyprinting the contents is done
         # by gdb calling the "children" method below.
-        return '0x%x' % intptr(self.gdbval)
+        return '0x%x' % intptr(strip_ref(self.gdbval))
 
     def children (self):
-        if intptr(self.gdbval) == 0:
+        val = strip_ref(self.gdbval)
+        if intptr(val) != 0 and get_vec_kind(val) == VEC_KIND_PTR:
+            val = val['m_vec']
+
+        if intptr(val) == 0:
             return
-        m_vecpfx = self.gdbval['m_vecpfx']
+
+        assert get_vec_kind(val) == VEC_KIND_EMBED
+        m_vecpfx = val['m_vecpfx']
         m_num = m_vecpfx['m_num']
-        m_vecdata = self.gdbval['m_vecdata']
+        typ = val.type
+        if typ.code == gdb.TYPE_CODE_PTR:
+            typ = typ.target()
+        else:
+            val = val.address
+        typ_T = typ.template_argument(0) # the type T
+        vecdata = (val + 1).cast(typ_T.pointer())
         for i in range(m_num):
-            yield ('[%d]' % i, m_vecdata[i])
+            yield ('[%d]' % i, vecdata[i])
 
 ######################################################################
 
@@ -518,11 +599,11 @@ class GdbPrettyPrinters(gdb.printing.PrettyPrinter):
     def __init__(self, name):
         super(GdbPrettyPrinters, self).__init__(name, [])
 
-    def add_printer_for_types(self, name, class_, types):
-        self.subprinters.append(GdbSubprinterTypeList(name, class_, types))
+    def add_printer_for_types(self, types, name, class_):
+        self.subprinters.append(GdbSubprinterTypeList(types, name, class_))
 
-    def add_printer_for_regex(self, name, class_, regex):
-        self.subprinters.append(GdbSubprinterRegex(name, class_, regex))
+    def add_printer_for_regex(self, regex, name, class_):
+        self.subprinters.append(GdbSubprinterRegex(regex, name, class_))
 
     def __call__(self, gdbval):
         type_ = gdbval.type.unqualified()
@@ -537,7 +618,7 @@ class GdbPrettyPrinters(gdb.printing.PrettyPrinter):
 
 def build_pretty_printer():
     pp = GdbPrettyPrinters('gcc')
-    pp.add_printer_for_types(['tree'],
+    pp.add_printer_for_types(['tree', 'const_tree'],
                              'tree', TreePrinter)
     pp.add_printer_for_types(['cgraph_node *', 'varpool_node *', 'symtab_node *'],
                              'symtab_node', SymtabNodePrinter)
@@ -570,6 +651,13 @@ def build_pretty_printer():
     pp.add_printer_for_types(['basic_block', 'basic_block_def *'],
                              'basic_block',
                              BasicBlockPrinter)
+    pp.add_printer_for_types(['ana::supernode *', 'const ana::supernode *'],
+                             'ana::supernode',
+                             AnaSupernodePrinter)
+    pp.add_printer_for_types(['ana::exploded_node *',
+                              'dedge<ana::eg_traits>::node_t *'],
+                             'ana::exploded_node',
+                             AnaExplodedNodePrinter)
     pp.add_printer_for_types(['edge', 'edge_def *'],
                              'edge',
                              CfgEdgePrinter)
@@ -599,7 +687,8 @@ def build_pretty_printer():
 
 gdb.printing.register_pretty_printer(
     gdb.current_objfile(),
-    build_pretty_printer())
+    build_pretty_printer(),
+    replace=True)
 
 def find_gcc_source_dir():
     # Use location of global "g" to locate the source tree
@@ -615,7 +704,7 @@ class PassNames:
         self.names = []
         with open(os.path.join(srcdir, 'passes.def')) as f:
             for line in f:
-                m = re.match('\s*NEXT_PASS \(([^,]+).*\);', line)
+                m = re.match(r'\s*NEXT_PASS \(([^,]+).*\);', line)
                 if m:
                     self.names.append(m.group(1))
 
@@ -734,18 +823,17 @@ class DumpFn(gdb.Command):
             f.close()
 
         # Open file
-        fp = gdb.parse_and_eval("fopen (\"%s\", \"w\")" % filename)
+        fp = gdb.parse_and_eval("(FILE *) fopen (\"%s\", \"w\")" % filename)
         if fp == 0:
             print ("Could not open file: %s" % filename)
             return
-        fp = "(FILE *)%u" % fp
 
         # Dump function to file
         _ = gdb.parse_and_eval("dump_function_to_file (%s, %s, %u)" %
                                (func, fp, flags))
 
         # Close file
-        ret = gdb.parse_and_eval("fclose (%s)" % fp)
+        ret = gdb.parse_and_eval("(int) fclose (%s)" % fp)
         if ret != 0:
             print ("Could not close file: %s" % filename)
             return
@@ -756,6 +844,18 @@ class DumpFn(gdb.Command):
                       (editor, filename, filename))
 
 DumpFn()
+
+class GCCDotCmd(gdb.Parameter):
+    """
+    This parameter controls the command used to render dot files within
+    GCC's dot-fn command.  It will be invoked as gcc-dot-cmd <dot-file>.
+    """
+    def __init__(self):
+        super(GCCDotCmd, self).__init__('gcc-dot-cmd',
+                gdb.COMMAND_NONE, gdb.PARAM_STRING)
+        self.value = "dot -Tx11"
+
+gcc_dot_cmd = GCCDotCmd()
 
 class DotFn(gdb.Command):
     """
@@ -804,11 +904,10 @@ class DotFn(gdb.Command):
 
         # Close and reopen temp file to get C FILE*
         f.close()
-        fp = gdb.parse_and_eval("fopen (\"%s\", \"w\")" % filename)
+        fp = gdb.parse_and_eval("(FILE *) fopen (\"%s\", \"w\")" % filename)
         if fp == 0:
             print("Cannot open temp file")
             return
-        fp = "(FILE *)%u" % fp
 
         # Write graph to temp file
         _ = gdb.parse_and_eval("start_graph_dump (%s, \"<debug>\")" % fp)
@@ -817,14 +916,23 @@ class DotFn(gdb.Command):
         _ = gdb.parse_and_eval("end_graph_dump (%s)" % fp)
 
         # Close temp file
-        ret = gdb.parse_and_eval("fclose (%s)" % fp)
+        ret = gdb.parse_and_eval("(int) fclose (%s)" % fp)
         if ret != 0:
             print("Could not close temp file: %s" % filename)
             return
 
         # Show graph in temp file
-        os.system("( dot -Tx11 \"%s\"; rm \"%s\" ) &" % (filename, filename))
+        dot_cmd = gcc_dot_cmd.value
+        os.system("( %s \"%s\"; rm \"%s\" ) &" % (dot_cmd, filename, filename))
 
 DotFn()
+
+# Try and invoke the user-defined command "on-gcc-hooks-load".  Doing
+# this allows users to customize the GCC extensions once they've been
+# loaded by defining the hook in their .gdbinit.
+try:
+    gdb.execute('on-gcc-hooks-load')
+except gdb.error:
+    pass
 
 print('Successfully loaded GDB hooks for GCC')

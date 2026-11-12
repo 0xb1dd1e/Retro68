@@ -1,6 +1,6 @@
 // Compatibility symbols for previous versions, C++0x bits -*- C++ -*-
 
-// Copyright (C) 2009-2019 Free Software Foundation, Inc.
+// Copyright (C) 2009-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -38,6 +38,10 @@
 
 #if __cplusplus < 201103L
 # error "compatibility-c++0x.cc must be compiled with -std=gnu++0x"
+#endif
+
+#if _GLIBCXX_INLINE_VERSION
+# error "compatibility-thread-c++0x.cc is not needed for gnu-versioned-namespace"
 #endif
 
 #ifdef _GLIBCXX_SHARED
@@ -117,8 +121,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   size_t
   hash<error_code>::operator()(error_code __e) const
   {
-    const size_t __tmp = std::_Hash_impl::hash(__e._M_value);
-    return std::_Hash_impl::__hash_combine(__e._M_cat, __tmp);
+    const size_t __tmp = std::_Hash_impl::hash(__e.value());
+    return std::_Hash_impl::__hash_combine(&__e.category(), __tmp);
   }
 
   // gcc-4.7.0

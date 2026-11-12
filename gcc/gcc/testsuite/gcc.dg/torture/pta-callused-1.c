@@ -1,5 +1,5 @@
 /* { dg-do run } */
-/* { dg-options "-fdump-tree-alias" } */
+/* { dg-options "-fdump-tree-alias-details" } */
 /* { dg-skip-if "" { *-*-* } { "-O0" "-fno-fat-lto-objects" } { "" } } */
 
 volatile int i;
@@ -21,4 +21,4 @@ int main()
   return 0;
 }
 
-/* { dg-final { scan-tree-dump "p.._. = { i j }" "alias" } } */
+/* { dg-final { scan-tree-dump "p.\?.._. = { i j }" "alias" } } */

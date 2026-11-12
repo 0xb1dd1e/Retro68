@@ -20,24 +20,22 @@ requires (sizeof...(Args) > 0)
   }
 
 template <typename T, typename U, typename... Args>
-  concept bool Same()
-  {
-    return decltype(check<T, U, Args...>())::value;
-  }
+  concept Same =
+    decltype(check<T, U, Args...>())::value;
 
 template <typename T, typename U, typename... Args>
-  concept bool Similar = true;
+  concept Similar = true;
 
 template <typename... Args>
-requires Same<Args...>() // { dg-error "invalid reference" }
+requires Same<Args...>() // { dg-error "" }
   void foo( Args... args ) {}
 
 template <typename... Args>
-requires Similar<Args...> // { dg-error "invalid reference" }
+requires Similar<Args...> // { dg-error "pack expansion" }
   void bar( Args... args ) {}
 
 int main()
 {
-  foo(1, 2, 3); // { dg-error "cannot call" }
-  bar(1, 2, 3); // { dg-error "cannot call" }
+  foo(1, 2, 3); // { dg-error "" }
+  bar(1, 2, 3); // { dg-error "" }
 }

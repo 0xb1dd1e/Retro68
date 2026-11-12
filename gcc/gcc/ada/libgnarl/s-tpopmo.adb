@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---         Copyright (C) 1992-2019, Free Software Foundation, Inc.          --
+--         Copyright (C) 1992-2026, Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -31,6 +31,8 @@
 
 --  This is the Monotonic version of this package for Posix and Linux targets.
 
+with System.C_Time;
+
 separate (System.Task_Primitives.Operations)
 package body Monotonic is
 
@@ -54,14 +56,14 @@ package body Monotonic is
    ---------------------
 
    function Monotonic_Clock return Duration is
-      TS     : aliased timespec;
+      TS     : aliased C_Time.timespec;
       Result : Interfaces.C.int;
    begin
       Result := clock_gettime
         (clock_id => OSC.CLOCK_RT_Ada, tp => TS'Unchecked_Access);
       pragma Assert (Result = 0);
 
-      return To_Duration (TS);
+      return C_Time.To_Duration (TS);
    end Monotonic_Clock;
 
    -------------------
@@ -69,14 +71,14 @@ package body Monotonic is
    -------------------
 
    function RT_Resolution return Duration is
-      TS     : aliased timespec;
+      TS     : aliased C_Time.timespec;
       Result : Interfaces.C.int;
 
    begin
       Result := clock_getres (OSC.CLOCK_REALTIME, TS'Unchecked_Access);
       pragma Assert (Result = 0);
 
-      return To_Duration (TS);
+      return C_Time.To_Duration (TS);
    end RT_Resolution;
 
    ----------------------
@@ -150,7 +152,7 @@ package body Monotonic is
       Abs_Time   : Duration;
       P_Abs_Time : Duration;
 
-      Request    : aliased timespec;
+      Request    : aliased C_Time.timespec;
       Result     : Interfaces.C.int;
       Exit_Outer : Boolean := False;
 
@@ -184,7 +186,7 @@ package body Monotonic is
             end if;
             pragma Warnings (On);
 
-            Request := To_Timespec (P_Abs_Time);
+            Request := C_Time.To_Timespec (P_Abs_Time);
 
             Inner : loop
                exit Outer
@@ -193,9 +195,7 @@ package body Monotonic is
                Result :=
                  pthread_cond_timedwait
                    (cond    => Self_ID.Common.LL.CV'Access,
-                    mutex   => (if Single_Lock
-                                then Single_RTS_Lock'Access
-                                else Self_ID.Common.LL.L'Access),
+                    mutex   => Self_ID.Common.LL.L'Access,
                     abstime => Request'Access);
 
                case Result is
@@ -210,7 +210,7 @@ package body Monotonic is
                      exit Inner;
 
                   when others =>
-                     pragma Assert (False);
+                     pragma Assert (Standard.False);
 
                end case;
 
@@ -238,16 +238,12 @@ package body Monotonic is
       Check_Time : Duration;
       Abs_Time   : Duration;
       P_Abs_Time : Duration;
-      Request    : aliased timespec;
+      Request    : aliased C_Time.timespec;
 
       Result     : Interfaces.C.int;
       Exit_Outer : Boolean := False;
 
    begin
-      if Single_Lock then
-         Lock_RTS;
-      end if;
-
       Write_Lock (Self_ID);
 
       Compute_Deadline
@@ -277,7 +273,7 @@ package body Monotonic is
             end if;
             pragma Warnings (On);
 
-            Request := To_Timespec (P_Abs_Time);
+            Request := C_Time.To_Timespec (P_Abs_Time);
 
             Inner : loop
                exit Outer
@@ -286,9 +282,7 @@ package body Monotonic is
                Result :=
                  pthread_cond_timedwait
                    (cond    => Self_ID.Common.LL.CV'Access,
-                    mutex   => (if Single_Lock
-                                then Single_RTS_Lock'Access
-                                else Self_ID.Common.LL.L'Access),
+                    mutex   => Self_ID.Common.LL.L'Access,
                     abstime => Request'Access);
 
                case Result is
@@ -300,7 +294,7 @@ package body Monotonic is
                   when 0 | EINTR => null;
 
                   when others =>
-                     pragma Assert (False);
+                     pragma Assert (Standard.False);
 
                end case;
 
@@ -314,11 +308,6 @@ package body Monotonic is
       end if;
 
       Unlock (Self_ID);
-
-      if Single_Lock then
-         Unlock_RTS;
-      end if;
-
       pragma Unreferenced (Result);
       Result := sched_yield;
    end Timed_Delay;

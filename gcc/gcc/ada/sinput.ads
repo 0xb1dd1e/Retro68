@@ -6,23 +6,17 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
 -- ware  Foundation;  either version 3,  or (at your option) any later ver- --
 -- sion.  GNAT is distributed in the hope that it will be useful, but WITH- --
 -- OUT ANY WARRANTY;  without even the  implied warranty of MERCHANTABILITY --
--- or FITNESS FOR A PARTICULAR PURPOSE.                                     --
---                                                                          --
--- As a special exception under Section 7 of GPL version 3, you are granted --
--- additional permissions described in the GCC Runtime Library Exception,   --
--- version 3.1, as published by the Free Software Foundation.               --
---                                                                          --
--- You should have received a copy of the GNU General Public License and    --
--- a copy of the GCC Runtime Library Exception along with this program;     --
--- see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see    --
--- <http://www.gnu.org/licenses/>.                                          --
+-- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
+-- for  more details.  You should have  received  a copy of the GNU General --
+-- Public License  distributed with GNAT; see file COPYING3.  If not, go to --
+-- http://www.gnu.org/licenses for a complete copy of the license.          --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -293,6 +287,8 @@ package Sinput is
    --  will be 1 since system.ads is read first.
 
    function Debug_Source_Name (S : SFI) return File_Name_Type;
+   --  WARNING: There is a matching C declaration of this subprogram in fe.h
+
    function File_Name         (S : SFI) return File_Name_Type;
    function File_Type         (S : SFI) return Type_Of_File;
    function First_Mapped_Line (S : SFI) return Logical_Line_Number;
@@ -413,13 +409,11 @@ package Sinput is
 
    Current_Source_File : Source_File_Index := No_Source_File;
    --  Source_File table index of source file currently being scanned.
-   --  Initialized so that some tools (such as gprbuild) can be built with
-   --  -gnatVa and pragma Initialize_Scalars without problems.
 
-   Current_Source_Unit : Unit_Number_Type;
-   --  Unit number of source file currently being scanned. The special value
-   --  of No_Unit indicates that the configuration pragma file is currently
-   --  being scanned (this has no entry in the unit table).
+   Current_Source_Unit : Unit_Number_Type := No_Unit;
+   --  Unit number of source file currently being scanned. Initialized to
+   --  No_Unit for pre-processing and the configuration pragma file scanning,
+   --  since both stages have no corresponding entry in the unit table.
 
    Source_gnat_adc : Source_File_Index := No_Source_File;
    --  This is set if a gnat.adc file is present to reference this file
@@ -532,6 +526,8 @@ package Sinput is
    --  determined and returned. Tab characters if present are assumed to
    --  represent the standard 1,9,17.. spacing pattern.
 
+   --  WARNING: There is a matching C declaration of this subprogram in fe.h
+
    function Get_Logical_Line_Number
      (P : Source_Ptr) return Logical_Line_Number;
    --  The line number of the specified source position is obtained by
@@ -543,10 +539,7 @@ package Sinput is
    --  reference pragmas have been encountered, the value returned is
    --  the same as the physical line number.
 
-   function Get_Logical_Line_Number_Img
-     (P : Source_Ptr) return String;
-   --  Same as above function, but returns the line number as a string of
-   --  decimal digits, with no leading space. Destroys Name_Buffer.
+   --  WARNING: There is a matching C declaration of this subprogram in fe.h
 
    function Get_Physical_Line_Number
      (P : Source_Ptr) return Physical_Line_Number;
@@ -560,6 +553,8 @@ package Sinput is
    --  Return file table index of file identified by given source pointer
    --  value. This call must always succeed, since any valid source pointer
    --  value belongs to some previously loaded source file.
+
+   --  WARNING: There is a matching C declaration of this subprogram in fe.h
 
    function Instantiation_Depth (S : Source_Ptr) return Nat;
    --  Determine instantiation depth for given Sloc value. A value of
@@ -691,14 +686,11 @@ package Sinput is
    --  names in some situations.
 
    procedure Write_Location (P : Source_Ptr);
-   --  Writes out a string of the form fff:nn:cc, where fff, nn, cc are the
-   --  file name, line number and column corresponding to the given source
-   --  location. No_Location and Standard_Location appear as the strings
-   --  <no location> and <standard location>. If the location is within an
-   --  instantiation, then the instance location is appended, enclosed in
-   --  square brackets (which can nest if necessary). Note that this routine
-   --  is used only for internal compiler debugging output purposes (which
-   --  is why the somewhat cryptic use of brackets is acceptable).
+   --  Writes P, in the form fff:nn:cc, where fff, nn, cc are the file name,
+   --  line number and column corresponding to the given source location. If
+   --  the location is within an instantiation, then the instance location is
+   --  appended, enclosed in square brackets, which can nest if necessary. This
+   --  is used only for debugging output.
 
    procedure wl (P : Source_Ptr);
    pragma Export (Ada, wl);
@@ -707,20 +699,21 @@ package Sinput is
    procedure Write_Time_Stamp (S : Source_File_Index);
    --  Writes time stamp of specified file in YY-MM-DD HH:MM.SS format
 
-   procedure Tree_Read;
-   --  Initializes internal tables from current tree file using the relevant
-   --  Table.Tree_Read routines.
-
-   procedure Tree_Write;
-   --  Writes out internal tables to current tree file using the relevant
-   --  Table.Tree_Write routines.
-
    procedure Clear_Source_File_Table;
    --  This procedure frees memory allocated in the Source_File table (in the
    --  private). It should only be used when it is guaranteed that all source
    --  files that have been loaded so far will not be accessed before being
    --  reloaded. It is intended for tools that parse several times sources,
    --  to avoid memory leaks.
+
+   type C_Array is record
+      Pointer : aliased access constant Character;
+      Length  : aliased Integer;
+   end record;
+   --  WARNING: There is a matching C declaration of this type in fe.h
+
+   function C_Source_Buffer (S : SFI) return C_Array;
+   --  WARNING: There is a matching C declaration of this subprogram in fe.h
 
 private
    pragma Inline (File_Name);
@@ -800,8 +793,9 @@ private
       Full_Ref_Name     : File_Name_Type;
       Instance          : Instance_Id;
       Num_SRef_Pragmas  : Nat;
-      First_Mapped_Line : Logical_Line_Number;
       Source_Text       : Source_Buffer_Ptr;
+      Inlined_Call      : Source_Ptr;
+      First_Mapped_Line : Logical_Line_Number;
       Source_First      : Source_Ptr;
       Source_Last       : Source_Ptr;
       Source_Checksum   : Word;
@@ -810,7 +804,6 @@ private
       Unit              : Unit_Number_Type;
       Time_Stamp        : Time_Stamp_Type;
       File_Type         : Type_Of_File;
-      Inlined_Call      : Source_Ptr;
       Inlined_Body      : Boolean;
       Inherited_Pragma  : Boolean;
       License           : License_Type;
@@ -820,7 +813,7 @@ private
       --  The following fields are for internal use only (i.e. only in the
       --  body of Sinput or its children, with no direct access by clients).
 
-      Sloc_Adjust : Source_Ptr;
+      Sloc_Adjust : Source_Ptr'Base; -- can be (very) negative
       --  A value to be added to Sloc values for this file to reference the
       --  corresponding lines table. This is zero for the non-instantiation
       --  case, and set so that the addition references the ultimate template
@@ -845,52 +838,6 @@ private
 
       Index : Source_File_Index := 123456789; -- for debugging
    end record;
-
-   --  The following representation clause ensures that the above record
-   --  has no holes. We do this so that when instances of this record are
-   --  written by Tree_Gen, we do not write uninitialized values to the file.
-
-   AS : constant Pos := Standard'Address_Size;
-
-   for Source_File_Record use record
-      File_Name           at  0 range 0 .. 31;
-      Reference_Name      at  4 range 0 .. 31;
-      Debug_Source_Name   at  8 range 0 .. 31;
-      Full_Debug_Name     at 12 range 0 .. 31;
-      Full_File_Name      at 16 range 0 .. 31;
-      Full_Ref_Name       at 20 range 0 .. 31;
-      Instance            at 48 range 0 .. 31;
-      Num_SRef_Pragmas    at 24 range 0 .. 31;
-      First_Mapped_Line   at 28 range 0 .. 31;
-      Source_First        at 32 range 0 .. 31;
-      Source_Last         at 36 range 0 .. 31;
-      Source_Checksum     at 40 range 0 .. 31;
-      Last_Source_Line    at 44 range 0 .. 31;
-      Template            at 52 range 0 .. 31;
-      Unit                at 56 range 0 .. 31;
-      Time_Stamp          at 60 range 0 .. 8 * Time_Stamp_Length - 1;
-      File_Type           at 74 range 0 .. 7;
-      Inlined_Call        at 88 range 0 .. 31;
-      Inlined_Body        at 75 range 0 .. 0;
-      Inherited_Pragma    at 75 range 1 .. 1;
-      License             at 76 range 0 .. 7;
-      Keyword_Casing      at 77 range 0 .. 7;
-      Identifier_Casing   at 78 range 0 .. 15;
-      Sloc_Adjust         at 80 range 0 .. 31;
-      Lines_Table_Max     at 84 range 0 .. 31;
-      Index               at 92 range 0 .. 31;
-
-      --  The following fields are pointers, so we have to specialize their
-      --  lengths using pointer size, obtained above as Standard'Address_Size.
-      --  Note that Source_Text is a fat pointer, so it has size = AS*2.
-
-      Source_Text         at 96 range 0      .. AS * 2 - 1;
-      Lines_Table         at 96 range AS * 2 .. AS * 3 - 1;
-      Logical_Lines_Table at 96 range AS * 3 .. AS * 4 - 1;
-   end record; -- Source_File_Record
-
-   for Source_File_Record'Size use 96 * 8 + AS * 4;
-   --  This ensures that we did not leave out any fields
 
    package Source_File is new Table.Table
      (Table_Component_Type => Source_File_Record,

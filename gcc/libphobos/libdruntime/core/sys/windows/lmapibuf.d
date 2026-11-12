@@ -4,15 +4,15 @@
  * Translated from MinGW Windows headers
  *
  * License: $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source: $(DRUNTIMESRC src/core/sys/windows/_lmapibuf.d)
+ * Source: $(DRUNTIMESRC core/sys/windows/_lmapibuf.d)
  */
 module core.sys.windows.lmapibuf;
 version (Windows):
 pragma(lib, "netapi32");
 
-private import core.sys.windows.lmcons, core.sys.windows.windef;
+import core.sys.windows.lmcons, core.sys.windows.windef;
 
-extern (Windows) {
+extern (Windows) nothrow @nogc {
     NET_API_STATUS NetApiBufferAllocate(DWORD, PVOID*);
     NET_API_STATUS NetApiBufferFree(PVOID);
     NET_API_STATUS NetApiBufferReallocate(PVOID, DWORD, PVOID*);

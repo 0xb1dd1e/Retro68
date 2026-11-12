@@ -1,5 +1,5 @@
 /* tc-score.c -- Assembler for Score
-   Copyright (C) 2006-2018 Free Software Foundation, Inc.
+   Copyright (C) 2006-2026 Free Software Foundation, Inc.
    Contributed by:
    Brain.lin (brain.lin@sunplusct.com)
    Mei Ligang (ligang@sunnorth.com.cn)
@@ -24,8 +24,6 @@
 
 #include "tc-score7.c"
 
-static void s3_s_score_bss (int ignore ATTRIBUTE_UNUSED);
-static void s3_s_score_text (int ignore);
 static void s3_score_s_section (int ignore);
 static void s3_s_change_sec (int sec);
 static void s3_s_score_mask (int reg_type ATTRIBUTE_UNUSED);
@@ -39,7 +37,6 @@ static void s3_s_score_gpword (int ignore ATTRIBUTE_UNUSED);
 static void s3_s_score_cpadd (int ignore ATTRIBUTE_UNUSED);
 static void s3_s_score_lcomm (int bytes_p);
 
-static void s_score_bss (int ignore ATTRIBUTE_UNUSED);
 static void s_score_text (int ignore);
 static void s_section (int ignore);
 static void s_change_sec (int sec);
@@ -65,7 +62,7 @@ static const char *s3_atof (int type, char *litP, int *sizeP);
 static void s3_frag_check (fragS * fragp ATTRIBUTE_UNUSED);
 static void s3_validate_fix (fixS *fixP);
 static int s3_force_relocation (struct fix *fixp);
-static bfd_boolean s3_fix_adjustable (fixS * fixP);
+static bool s3_fix_adjustable (fixS * fixP);
 static void s3_elf_final_processing (void);
 static int s3_estimate_size_before_relax (fragS * fragp, asection * sec ATTRIBUTE_UNUSED);
 static int s3_relax_frag (asection * sec ATTRIBUTE_UNUSED, fragS * fragp, long stretch ATTRIBUTE_UNUSED);
@@ -196,7 +193,6 @@ symbolS *GOT_symbol;
 
 const pseudo_typeS md_pseudo_table[] =
 {
-  {"bss", s_score_bss, 0},
   {"text", s_score_text, 0},
   {"word", cons, 4},
   {"long", cons, 4},
@@ -220,8 +216,8 @@ const pseudo_typeS md_pseudo_table[] =
   {0, 0, 0}
 };
 
-const char *md_shortopts = "nO::g::G:";
-struct option md_longopts[] =
+const char md_shortopts[] = "nO::g::G:";
+const struct option md_longopts[] =
 {
 #ifdef OPTION_EB
   {"EB"     , no_argument, NULL, OPTION_EB},
@@ -243,12 +239,12 @@ struct option md_longopts[] =
   {NULL     , no_argument, NULL, 0}
 };
 
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 #define s3_GP                     28
 #define s3_PIC_CALL_REG           29
 #define s3_MAX_LITERAL_POOL_SIZE  1024
-#define s3_FAIL	                  0x80000000
+#define s3_FAIL	                  -2147483648
 #define s3_SUCCESS                0
 #define s3_INSN48_SIZE            6
 #define s3_INSN_SIZE              4
@@ -263,7 +259,7 @@ size_t md_longopts_size = sizeof (md_longopts);
 #define s3_BAD_SKIP_COMMA            s3_BAD_ARGS
 #define s3_BAD_GARBAGE               _("garbage following instruction");
 
-#define s3_skip_whitespace(str)  while (*(str) == ' ') ++(str)
+#define s3_skip_whitespace(str)  while (is_whitespace (*(str))) ++(str)
 
 /* The name of the readonly data section.  */
 #define s3_RDATA_SECTION_NAME (OUTPUT_FLAVOR == bfd_target_aout_flavour \
@@ -300,7 +296,6 @@ size_t md_longopts_size = sizeof (md_longopts);
                              ? s3_INSN16_SIZE : (s3_GET_INSN_CLASS (type) == INSN_CLASS_48) \
                                              ? s3_INSN48_SIZE : s3_INSN_SIZE)
 
-#define s3_MAX_LITTLENUMS 6
 #define s3_INSN_NAME_LEN 16
 
 /* Relax will need some padding for alignment.  */
@@ -460,7 +455,7 @@ struct s3_reg_map
 {
   const struct s3_reg_entry *names;
   int max_regno;
-  struct hash_control *htab;
+  htab_t htab;
   const char *expected;
 };
 
@@ -471,8 +466,8 @@ static struct s3_reg_map s3_all_reg_maps[] =
   {s3_score_crn_table, 31, NULL, N_("S+core co-processor register expected")},
 };
 
-static struct hash_control *s3_score_ops_hsh = NULL;
-static struct hash_control *s3_dependency_insn_hsh = NULL;
+static htab_t s3_score_ops_hsh = NULL;
+static htab_t s3_dependency_insn_hsh = NULL;
 
 
 struct s3_datafield_range
@@ -1018,7 +1013,7 @@ s3_end_of_line (char *str)
   s3_skip_whitespace (str);
   if (*str != '\0')
     {
-      retval = (int) s3_FAIL;
+      retval = s3_FAIL;
 
       if (!s3_inst.error)
         s3_inst.error = s3_BAD_GARBAGE;
@@ -1028,7 +1023,7 @@ s3_end_of_line (char *str)
 }
 
 static int
-s3_score_reg_parse (char **ccp, struct hash_control *htab)
+s3_score_reg_parse (char **ccp, htab_t htab)
 {
   char *start = *ccp;
   char c;
@@ -1037,7 +1032,7 @@ s3_score_reg_parse (char **ccp, struct hash_control *htab)
 
   p = start;
   if (!ISALPHA (*p) || !is_name_beginner (*p))
-    return (int) s3_FAIL;
+    return s3_FAIL;
 
   c = *p++;
 
@@ -1045,7 +1040,7 @@ s3_score_reg_parse (char **ccp, struct hash_control *htab)
     c = *p++;
 
   *--p = 0;
-  reg = (struct s3_reg_entry *) hash_find (htab, start);
+  reg = str_hash_find (htab, start);
   *p = c;
 
   if (reg)
@@ -1053,7 +1048,7 @@ s3_score_reg_parse (char **ccp, struct hash_control *htab)
       *ccp = p;
       return reg->number;
     }
-  return (int) s3_FAIL;
+  return s3_FAIL;
 }
 
 /* If shift <= 0, only return reg.  */
@@ -1062,10 +1057,10 @@ static int
 s3_reg_required_here (char **str, int shift, enum s3_score_reg_type reg_type)
 {
   static char buff[s3_MAX_LITERAL_POOL_SIZE];
-  int reg = (int) s3_FAIL;
+  int reg = s3_FAIL;
   char *start = *str;
 
-  if ((reg = s3_score_reg_parse (str, s3_all_reg_maps[reg_type].htab)) != (int) s3_FAIL)
+  if ((reg = s3_score_reg_parse (str, s3_all_reg_maps[reg_type].htab)) != s3_FAIL)
     {
       if (reg_type == s3_REG_TYPE_SCORE)
         {
@@ -1104,24 +1099,24 @@ s3_skip_past_comma (char **str)
   char c;
   int comma = 0;
 
-  while ((c = *p) == ' ' || c == ',')
+  while (is_whitespace (c = *p) || c == ',')
     {
       p++;
       if (c == ',' && comma++)
         {
           s3_inst.error = s3_BAD_SKIP_COMMA;
-          return (int) s3_FAIL;
+          return s3_FAIL;
         }
     }
 
   if ((c == '\0') || (comma == 0))
     {
       s3_inst.error = s3_BAD_SKIP_COMMA;
-      return (int) s3_FAIL;
+      return s3_FAIL;
     }
 
   *str = p;
-  return comma ? s3_SUCCESS : (int) s3_FAIL;
+  return comma ? s3_SUCCESS : s3_FAIL;
 }
 
 static void
@@ -1130,12 +1125,12 @@ s3_do_rdrsrs (char *str)
   int reg;
   s3_skip_whitespace (str);
 
-  if ((reg = s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE)) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if ((reg = s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE)) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     {
       return;
     }
@@ -1197,7 +1192,7 @@ s3_my_get_expression (expressionS * ep, char **str)
       *str = input_line_pointer;
       input_line_pointer = save_in;
       s3_inst.error = _("illegal expression");
-      return (int) s3_FAIL;
+      return s3_FAIL;
     }
   /* Get rid of any bignums now, so that we don't generate an error for which
      we can't establish a line number later on.  Big numbers are never valid
@@ -1210,7 +1205,7 @@ s3_my_get_expression (expressionS * ep, char **str)
       s3_inst.error = _("invalid constant");
       *str = input_line_pointer;
       input_line_pointer = save_in;
-      return (int) s3_FAIL;
+      return s3_FAIL;
     }
 
   if ((ep->X_add_symbol != NULL)
@@ -1229,7 +1224,7 @@ s3_my_get_expression (expressionS * ep, char **str)
       s3_inst.error = s3_BAD_ARGS;
       *str = input_line_pointer;
       input_line_pointer = save_in;
-      return (int) s3_FAIL;
+      return s3_FAIL;
     }
 
   *str = input_line_pointer;
@@ -1268,14 +1263,14 @@ s3_validate_immediate (bfd_signed_vma val, unsigned int data_type, int hex_p)
         {
           if (!(val >= -0x2000 && val <= 0x3fff))
             {
-              return (int) s3_FAIL;
+              return s3_FAIL;
             }
         }
       else
         {
           if (!(val >= -8192 && val <= 8191))
             {
-              return (int) s3_FAIL;
+              return s3_FAIL;
             }
         }
 
@@ -1287,14 +1282,14 @@ s3_validate_immediate (bfd_signed_vma val, unsigned int data_type, int hex_p)
         {
           if (!(val >= -0x7fff && val <= 0xffff && val != 0x8000))
             {
-              return (int) s3_FAIL;
+              return s3_FAIL;
             }
         }
       else
         {
           if (!(val >= -32767 && val <= 32768))
             {
-              return (int) s3_FAIL;
+              return s3_FAIL;
             }
         }
 
@@ -1309,7 +1304,7 @@ s3_validate_immediate (bfd_signed_vma val, unsigned int data_type, int hex_p)
 	    val = 0;
           return val;
         }
-      return (int) s3_FAIL;
+      return s3_FAIL;
 
     case _IMM32:
       if (val >= 0 && val <= 0xffffffff)
@@ -1318,7 +1313,7 @@ s3_validate_immediate (bfd_signed_vma val, unsigned int data_type, int hex_p)
         }
       else
         {
-          return (int) s3_FAIL;
+          return s3_FAIL;
         }
 
     default:
@@ -1332,7 +1327,7 @@ s3_validate_immediate (bfd_signed_vma val, unsigned int data_type, int hex_p)
       break;
     }
 
-  return (int) s3_FAIL;
+  return s3_FAIL;
 }
 
 static int
@@ -1363,25 +1358,25 @@ s3_data_op2 (char **str, int shift, enum score_data_type data_type)
 
   if (*dataptr == '|')          /* process PCE */
     {
-      if (s3_my_get_expression (&s3_inst.reloc.exp, &pp) == (int) s3_FAIL)
-        return (int) s3_FAIL;
+      if (s3_my_get_expression (&s3_inst.reloc.exp, &pp) == s3_FAIL)
+        return s3_FAIL;
       s3_end_of_line (pp);
       if (s3_inst.error != 0)
-        return (int) s3_FAIL;       /* to ouptut_inst to printf out the error */
+        return s3_FAIL;         /* to ouptut_inst to printf out the error */
       *str = dataptr;
     }
   else                          /* process  16 bit */
     {
-      if (s3_my_get_expression (&s3_inst.reloc.exp, str) == (int) s3_FAIL)
+      if (s3_my_get_expression (&s3_inst.reloc.exp, str) == s3_FAIL)
         {
-          return (int) s3_FAIL;
+          return s3_FAIL;
         }
 
       dataptr = (char *)data_exp;
       for (; *dataptr != '\0'; dataptr++)
         {
           *dataptr = TOLOWER (*dataptr);
-          if (*dataptr == '!' || *dataptr == ' ')
+          if (*dataptr == '!' || is_whitespace (*dataptr))
             break;
         }
       dataptr = (char *)data_exp;
@@ -1429,7 +1424,7 @@ s3_data_op2 (char **str, int shift, enum score_data_type data_type)
 	      || ((*dataptr == '-') && (*(dataptr + 1) != '0'))))
         {
           s3_inst.error = s3_BAD_ARGS;
-          return (int) s3_FAIL;
+          return s3_FAIL;
         }
     }
 
@@ -1449,7 +1444,7 @@ s3_data_op2 (char **str, int shift, enum score_data_type data_type)
           || (data_type == _IMM4)))
     {
       s3_inst.error = s3_BAD_ARGS;
-      return (int) s3_FAIL;
+      return s3_FAIL;
     }
 
   if (s3_inst.reloc.exp.X_add_symbol)
@@ -1457,7 +1452,7 @@ s3_data_op2 (char **str, int shift, enum score_data_type data_type)
       switch (data_type)
         {
         case _SIMM16_LA:
-          return (int) s3_FAIL;
+          return s3_FAIL;
         case _VALUE_HI16:
           s3_inst.reloc.type = BFD_RELOC_HI16_S;
           s3_inst.reloc.pc_rel = 0;
@@ -1492,7 +1487,7 @@ s3_data_op2 (char **str, int shift, enum score_data_type data_type)
       if (data_type == _SIMM16_LA && s3_inst.reloc.exp.X_unsigned == 1)
         {
           value = s3_validate_immediate (s3_inst.reloc.exp.X_add_number, _SIMM16_LA_POS, hex_p);
-          if (value == (int) s3_FAIL)       /* for advance to check if this is ldis */
+          if (value == s3_FAIL)       /* for advance to check if this is ldis */
             if ((s3_inst.reloc.exp.X_add_number & 0xffff) == 0)
               {
                 s3_inst.instruction |= 0x8000000;
@@ -1505,14 +1500,14 @@ s3_data_op2 (char **str, int shift, enum score_data_type data_type)
           value = s3_validate_immediate (s3_inst.reloc.exp.X_add_number, data_type, hex_p);
         }
 
-      if (value == (int) s3_FAIL)
+      if (value == s3_FAIL)
         {
           if (data_type == _IMM32)
             {
               sprintf (s3_err_msg,
                        _("invalid constant: %d bit expression not in range %u..%u"),
                        s3_score_df_range[data_type].bits,
-                       0, (unsigned)0xffffffff);
+                       0, 0xffffffff);
             }
           else if (data_type == _IMM5_MULTI_LOAD)
             {
@@ -1536,7 +1531,7 @@ s3_data_op2 (char **str, int shift, enum score_data_type data_type)
             }
 
           s3_inst.error = s3_err_msg;
-          return (int) s3_FAIL;
+          return s3_FAIL;
         }
 
       if (((s3_score_df_range[data_type].range[0] != 0) || (data_type == _IMM5_RANGE_8_31))
@@ -1556,7 +1551,7 @@ s3_data_op2 (char **str, int shift, enum score_data_type data_type)
           && (((s3_inst.instruction >> 20) & 0x1F) != 0x10))
         {
           s3_inst.error = _("invalid constant: bit expression not defined");
-          return (int) s3_FAIL;
+          return s3_FAIL;
         }
     }
 
@@ -1569,10 +1564,10 @@ s3_do_rdsi16 (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_data_op2 (&str, 1, _SIMM16) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_data_op2 (&str, 1, _SIMM16) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 
   /* ldi.->ldiu! only for imm5  */
@@ -1637,10 +1632,10 @@ s3_do_ldis (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_data_op2 (&str, 1, _IMM16) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_data_op2 (&str, 1, _IMM16) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 }
 
@@ -1650,9 +1645,9 @@ s3_do_sub_rdsi16 (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != (int) s3_FAIL
-      && s3_skip_past_comma (&str) != (int) s3_FAIL
-      && s3_data_op2 (&str, 1, _SIMM16_NEG) != (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != s3_FAIL
+      && s3_skip_past_comma (&str) != s3_FAIL
+      && s3_data_op2 (&str, 1, _SIMM16_NEG) != s3_FAIL)
     s3_end_of_line (str);
 }
 
@@ -1662,9 +1657,9 @@ s3_do_sub_rdi16 (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != (int) s3_FAIL
-      && s3_skip_past_comma (&str) != (int) s3_FAIL
-      && s3_data_op2 (&str, 1, _IMM16_NEG) != (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != s3_FAIL
+      && s3_skip_past_comma (&str) != s3_FAIL
+      && s3_data_op2 (&str, 1, _IMM16_NEG) != s3_FAIL)
     s3_end_of_line (str);
 }
 
@@ -1674,10 +1669,10 @@ s3_do_rdrssi14 (char *str)         /* -(2^13)~((2^13)-1) */
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != (int) s3_FAIL
-      && s3_skip_past_comma (&str) != (int) s3_FAIL
-      && s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) != (int) s3_FAIL
-      && s3_skip_past_comma (&str) != (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != s3_FAIL
+      && s3_skip_past_comma (&str) != s3_FAIL
+      && s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) != s3_FAIL
+      && s3_skip_past_comma (&str) != s3_FAIL)
     s3_data_op2 (&str, 1, _SIMM14);
 }
 
@@ -1687,11 +1682,11 @@ s3_do_sub_rdrssi14 (char *str)     /* -(2^13)~((2^13)-1) */
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != (int) s3_FAIL
-      && s3_skip_past_comma (&str) != (int) s3_FAIL
-      && s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) != (int) s3_FAIL
-      && s3_skip_past_comma (&str) != (int) s3_FAIL
-      && s3_data_op2 (&str, 1, _SIMM14_NEG) != (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != s3_FAIL
+      && s3_skip_past_comma (&str) != s3_FAIL
+      && s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) != s3_FAIL
+      && s3_skip_past_comma (&str) != s3_FAIL
+      && s3_data_op2 (&str, 1, _SIMM14_NEG) != s3_FAIL)
     s3_end_of_line (str);
 }
 
@@ -1702,12 +1697,12 @@ s3_do_rdrsi5 (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_data_op2 (&str, 10, _IMM5) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_data_op2 (&str, 10, _IMM5) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 
   if ((((s3_inst.instruction >> 20) & 0x1f) == ((s3_inst.instruction >> 15) & 0x1f))
@@ -1727,11 +1722,11 @@ s3_do_rdrsi14 (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != (int) s3_FAIL
-      && s3_skip_past_comma (&str) != (int) s3_FAIL
-      && s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) != (int) s3_FAIL
-      && s3_skip_past_comma (&str) != (int) s3_FAIL
-      && s3_data_op2 (&str, 1, _IMM14) != (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != s3_FAIL
+      && s3_skip_past_comma (&str) != s3_FAIL
+      && s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) != s3_FAIL
+      && s3_skip_past_comma (&str) != s3_FAIL
+      && s3_data_op2 (&str, 1, _IMM14) != s3_FAIL)
     s3_end_of_line (str);
 }
 
@@ -1741,10 +1736,10 @@ s3_do_xrsi5 (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_data_op2 (&str, 10, _IMM5) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_data_op2 (&str, 10, _IMM5) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 
   if ((s3_inst.relax_inst != 0x8000) && (((s3_inst.instruction >> 15) & 0x10) == 0))
@@ -1762,10 +1757,10 @@ s3_do_rdi16 (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_data_op2 (&str, 1, _IMM16) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_data_op2 (&str, 1, _IMM16) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 
   /* ldis */
@@ -1811,8 +1806,8 @@ s3_do_macro_rdi32hi (char *str)
   s3_skip_whitespace (str);
 
   /* Do not handle s3_end_of_line().  */
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != (int) s3_FAIL
-      && s3_skip_past_comma (&str) != (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != s3_FAIL
+      && s3_skip_past_comma (&str) != s3_FAIL)
     s3_data_op2 (&str, 1, _VALUE_HI16);
 }
 
@@ -1822,8 +1817,8 @@ s3_do_macro_rdi32lo (char *str)
   s3_skip_whitespace (str);
 
   /* Do not handle s3_end_of_line().  */
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != (int) s3_FAIL
-      && s3_skip_past_comma (&str) != (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != s3_FAIL
+      && s3_skip_past_comma (&str) != s3_FAIL)
     s3_data_op2 (&str, 1, _VALUE_LO16);
 }
 
@@ -1833,9 +1828,9 @@ s3_do_rdi16_pic (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != (int) s3_FAIL
-      && s3_skip_past_comma (&str) != (int) s3_FAIL
-      && s3_data_op2 (&str, 1, _IMM16_pic) != (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != s3_FAIL
+      && s3_skip_past_comma (&str) != s3_FAIL
+      && s3_data_op2 (&str, 1, _IMM16_pic) != s3_FAIL)
     s3_end_of_line (str);
 }
 
@@ -1845,9 +1840,9 @@ s3_do_addi_s_pic (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != (int) s3_FAIL
-      && s3_skip_past_comma (&str) != (int) s3_FAIL
-      && s3_data_op2 (&str, 1, _SIMM16_pic) != (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != s3_FAIL
+      && s3_skip_past_comma (&str) != s3_FAIL
+      && s3_data_op2 (&str, 1, _SIMM16_pic) != s3_FAIL)
     s3_end_of_line (str);
 }
 
@@ -1857,9 +1852,9 @@ s3_do_addi_u_pic (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != (int) s3_FAIL
-      && s3_skip_past_comma (&str) != (int) s3_FAIL
-      && s3_data_op2 (&str, 1, _IMM16_LO16_pic) != (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != s3_FAIL
+      && s3_skip_past_comma (&str) != s3_FAIL
+      && s3_data_op2 (&str, 1, _IMM16_LO16_pic) != s3_FAIL)
     s3_end_of_line (str);
 }
 
@@ -1869,7 +1864,7 @@ s3_do_rd (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != s3_FAIL)
     s3_end_of_line (str);
 }
 
@@ -1879,8 +1874,8 @@ s3_do_rs (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 
   if ((s3_inst.relax_inst != 0x8000) )
@@ -1897,7 +1892,7 @@ s3_do_i15 (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_data_op2 (&str, 10, _IMM15) != (int) s3_FAIL)
+  if (s3_data_op2 (&str, 10, _IMM15) != s3_FAIL)
     s3_end_of_line (str);
 }
 
@@ -1906,7 +1901,7 @@ s3_do_xi5x (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_data_op2 (&str, 15, _IMM5) == (int) s3_FAIL || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_data_op2 (&str, 15, _IMM5) == s3_FAIL || s3_end_of_line (str) == s3_FAIL)
     return;
 
   if (s3_inst.relax_inst != 0x8000)
@@ -1921,10 +1916,10 @@ s3_do_rdrs (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 
   if (s3_inst.relax_inst != 0x8000)
@@ -1954,9 +1949,9 @@ s3_do_rdcrs (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != (int) s3_FAIL
-      && s3_skip_past_comma (&str) != (int) s3_FAIL
-      && s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE_CR) != (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != s3_FAIL
+      && s3_skip_past_comma (&str) != s3_FAIL
+      && s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE_CR) != s3_FAIL)
     s3_end_of_line (str);
 }
 
@@ -1969,15 +1964,15 @@ s3_do_rdsrs (char *str)
   /* mfsr */
   if ((s3_inst.instruction & 0xff) == 0x50)
     {
-      if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != (int) s3_FAIL
-          && s3_skip_past_comma (&str) != (int) s3_FAIL
-          && s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE_SR) != (int) s3_FAIL)
+      if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) != s3_FAIL
+          && s3_skip_past_comma (&str) != s3_FAIL
+          && s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE_SR) != s3_FAIL)
 	s3_end_of_line (str);
     }
   else
     {
-      if (s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) != (int) s3_FAIL
-          && s3_skip_past_comma (&str) != (int) s3_FAIL)
+      if (s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) != s3_FAIL
+          && s3_skip_past_comma (&str) != s3_FAIL)
 	s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE_SR);
     }
 }
@@ -1988,10 +1983,10 @@ s3_do_rdxrs (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 
   if ((s3_inst.relax_inst != 0x8000) && (((s3_inst.instruction >> 10) & 0x10) == 0)
@@ -2010,10 +2005,10 @@ s3_do_rsrs (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 
   if ((s3_inst.relax_inst != 0x8000) && (((s3_inst.instruction >> 20) & 0x1f) == 3) )
@@ -2033,23 +2028,23 @@ s3_do_ceinst (char *str)
   strbak = str;
   s3_skip_whitespace (str);
 
-  if (s3_data_op2 (&str, 20, _IMM5) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_data_op2 (&str, 5, _IMM5) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_data_op2 (&str, 0, _IMM5) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_data_op2 (&str, 20, _IMM5) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_data_op2 (&str, 5, _IMM5) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_data_op2 (&str, 0, _IMM5) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     {
       return;
     }
   else
     {
       str = strbak;
-      if (s3_data_op2 (&str, 0, _IMM25) == (int) s3_FAIL)
+      if (s3_data_op2 (&str, 0, _IMM25) == s3_FAIL)
 	return;
     }
 }
@@ -2061,7 +2056,7 @@ s3_reglow_required_here (char **str, int shift)
   int reg;
   char *start = *str;
 
-  if ((reg = s3_score_reg_parse (str, s3_all_reg_maps[s3_REG_TYPE_SCORE].htab)) != (int) s3_FAIL)
+  if ((reg = s3_score_reg_parse (str, s3_all_reg_maps[s3_REG_TYPE_SCORE].htab)) != s3_FAIL)
     {
       if ((reg == 1) && (s3_nor1 == 1) && (s3_inst.bwarn == 0))
         {
@@ -2081,7 +2076,7 @@ s3_reglow_required_here (char **str, int shift)
   *str = start;
   sprintf (buff, _("low register (r0-r15) expected, not '%.100s'"), start);
   s3_inst.error = buff;
-  return (int) s3_FAIL;
+  return s3_FAIL;
 }
 
 /* Handle add!/and!/or!/sub!.  */
@@ -2090,10 +2085,10 @@ s3_do16_rdrs2 (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reglow_required_here (&str, 4) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reglow_required_here (&str, 0) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reglow_required_here (&str, 4) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reglow_required_here (&str, 0) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     {
       return;
     }
@@ -2105,8 +2100,8 @@ s3_do16_br (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 0, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 0, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     {
       return;
     }
@@ -2120,8 +2115,8 @@ s3_do16_brr (char *str)
 
   s3_skip_whitespace (str);
 
-  if ((rd = s3_reg_required_here (&str, 0,s3_REG_TYPE_SCORE)) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if ((rd = s3_reg_required_here (&str, 0,s3_REG_TYPE_SCORE)) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     {
       return;
     }
@@ -2132,8 +2127,8 @@ static void
 s3_do_ltb (char *str)
 {
   s3_skip_whitespace (str);
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL)
     {
       return;
     }
@@ -2145,9 +2140,9 @@ s3_do_ltb (char *str)
       return;
     }
 
-  if (s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE) == (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE) == s3_FAIL)
     {
       return;
     }
@@ -2204,7 +2199,7 @@ s3_dependency_type_from_insn (char *insn_name)
   const struct s3_insn_to_dependency *tmp;
 
   strcpy (name, insn_name);
-  tmp = (const struct s3_insn_to_dependency *) hash_find (s3_dependency_insn_hsh, name);
+  tmp = str_hash_find (s3_dependency_insn_hsh, name);
 
   if (tmp)
     return tmp->type;
@@ -2399,7 +2394,7 @@ s3_handle_dependency (struct s3_score_it *theinst)
 static enum insn_class
 s3_get_insn_class_from_type (enum score_insn_type type)
 {
-  enum insn_class retval = (int) s3_FAIL;
+  enum insn_class retval = s3_FAIL;
 
   switch (type)
     {
@@ -2544,14 +2539,14 @@ static void
 s3_gen_insn_frag (struct s3_score_it *part_1, struct s3_score_it *part_2)
 {
   char *p;
-  bfd_boolean pce_p = FALSE;
+  bool pce_p = false;
   int relaxable_p = s3_g_opt;
   int relax_size = 0;
   struct s3_score_it *inst1 = part_1;
   struct s3_score_it *inst2 = part_2;
   struct s3_score_it backup_inst1;
 
-  pce_p = (inst2) ? TRUE : FALSE;
+  pce_p = inst2 != NULL;
   memcpy (&backup_inst1, inst1, sizeof (struct s3_score_it));
 
   /* Adjust instruction opcode and to be relaxed instruction opcode.  */
@@ -2643,7 +2638,7 @@ s3_gen_insn_frag (struct s3_score_it *part_1, struct s3_score_it *part_2)
 }
 
 static void
-s3_parse_16_32_inst (char *insnstr, bfd_boolean gen_frag_p)
+s3_parse_16_32_inst (char *insnstr, bool gen_frag_p)
 {
   char c;
   char *p;
@@ -2654,7 +2649,7 @@ s3_parse_16_32_inst (char *insnstr, bfd_boolean gen_frag_p)
   s3_skip_whitespace (operator);
 
   for (p = operator; *p != '\0'; p++)
-    if ((*p == ' ') || (*p == '!'))
+    if (is_whitespace (*p) || (*p == '!'))
       break;
 
   if (*p == '!')
@@ -2663,7 +2658,7 @@ s3_parse_16_32_inst (char *insnstr, bfd_boolean gen_frag_p)
   c = *p;
   *p = '\0';
 
-  opcode = (const struct s3_asm_opcode *) hash_find (s3_score_ops_hsh, operator);
+  opcode = str_hash_find (s3_score_ops_hsh, operator);
   *p = c;
 
   memset (&s3_inst, '\0', sizeof (s3_inst));
@@ -2692,7 +2687,7 @@ s3_parse_16_32_inst (char *insnstr, bfd_boolean gen_frag_p)
 }
 
 static void
-s3_parse_48_inst (char *insnstr, bfd_boolean gen_frag_p)
+s3_parse_48_inst (char *insnstr, bool gen_frag_p)
 {
   char c;
   char *p;
@@ -2703,13 +2698,13 @@ s3_parse_48_inst (char *insnstr, bfd_boolean gen_frag_p)
   s3_skip_whitespace (operator);
 
   for (p = operator; *p != '\0'; p++)
-    if (*p == ' ')
+    if (is_whitespace (*p))
       break;
 
   c = *p;
   *p = '\0';
 
-  opcode = (const struct s3_asm_opcode *) hash_find (s3_score_ops_hsh, operator);
+  opcode = str_hash_find (s3_score_ops_hsh, operator);
   *p = c;
 
   memset (&s3_inst, '\0', sizeof (s3_inst));
@@ -2738,7 +2733,7 @@ s3_parse_48_inst (char *insnstr, bfd_boolean gen_frag_p)
 }
 
 static int
-s3_append_insn (char *str, bfd_boolean gen_frag_p)
+s3_append_insn (char *str, bool gen_frag_p)
 {
   int retval = s3_SUCCESS;
 
@@ -2746,7 +2741,7 @@ s3_append_insn (char *str, bfd_boolean gen_frag_p)
 
   if (s3_inst.error)
     {
-      retval = (int) s3_FAIL;
+      retval = s3_FAIL;
       as_bad (_("%s -- `%s'"), s3_inst.error, s3_inst.str);
       s3_inst.error = NULL;
     }
@@ -2759,10 +2754,10 @@ s3_do16_mv_cmp (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 5, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reg_required_here (&str, 0, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 5, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reg_required_here (&str, 0, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     {
       return;
     }
@@ -2773,10 +2768,10 @@ s3_do16_cmpi (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 5, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_data_op2 (&str, 0, _SIMM5) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 5, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_data_op2 (&str, 0, _SIMM5) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     {
       return;
     }
@@ -2787,10 +2782,10 @@ s3_do16_addi (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reglow_required_here (&str, 6) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_data_op2 (&str, 0, _SIMM6) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reglow_required_here (&str, 6) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_data_op2 (&str, 0, _SIMM6) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     {
       return;
     }
@@ -2802,10 +2797,10 @@ s3_do16_rdi5 (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reglow_required_here (&str, 5) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_data_op2 (&str, 0, _IMM5) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reglow_required_here (&str, 5) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_data_op2 (&str, 0, _IMM5) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
   else
     {
@@ -2822,7 +2817,7 @@ s3_do16_xi5 (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_data_op2 (&str, 0, _IMM5) == (int) s3_FAIL || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_data_op2 (&str, 0, _IMM5) == s3_FAIL || s3_end_of_line (str) == s3_FAIL)
     return;
 }
 
@@ -2836,7 +2831,7 @@ s3_validate_immediate_align (int val, unsigned int data_type)
       if (val % 2)
         {
           s3_inst.error = _("address offset must be half word alignment");
-          return (int) s3_FAIL;
+          return s3_FAIL;
         }
     }
   else if ((data_type == _IMM5_RSHIFT_2) || (data_type == _IMM10_RSHIFT_2))
@@ -2844,7 +2839,7 @@ s3_validate_immediate_align (int val, unsigned int data_type)
       if (val % 4)
         {
           s3_inst.error = _("address offset must be word alignment");
-          return (int) s3_FAIL;
+          return s3_FAIL;
         }
     }
 
@@ -2876,19 +2871,19 @@ s3_exp_ldst_offset (char **str, int shift, unsigned int data_type)
       data_type += 24;
     }
 
-  if (s3_my_get_expression (&s3_inst.reloc.exp, str) == (int) s3_FAIL)
-    return (int) s3_FAIL;
+  if (s3_my_get_expression (&s3_inst.reloc.exp, str) == s3_FAIL)
+    return s3_FAIL;
 
   if (s3_inst.reloc.exp.X_op == O_constant)
     {
       /* Need to check the immediate align.  */
       int value = s3_validate_immediate_align (s3_inst.reloc.exp.X_add_number, data_type);
 
-      if (value == (int) s3_FAIL)
-	return (int) s3_FAIL;
+      if (value == s3_FAIL)
+	return s3_FAIL;
 
       value = s3_validate_immediate (s3_inst.reloc.exp.X_add_number, data_type, 0);
-      if (value == (int) s3_FAIL)
+      if (value == s3_FAIL)
         {
           if (data_type < 30)
             sprintf (s3_err_msg,
@@ -2901,7 +2896,7 @@ s3_exp_ldst_offset (char **str, int shift, unsigned int data_type)
                      s3_score_df_range[data_type - 24].bits,
                      s3_score_df_range[data_type - 24].range[0], s3_score_df_range[data_type - 24].range[1]);
           s3_inst.error = s3_err_msg;
-          return (int) s3_FAIL;
+          return s3_FAIL;
         }
 
       if (data_type == _IMM5_RSHIFT_1)
@@ -2941,8 +2936,8 @@ s3_do_ldst_insn (char *str)
 
   s3_skip_whitespace (str);
 
-  if (((conflict_reg = s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE)) == (int) s3_FAIL)
-      || (s3_skip_past_comma (&str) == (int) s3_FAIL))
+  if (((conflict_reg = s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE)) == s3_FAIL)
+      || (s3_skip_past_comma (&str) == s3_FAIL))
     return;
 
   /* ld/sw rD, [rA, simm15]    ld/sw rD, [rA]+, simm12     ld/sw rD, [rA, simm12]+.  */
@@ -2951,7 +2946,7 @@ s3_do_ldst_insn (char *str)
       str++;
       s3_skip_whitespace (str);
 
-      if ((reg = s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE)) == (int) s3_FAIL)
+      if ((reg = s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE)) == s3_FAIL)
 	return;
 
       /* Conflicts can occur on stores as well as loads.  */
@@ -2969,8 +2964,8 @@ s3_do_ldst_insn (char *str)
               /* ld/sw rD, [rA]+, simm12.  */
               if (s3_skip_past_comma (&str) == s3_SUCCESS)
                 {
-                  if ((s3_exp_ldst_offset (&str, 3, _SIMM12) == (int) s3_FAIL)
-                      || (s3_end_of_line (str) == (int) s3_FAIL))
+                  if ((s3_exp_ldst_offset (&str, 3, _SIMM12) == s3_FAIL)
+                      || (s3_end_of_line (str) == s3_FAIL))
 		    return;
 
                   if (conflict_reg)
@@ -3010,7 +3005,7 @@ s3_do_ldst_insn (char *str)
               else
                 {
                   s3_SET_INSN_ERROR (NULL);
-                  if (s3_end_of_line (str) == (int) s3_FAIL)
+                  if (s3_end_of_line (str) == s3_FAIL)
                     {
                       return;
                     }
@@ -3029,7 +3024,7 @@ s3_do_ldst_insn (char *str)
           /* ld/sw rD, [rA] convert to ld/sw rD, [rA, simm15].  */
           else
             {
-              if (s3_end_of_line (str) == (int) s3_FAIL)
+              if (s3_end_of_line (str) == s3_FAIL)
 		return;
 
               ldst_idx = s3_inst.instruction & OPC_PSEUDOLDST_MASK;
@@ -3088,13 +3083,13 @@ s3_do_ldst_insn (char *str)
       /* ld/sw rD, [rA, simm15]    ld/sw rD, [rA, simm12]+.  */
       else
         {
-          if (s3_skip_past_comma (&str) == (int) s3_FAIL)
+          if (s3_skip_past_comma (&str) == s3_FAIL)
             {
               s3_inst.error = _("pre-indexed expression expected");
               return;
             }
 
-          if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == (int) s3_FAIL)
+          if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == s3_FAIL)
 	    return;
 
           s3_skip_whitespace (str);
@@ -3126,7 +3121,7 @@ s3_do_ldst_insn (char *str)
                 }
             }
 
-          if (s3_end_of_line (str) == (int) s3_FAIL)
+          if (s3_end_of_line (str) == s3_FAIL)
 	    return;
 
           if (s3_inst.reloc.exp.X_op == O_constant)
@@ -3158,7 +3153,7 @@ s3_do_ldst_insn (char *str)
                 }
 
               value = s3_validate_immediate (s3_inst.reloc.exp.X_add_number, data_type, 0);
-              if (value == (int) s3_FAIL)
+              if (value == s3_FAIL)
                 {
                   if (data_type < 30)
                     sprintf (s3_err_msg,
@@ -3274,7 +3269,7 @@ s3_do_cache (char *str)
 {
   s3_skip_whitespace (str);
 
-  if ((s3_data_op2 (&str, 20, _IMM5) == (int) s3_FAIL) || (s3_skip_past_comma (&str) == (int) s3_FAIL))
+  if ((s3_data_op2 (&str, 20, _IMM5) == s3_FAIL) || (s3_skip_past_comma (&str) == s3_FAIL))
     {
       return;
     }
@@ -3291,13 +3286,13 @@ s3_do_cache (char *str)
       str++;
       s3_skip_whitespace (str);
 
-      if (s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == (int) s3_FAIL)
+      if (s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == s3_FAIL)
 	return;
 
       s3_skip_whitespace (str);
 
       /* cache op, [rA]  */
-      if (s3_skip_past_comma (&str) == (int) s3_FAIL)
+      if (s3_skip_past_comma (&str) == s3_FAIL)
         {
           s3_SET_INSN_ERROR (NULL);
           if (*str != ']')
@@ -3310,7 +3305,7 @@ s3_do_cache (char *str)
       /* cache op, [rA, simm15]  */
       else
         {
-          if (s3_exp_ldst_offset (&str, 0, _SIMM15) == (int) s3_FAIL)
+          if (s3_exp_ldst_offset (&str, 0, _SIMM15) == s3_FAIL)
             {
               return;
             }
@@ -3323,7 +3318,7 @@ s3_do_cache (char *str)
             }
         }
 
-      if (s3_end_of_line (str) == (int) s3_FAIL)
+      if (s3_end_of_line (str) == s3_FAIL)
 	return;
     }
   else
@@ -3340,21 +3335,21 @@ s3_do_crdcrscrsimm5 (char *str)
   strbak = str;
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE_CR) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE_CR) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE_CR) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE_CR) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE_CR) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE_CR) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL)
     {
       str = strbak;
       /* cop1 cop_code20.  */
-      if (s3_data_op2 (&str, 5, _IMM20) == (int) s3_FAIL)
+      if (s3_data_op2 (&str, 5, _IMM20) == s3_FAIL)
 	return;
     }
   else
     {
-      if (s3_data_op2 (&str, 5, _IMM5) == (int) s3_FAIL)
+      if (s3_data_op2 (&str, 5, _IMM5) == s3_FAIL)
 	return;
     }
 
@@ -3367,8 +3362,8 @@ s3_do_ldst_cop (char *str)
 {
   s3_skip_whitespace (str);
 
-  if ((s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE_CR) == (int) s3_FAIL)
-      || (s3_skip_past_comma (&str) == (int) s3_FAIL))
+  if ((s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE_CR) == s3_FAIL)
+      || (s3_skip_past_comma (&str) == s3_FAIL))
     return;
 
   if (*str == '[')
@@ -3376,14 +3371,14 @@ s3_do_ldst_cop (char *str)
       str++;
       s3_skip_whitespace (str);
 
-      if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == (int) s3_FAIL)
+      if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == s3_FAIL)
 	return;
 
       s3_skip_whitespace (str);
 
       if (*str++ != ']')
         {
-          if (s3_exp_ldst_offset (&str, 5, _IMM10_RSHIFT_2) == (int) s3_FAIL)
+          if (s3_exp_ldst_offset (&str, 5, _IMM10_RSHIFT_2) == s3_FAIL)
 	    return;
 
           s3_skip_whitespace (str);
@@ -3406,7 +3401,7 @@ s3_do16_ldst_insn (char *str)
   int conflict_reg = 0;
   s3_skip_whitespace (str);
 
-  if ((s3_reglow_required_here (&str, 8) == (int) s3_FAIL) || (s3_skip_past_comma (&str) == (int) s3_FAIL))
+  if ((s3_reglow_required_here (&str, 8) == s3_FAIL) || (s3_skip_past_comma (&str) == s3_FAIL))
     return;
 
   if (*str == '[')
@@ -3415,7 +3410,7 @@ s3_do16_ldst_insn (char *str)
       str++;
       s3_skip_whitespace (str);
 
-      if ((conflict_reg = s3_reglow_required_here (&str, 5)) == (int) s3_FAIL)
+      if ((conflict_reg = s3_reglow_required_here (&str, 5)) == s3_FAIL)
 	return;
       if (conflict_reg&0x8)
         {
@@ -3429,17 +3424,17 @@ s3_do16_ldst_insn (char *str)
       if (*str == ']')
         {
           str++;
-          if (s3_end_of_line (str) == (int) s3_FAIL)
+          if (s3_end_of_line (str) == s3_FAIL)
 	    return;
         }
       else
         {
-          if (s3_skip_past_comma (&str) == (int) s3_FAIL)
+          if (s3_skip_past_comma (&str) == s3_FAIL)
 	    {
 	      s3_inst.error = _("comma is  expected");
               return;
 	    }
-          if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == (int) s3_FAIL)
+          if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == s3_FAIL)
 	    return;
           s3_skip_whitespace (str);
 	  if (*str++ != ']')
@@ -3447,7 +3442,7 @@ s3_do16_ldst_insn (char *str)
 	      s3_inst.error = _("missing ]");
 	      return;
 	    }
-          if (s3_end_of_line (str) == (int) s3_FAIL)
+          if (s3_end_of_line (str) == s3_FAIL)
 	    return;
           if (s3_inst.reloc.exp.X_op == O_constant)
             {
@@ -3455,7 +3450,7 @@ s3_do16_ldst_insn (char *str)
 	      unsigned int data_type;
               data_type = _IMM5_RSHIFT_2;
               value = s3_validate_immediate (s3_inst.reloc.exp.X_add_number, data_type, 0);
-              if (value == (int) s3_FAIL)
+              if (value == s3_FAIL)
 		{
 		  if (data_type < 30)
 		    sprintf (s3_err_msg,
@@ -3492,12 +3487,12 @@ s3_do_lw48 (char *str)
 
   s3_skip_whitespace (str);
 
-  if ((s3_reg_required_here (&str, 37, s3_REG_TYPE_SCORE) == (int) s3_FAIL)
-      || (s3_skip_past_comma (&str) == (int) s3_FAIL))
+  if ((s3_reg_required_here (&str, 37, s3_REG_TYPE_SCORE) == s3_FAIL)
+      || (s3_skip_past_comma (&str) == s3_FAIL))
     return;
 
-  if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     {
       return;
     }
@@ -3535,12 +3530,12 @@ s3_do_sw48 (char *str)
 
   s3_skip_whitespace (str);
 
-  if ((s3_reg_required_here (&str, 37, s3_REG_TYPE_SCORE) == (int) s3_FAIL)
-      || (s3_skip_past_comma (&str) == (int) s3_FAIL))
+  if ((s3_reg_required_here (&str, 37, s3_REG_TYPE_SCORE) == s3_FAIL)
+      || (s3_skip_past_comma (&str) == s3_FAIL))
     return;
 
-  if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     {
       return;
     }
@@ -3577,12 +3572,12 @@ s3_do_ldi48 (char *str)
 
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 37, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 37, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL)
     return;
 
-  if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     {
       return;
     }
@@ -3607,7 +3602,7 @@ s3_do_sdbbp48 (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_data_op2 (&str, 5, _IMM5) == (int) s3_FAIL || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_data_op2 (&str, 5, _IMM5) == s3_FAIL || s3_end_of_line (str) == s3_FAIL)
     return;
 }
 
@@ -3616,12 +3611,12 @@ s3_do_and48 (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reglow_required_here (&str, 38) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reglow_required_here (&str, 34) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_data_op2 (&str, 2, _IMM32) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reglow_required_here (&str, 38) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reglow_required_here (&str, 34) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_data_op2 (&str, 2, _IMM32) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 }
 
@@ -3630,12 +3625,12 @@ s3_do_or48 (char *str)
 {
   s3_skip_whitespace (str);
 
-  if (s3_reglow_required_here (&str, 38) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reglow_required_here (&str, 34) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_data_op2 (&str, 2, _IMM32) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reglow_required_here (&str, 38) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reglow_required_here (&str, 34) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_data_op2 (&str, 2, _IMM32) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 }
 
@@ -3655,9 +3650,9 @@ s3_do_mbitclr (char *str)
 
   s3_inst.instruction &= 0x0;
 
-  if ((s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == (int) s3_FAIL)
-      || (s3_skip_past_comma (&str) == (int) s3_FAIL)
-      || (s3_data_op2 (&str, 0, _IMM11) == (int) s3_FAIL))
+  if ((s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == s3_FAIL)
+      || (s3_skip_past_comma (&str) == s3_FAIL)
+      || (s3_data_op2 (&str, 0, _IMM11) == s3_FAIL))
     return;
 
   /* Get imm11 and refill opcode.  */
@@ -3674,8 +3669,8 @@ s3_do_mbitclr (char *str)
     }
   str++;
 
-  if ((s3_skip_past_comma (&str) == (int) s3_FAIL)
-      || (s3_data_op2 (&str, 10, _IMM5) == (int) s3_FAIL))
+  if ((s3_skip_past_comma (&str) == s3_FAIL)
+      || (s3_data_op2 (&str, 10, _IMM5) == s3_FAIL))
     return;
 
   /* Set imm11 to opcode.  */
@@ -3700,9 +3695,9 @@ s3_do_mbitset (char *str)
 
   s3_inst.instruction &= 0x0;
 
-  if ((s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == (int) s3_FAIL)
-      || (s3_skip_past_comma (&str) == (int) s3_FAIL)
-      || (s3_data_op2 (&str, 0, _IMM11) == (int) s3_FAIL))
+  if ((s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == s3_FAIL)
+      || (s3_skip_past_comma (&str) == s3_FAIL)
+      || (s3_data_op2 (&str, 0, _IMM11) == s3_FAIL))
     return;
 
   /* Get imm11 and refill opcode.  */
@@ -3719,8 +3714,8 @@ s3_do_mbitset (char *str)
     }
   str++;
 
-  if ((s3_skip_past_comma (&str) == (int) s3_FAIL)
-      || (s3_data_op2 (&str, 10, _IMM5) == (int) s3_FAIL))
+  if ((s3_skip_past_comma (&str) == s3_FAIL)
+      || (s3_data_op2 (&str, 10, _IMM5) == s3_FAIL))
     return;
 
   /* Set imm11 to opcode.  */
@@ -3734,10 +3729,10 @@ s3_do16_slli_srli (char *str)
 {
   s3_skip_whitespace (str);
 
-  if ((s3_reglow_required_here (&str, 5) == (int) s3_FAIL)
-      || (s3_skip_past_comma (&str) == (int) s3_FAIL)
-      || s3_data_op2 (&str, 0, _IMM5) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if ((s3_reglow_required_here (&str, 5) == s3_FAIL)
+      || (s3_skip_past_comma (&str) == s3_FAIL)
+      || s3_data_op2 (&str, 0, _IMM5) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 }
 
@@ -3746,10 +3741,10 @@ s3_do16_ldiu (char *str)
 {
   s3_skip_whitespace (str);
 
-  if ((s3_reg_required_here (&str, 5,s3_REG_TYPE_SCORE) == (int) s3_FAIL)
-      || (s3_skip_past_comma (&str) == (int) s3_FAIL)
-      || s3_data_op2 (&str, 0, _IMM5) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if ((s3_reg_required_here (&str, 5,s3_REG_TYPE_SCORE) == s3_FAIL)
+      || (s3_skip_past_comma (&str) == s3_FAIL)
+      || s3_data_op2 (&str, 0, _IMM5) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 }
 
@@ -3757,8 +3752,8 @@ static void
 s3_do16_push_pop (char *str)
 {
   s3_skip_whitespace (str);
-  if ((s3_reg_required_here (&str, 0, s3_REG_TYPE_SCORE)) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if ((s3_reg_required_here (&str, 0, s3_REG_TYPE_SCORE)) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 }
 
@@ -3768,10 +3763,10 @@ s3_do16_rpush (char *str)
   int reg;
   int val;
   s3_skip_whitespace (str);
-  if ((reg = (s3_reg_required_here (&str, 5, s3_REG_TYPE_SCORE))) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_data_op2 (&str, 0, _IMM5_MULTI_LOAD) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if ((reg = (s3_reg_required_here (&str, 5, s3_REG_TYPE_SCORE))) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_data_op2 (&str, 0, _IMM5_MULTI_LOAD) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 
   /* 0: indicate 32.
@@ -3796,10 +3791,10 @@ s3_do16_rpop (char *str)
   int reg;
   int val;
   s3_skip_whitespace (str);
-  if ((reg = (s3_reg_required_here (&str, 5, s3_REG_TYPE_SCORE))) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_data_op2 (&str, 0, _IMM5_MULTI_LOAD) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if ((reg = (s3_reg_required_here (&str, 5, s3_REG_TYPE_SCORE))) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_data_op2 (&str, 0, _IMM5_MULTI_LOAD) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 
   /* 0: indicate 32.
@@ -3849,7 +3844,7 @@ s3_do_ldst_unalign (char *str)
       str++;
       s3_skip_whitespace (str);
 
-      if (s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == (int) s3_FAIL)
+      if (s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == s3_FAIL)
 	return;
 
       if (*str++ == ']')
@@ -3866,14 +3861,14 @@ s3_do_ldst_unalign (char *str)
           return;
         }
 
-      if (s3_end_of_line (str) == (int) s3_FAIL)
+      if (s3_end_of_line (str) == s3_FAIL)
 	return;
     }
   /* lcw/lce/scb/sce rD, [rA]+.  */
   else
     {
-      if (((conflict_reg = s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE)) == (int) s3_FAIL)
-          || (s3_skip_past_comma (&str) == (int) s3_FAIL))
+      if (((conflict_reg = s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE)) == s3_FAIL)
+          || (s3_skip_past_comma (&str) == s3_FAIL))
         {
           return;
         }
@@ -3884,7 +3879,7 @@ s3_do_ldst_unalign (char *str)
           int reg;
 
           s3_skip_whitespace (str);
-          if ((reg = s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE)) == (int) s3_FAIL)
+          if ((reg = s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE)) == s3_FAIL)
             {
               return;
             }
@@ -3911,7 +3906,7 @@ s3_do_ldst_unalign (char *str)
                   return;
                 }
 
-              if (s3_end_of_line (str) == (int) s3_FAIL)
+              if (s3_end_of_line (str) == s3_FAIL)
 		return;
             }
           else
@@ -3940,8 +3935,8 @@ s3_do_ldst_atomic (char *str)
 
   s3_skip_whitespace (str);
 
-  if ((s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == (int) s3_FAIL)
-      || (s3_skip_past_comma (&str) == (int) s3_FAIL))
+  if ((s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == s3_FAIL)
+      || (s3_skip_past_comma (&str) == s3_FAIL))
     {
       return;
     }
@@ -3954,7 +3949,7 @@ s3_do_ldst_atomic (char *str)
           int reg;
 
           s3_skip_whitespace (str);
-          if ((reg = s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE)) == (int) s3_FAIL)
+          if ((reg = s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE)) == s3_FAIL)
             {
               return;
             }
@@ -4096,8 +4091,8 @@ s3_build_la_pic (int reg_rd, expressionS exp)
       /* Fix part
          For an external symbol: lw rD, <sym>($gp)
 	 (BFD_RELOC_SCORE_GOT15 or BFD_RELOC_SCORE_CALL15)  */
-      sprintf (tmp, "lw_pic r%d, %s", reg_rd, add_symbol->bsym->name);
-      if (s3_append_insn (tmp, FALSE) == (int) s3_FAIL)
+      sprintf (tmp, "lw_pic r%d, %s", reg_rd, S_GET_NAME (add_symbol));
+      if (s3_append_insn (tmp, false) == s3_FAIL)
 	return;
 
       if (reg_rd == s3_PIC_CALL_REG)
@@ -4110,8 +4105,8 @@ s3_build_la_pic (int reg_rd, expressionS exp)
 	 addi rD, <sym>       (BFD_RELOC_GOT_LO16) */
       s3_inst.reloc.type = BFD_RELOC_SCORE_GOT15;
       memcpy (&var_insts[0], &s3_inst, sizeof (struct s3_score_it));
-      sprintf (tmp, "addi_s_pic r%d, %s", reg_rd, add_symbol->bsym->name);
-      if (s3_append_insn (tmp, FALSE) == (int) s3_FAIL)
+      sprintf (tmp, "addi_s_pic r%d, %s", reg_rd, S_GET_NAME (add_symbol));
+      if (s3_append_insn (tmp, false) == s3_FAIL)
 	return;
 
       memcpy (&var_insts[1], &s3_inst, sizeof (struct s3_score_it));
@@ -4120,8 +4115,8 @@ s3_build_la_pic (int reg_rd, expressionS exp)
   else if (add_number >= -0x8000 && add_number <= 0x7fff)
     {
       /* Insn 1: lw rD, <sym>($gp)    (BFD_RELOC_SCORE_GOT15)  */
-      sprintf (tmp, "lw_pic r%d, %s", reg_rd, add_symbol->bsym->name);
-      if (s3_append_insn (tmp, TRUE) == (int) s3_FAIL)
+      sprintf (tmp, "lw_pic r%d, %s", reg_rd, S_GET_NAME (add_symbol));
+      if (s3_append_insn (tmp, true) == s3_FAIL)
 	return;
 
       /* Insn 2  */
@@ -4129,16 +4124,17 @@ s3_build_la_pic (int reg_rd, expressionS exp)
       var_num = 1;
       /* Fix part
          For an external symbol: addi rD, <constant> */
-      sprintf (tmp, "addi r%d, %d", reg_rd, (int)add_number);
-      if (s3_append_insn (tmp, FALSE) == (int) s3_FAIL)
+      sprintf (tmp, "addi r%d, %d", reg_rd, (int) add_number);
+      if (s3_append_insn (tmp, false) == s3_FAIL)
 	return;
 
       memcpy (&fix_insts[0], &s3_inst, sizeof (struct s3_score_it));
 
       /* Var part
  	 For a local symbol: addi rD, <sym>+<constant>    (BFD_RELOC_GOT_LO16)  */
-      sprintf (tmp, "addi_s_pic r%d, %s + %d", reg_rd, add_symbol->bsym->name, (int)add_number);
-      if (s3_append_insn (tmp, FALSE) == (int) s3_FAIL)
+      sprintf (tmp, "addi_s_pic r%d, %s + %d", reg_rd,
+	       S_GET_NAME (add_symbol), (int) add_number);
+      if (s3_append_insn (tmp, false) == s3_FAIL)
 	return;
 
       memcpy (&var_insts[0], &s3_inst, sizeof (struct s3_score_it));
@@ -4150,8 +4146,8 @@ s3_build_la_pic (int reg_rd, expressionS exp)
       int lo = add_number & 0x0000FFFF;
 
       /* Insn 1: lw rD, <sym>($gp)    (BFD_RELOC_SCORE_GOT15)  */
-      sprintf (tmp, "lw_pic r%d, %s", reg_rd, add_symbol->bsym->name);
-      if (s3_append_insn (tmp, TRUE) == (int) s3_FAIL)
+      sprintf (tmp, "lw_pic r%d, %s", reg_rd, S_GET_NAME (add_symbol));
+      if (s3_append_insn (tmp, true) == s3_FAIL)
 	return;
 
       /* Insn 2  */
@@ -4160,7 +4156,7 @@ s3_build_la_pic (int reg_rd, expressionS exp)
       /* Fix part
 	 For an external symbol: ldis r1, HI%<constant>  */
       sprintf (tmp, "ldis r1, %d", hi);
-      if (s3_append_insn (tmp, FALSE) == (int) s3_FAIL)
+      if (s3_append_insn (tmp, false) == s3_FAIL)
 	return;
 
       memcpy (&fix_insts[0], &s3_inst, sizeof (struct s3_score_it));
@@ -4173,7 +4169,7 @@ s3_build_la_pic (int reg_rd, expressionS exp)
 	  hi += 1;
 	}
       sprintf (tmp, "ldis_pic r1, %d", hi);
-      if (s3_append_insn (tmp, FALSE) == (int) s3_FAIL)
+      if (s3_append_insn (tmp, false) == s3_FAIL)
 	return;
 
       memcpy (&var_insts[0], &s3_inst, sizeof (struct s3_score_it));
@@ -4185,15 +4181,15 @@ s3_build_la_pic (int reg_rd, expressionS exp)
       /* Fix part
 	 For an external symbol: ori r1, LO%<constant>  */
       sprintf (tmp, "ori r1, %d", lo);
-      if (s3_append_insn (tmp, FALSE) == (int) s3_FAIL)
+      if (s3_append_insn (tmp, false) == s3_FAIL)
 	return;
 
       memcpy (&fix_insts[0], &s3_inst, sizeof (struct s3_score_it));
 
       /* Var part
   	 For a local symbol: addi r1, <sym>+LO%<constant>    (BFD_RELOC_GOT_LO16)  */
-      sprintf (tmp, "addi_u_pic r1, %s + %d", add_symbol->bsym->name, lo);
-      if (s3_append_insn (tmp, FALSE) == (int) s3_FAIL)
+      sprintf (tmp, "addi_u_pic r1, %s + %d", S_GET_NAME (add_symbol), lo);
+      if (s3_append_insn (tmp, false) == s3_FAIL)
 	return;
 
       memcpy (&var_insts[0], &s3_inst, sizeof (struct s3_score_it));
@@ -4201,7 +4197,7 @@ s3_build_la_pic (int reg_rd, expressionS exp)
 
       /* Insn 4: add rD, rD, r1  */
       sprintf (tmp, "add r%d, r%d, r1", reg_rd, reg_rd);
-      if (s3_append_insn (tmp, TRUE) == (int) s3_FAIL)
+      if (s3_append_insn (tmp, true) == s3_FAIL)
 	return;
 
       /* Set bwarn as -1, so macro instruction itself will not be generated frag.  */
@@ -4218,8 +4214,8 @@ s3_do_macro_la_rdi32 (char *str)
   int reg_rd;
 
   s3_skip_whitespace (str);
-  if ((reg_rd = s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE)) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL)
+  if ((reg_rd = s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE)) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL)
     {
       return;
     }
@@ -4230,13 +4226,13 @@ s3_do_macro_la_rdi32 (char *str)
       char append_str[s3_MAX_LITERAL_POOL_SIZE];
 
       /* Check immediate value.  */
-      if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == (int) s3_FAIL)
+      if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == s3_FAIL)
         {
           s3_inst.error = _("expression error");
           return;
         }
       else if ((s3_inst.reloc.exp.X_add_symbol == NULL)
-               && (s3_validate_immediate (s3_inst.reloc.exp.X_add_number, _IMM32, 0) == (int) s3_FAIL))
+               && (s3_validate_immediate (s3_inst.reloc.exp.X_add_number, _IMM32, 0) == s3_FAIL))
         {
           s3_inst.error = _("value not in range [0, 0xffffffff]");
           return;
@@ -4246,7 +4242,7 @@ s3_do_macro_la_rdi32 (char *str)
       str = keep_data;
 
       /* la rd, simm16.  */
-      if (s3_data_op2 (&str, 1, _SIMM16_LA) != (int) s3_FAIL)
+      if (s3_data_op2 (&str, 1, _SIMM16_LA) != s3_FAIL)
         {
           s3_end_of_line (str);
           return;
@@ -4257,8 +4253,8 @@ s3_do_macro_la_rdi32 (char *str)
           s3_SET_INSN_ERROR (NULL);
           /* Reset str.  */
           str = keep_data;
-          if ((s3_data_op2 (&str, 1, _VALUE_HI16) == (int) s3_FAIL)
-              || (s3_end_of_line (str) == (int) s3_FAIL))
+          if ((s3_data_op2 (&str, 1, _VALUE_HI16) == s3_FAIL)
+              || (s3_end_of_line (str) == s3_FAIL))
             {
               return;
             }
@@ -4267,11 +4263,11 @@ s3_do_macro_la_rdi32 (char *str)
               if ((s3_score_pic == s3_NO_PIC) || (!s3_inst.reloc.exp.X_add_symbol))
                 {
                   sprintf (append_str, "ld_i32hi r%d, %s", reg_rd, keep_data);
-                  if (s3_append_insn (append_str, TRUE) == (int) s3_FAIL)
+                  if (s3_append_insn (append_str, true) == s3_FAIL)
 		    return;
 
                   sprintf (append_str, "ld_i32lo r%d, %s", reg_rd, keep_data);
-                  if (s3_append_insn (append_str, TRUE) == (int) s3_FAIL)
+                  if (s3_append_insn (append_str, true) == s3_FAIL)
 		    return;
 		}
 	      else
@@ -4295,8 +4291,8 @@ s3_do_macro_li_rdi32 (char *str)
   int reg_rd;
 
   s3_skip_whitespace (str);
-  if ((reg_rd = s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE)) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL)
+  if ((reg_rd = s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE)) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL)
     {
       return;
     }
@@ -4306,7 +4302,7 @@ s3_do_macro_li_rdi32 (char *str)
       char *keep_data = str;
 
       /* Check immediate value.  */
-      if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == (int) s3_FAIL)
+      if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == s3_FAIL)
         {
           s3_inst.error = _("expression error");
           return;
@@ -4322,7 +4318,7 @@ s3_do_macro_li_rdi32 (char *str)
       str = keep_data;
 
       /* li rd, simm16.  */
-      if (s3_data_op2 (&str, 1, _SIMM16_LA) != (int) s3_FAIL)
+      if (s3_data_op2 (&str, 1, _SIMM16_LA) != s3_FAIL)
         {
           s3_end_of_line (str);
           return;
@@ -4335,8 +4331,8 @@ s3_do_macro_li_rdi32 (char *str)
           /* Reset str.  */
           str = keep_data;
 
-          if ((s3_data_op2 (&str, 1, _VALUE_HI16) == (int) s3_FAIL)
-              || (s3_end_of_line (str) == (int) s3_FAIL))
+          if ((s3_data_op2 (&str, 1, _VALUE_HI16) == s3_FAIL)
+              || (s3_end_of_line (str) == s3_FAIL))
             {
               return;
             }
@@ -4349,12 +4345,12 @@ s3_do_macro_li_rdi32 (char *str)
             {
               sprintf (append_str, "ld_i32hi r%d, %s", reg_rd, keep_data);
 
-              if (s3_append_insn (append_str, TRUE) == (int) s3_FAIL)
+              if (s3_append_insn (append_str, true) == s3_FAIL)
 		return;
               else
                 {
                   sprintf (append_str, "ld_i32lo r%d, %s", reg_rd, keep_data);
-                  if (s3_append_insn (append_str, TRUE) == (int) s3_FAIL)
+                  if (s3_append_insn (append_str, true) == s3_FAIL)
 		    return;
 
                   /* Set bwarn as -1, so macro instruction itself will not be generated frag.  */
@@ -4381,15 +4377,15 @@ s3_do_macro_mul_rdrsrs (char *str)
   strcpy (append_str, str);
   backupstr = append_str;
   s3_skip_whitespace (backupstr);
-  if (((reg_rd = s3_reg_required_here (&backupstr, -1, s3_REG_TYPE_SCORE)) == (int) s3_FAIL)
-      || (s3_skip_past_comma (&backupstr) == (int) s3_FAIL)
-      || ((reg_rs1 = s3_reg_required_here (&backupstr, -1, s3_REG_TYPE_SCORE)) == (int) s3_FAIL))
+  if (((reg_rd = s3_reg_required_here (&backupstr, -1, s3_REG_TYPE_SCORE)) == s3_FAIL)
+      || (s3_skip_past_comma (&backupstr) == s3_FAIL)
+      || ((reg_rs1 = s3_reg_required_here (&backupstr, -1, s3_REG_TYPE_SCORE)) == s3_FAIL))
     {
       s3_inst.error = s3_BAD_ARGS;
       return;
     }
 
-  if (s3_skip_past_comma (&backupstr) == (int) s3_FAIL)
+  if (s3_skip_past_comma (&backupstr) == s3_FAIL)
     {
       /* rem/remu rA, rB is error format.  */
       if (strcmp (s3_inst.name, "rem") == 0 || strcmp (s3_inst.name, "remu") == 0)
@@ -4406,8 +4402,8 @@ s3_do_macro_mul_rdrsrs (char *str)
   else
     {
       s3_SET_INSN_ERROR (NULL);
-      if (((reg_rs2 = s3_reg_required_here (&backupstr, -1, s3_REG_TYPE_SCORE)) == (int) s3_FAIL)
-          || (s3_end_of_line (backupstr) == (int) s3_FAIL))
+      if (((reg_rs2 = s3_reg_required_here (&backupstr, -1, s3_REG_TYPE_SCORE)) == s3_FAIL)
+          || (s3_end_of_line (backupstr) == s3_FAIL))
         {
           return;
         }
@@ -4432,11 +4428,11 @@ s3_do_macro_mul_rdrsrs (char *str)
             }
 
           /* Output mul/mulu or div/divu or rem/remu.  */
-          if (s3_append_insn (append_str, TRUE) == (int) s3_FAIL)
+          if (s3_append_insn (append_str, true) == s3_FAIL)
 	    return;
 
           /* Output mfcel or mfceh.  */
-          if (s3_append_insn (append_str1, TRUE) == (int) s3_FAIL)
+          if (s3_append_insn (append_str1, true) == s3_FAIL)
 	    return;
 
           /* Set bwarn as -1, so macro instruction itself will not be generated frag.  */
@@ -4462,16 +4458,16 @@ s3_exp_macro_ldst_abs (char *str)
   strcpy (verifystr, str);
   backupstr = verifystr;
   s3_skip_whitespace (backupstr);
-  if ((reg_rd = s3_reg_required_here (&backupstr, -1, s3_REG_TYPE_SCORE)) == (int) s3_FAIL)
+  if ((reg_rd = s3_reg_required_here (&backupstr, -1, s3_REG_TYPE_SCORE)) == s3_FAIL)
     return;
 
   tmp = backupstr;
-  if (s3_skip_past_comma (&backupstr) == (int) s3_FAIL)
+  if (s3_skip_past_comma (&backupstr) == s3_FAIL)
     return;
 
   backupstr = tmp;
   sprintf (append_str, "li r1  %s", backupstr);
-  s3_append_insn (append_str, TRUE);
+  s3_append_insn (append_str, true);
 
   memcpy (&s3_inst, &inst_backup, sizeof (struct s3_score_it));
   sprintf (append_str, " r%d, [r1,0]", reg_rd);
@@ -4493,19 +4489,19 @@ s3_do_macro_bcmp (char *str)
 
   memset (inst_expand, 0, sizeof inst_expand);
   s3_skip_whitespace (str);
-  if (( reg_a = s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE)) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      ||(reg_b = s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE)) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL)
+  if (( reg_a = s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE)) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      ||(reg_b = s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE)) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL)
     return;
 
   keep_data_size = strlen (str) + 1;
   keep_data = xmalloc (keep_data_size * 2 + 14);
   memcpy (keep_data, str, keep_data_size);
 
-  if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == (int) s3_FAIL
+  if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == s3_FAIL
       ||reg_b == 0
-      || s3_end_of_line (str) == (int) s3_FAIL)
+      || s3_end_of_line (str) == s3_FAIL)
     goto out;
   else if (s3_inst.reloc.exp.X_add_symbol == 0)
     {
@@ -4534,13 +4530,14 @@ s3_do_macro_bcmp (char *str)
           if (s3_score_pic == s3_NO_PIC)
             {
 	      sprintf (append_str, "cmp! r%d, r%d", reg_a, reg_b);
-	      if (s3_append_insn (append_str, TRUE) == (int) s3_FAIL)
+	      if (s3_append_insn (append_str, true) == s3_FAIL)
 		goto out;
 	      if ((inst_main.instruction & 0x3e00007e) == 0x0000004c)
-		sprintf (append_str, "beq %s", keep_data);
+		memcpy (append_str, "beq ", 4);
 	      else
-		sprintf (append_str, "bne %s", keep_data);
-	      if (s3_append_insn (append_str, TRUE) == (int) s3_FAIL)
+		memcpy (append_str, "bne ", 4);
+	      memmove (append_str + 4, keep_data, strlen (keep_data) + 1);
+	      if (s3_append_insn (append_str, true) == s3_FAIL)
 		goto out;
 	    }
 	  else
@@ -4565,15 +4562,16 @@ s3_do_macro_bcmp (char *str)
       if (s3_score_pic == s3_NO_PIC)
         {
 	  sprintf (append_str, "cmp! r%d, r%d", reg_a, reg_b);
-	  if (s3_append_insn (append_str, FALSE) == (int) s3_FAIL)
+	  if (s3_append_insn (append_str, false) == s3_FAIL)
 	    goto out;
 	  memcpy (&inst_expand[0], &s3_inst, sizeof (struct s3_score_it));
 
 	  if ((inst_main.instruction & 0x3e00007e) == 0x0000004c)
-	    sprintf (append_str, "beq %s", keep_data);
+	    memcpy (append_str, "beq ", 4);
 	  else
-	    sprintf (append_str, "bne %s", keep_data);
-	  if (s3_append_insn (append_str, FALSE) == (int) s3_FAIL)
+	    memcpy (append_str, "bne ", 4);
+	  memmove (append_str + 4, keep_data, strlen (keep_data) + 1);
+	  if (s3_append_insn (append_str, false) == s3_FAIL)
 	    goto out;
 	  memcpy (&inst_expand[1], &s3_inst, sizeof (struct s3_score_it));
         }
@@ -4648,16 +4646,16 @@ s3_do_macro_bcmpz (char *str)
 
   memset (inst_expand, 0, sizeof inst_expand);
   s3_skip_whitespace (str);
-  if (( reg_a = s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE)) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL)
+  if (( reg_a = s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE)) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL)
     return;
 
   keep_data_size = strlen (str) + 1;
   keep_data = xmalloc (keep_data_size * 2 + 13);
   memcpy (keep_data, str, keep_data_size);
 
-  if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     goto out;
   else if (s3_inst.reloc.exp.X_add_symbol == 0)
     {
@@ -4682,13 +4680,14 @@ s3_do_macro_bcmpz (char *str)
           if (s3_score_pic == s3_NO_PIC)
             {
 	      sprintf (append_str, "cmpi! r%d, 0", reg_a);
-	      if (s3_append_insn (append_str, TRUE) == (int) s3_FAIL)
+	      if (s3_append_insn (append_str, true) == s3_FAIL)
 		goto out;
 	      if ((inst_main.instruction & 0x3e00007e) == 0x0000004c)
-		sprintf (append_str, "beq %s", keep_data);
+		memcpy (append_str, "beq ", 4);
 	      else
-		sprintf (append_str, "bne %s", keep_data);
-	      if (s3_append_insn (append_str, TRUE) == (int) s3_FAIL)
+		memcpy (append_str, "bne ", 4);
+	      memmove (append_str + 4, keep_data, strlen (keep_data) + 1);
+	      if (s3_append_insn (append_str, true) == s3_FAIL)
 		goto out;
             }
           else
@@ -4713,14 +4712,15 @@ s3_do_macro_bcmpz (char *str)
       if (s3_score_pic == s3_NO_PIC)
         {
 	  sprintf (append_str, "cmpi! r%d, 0", reg_a);
-	  if (s3_append_insn (append_str, FALSE) == (int) s3_FAIL)
+	  if (s3_append_insn (append_str, false) == s3_FAIL)
 	    goto out;
 	  memcpy (&inst_expand[0], &s3_inst, sizeof (struct s3_score_it));
 	  if ((inst_main.instruction & 0x3e00007e) == 0x0000004c)
-	    sprintf (append_str, "beq %s", keep_data);
+	    memcpy (append_str, "beq ", 4);
 	  else
-	    sprintf (append_str, "bne %s", keep_data);
-	  if (s3_append_insn (append_str, FALSE) == (int) s3_FAIL)
+	    memcpy (append_str, "bne ", 4);
+	  memmove (append_str + 4, keep_data, strlen (keep_data) + 1);
+	  if (s3_append_insn (append_str, false) == s3_FAIL)
 	    goto out;
 	  memcpy (&inst_expand[1], &s3_inst, sizeof (struct s3_score_it));
         }
@@ -4798,7 +4798,7 @@ s3_nopic_need_relax (symbolS * sym, int before_relaxing)
          not be referenced off the $gp, although it appears as though
          they can.  */
       symname = S_GET_NAME (sym);
-      if (symname != (const char *)NULL
+      if (symname != NULL
           && (strcmp (symname, "eprol") == 0
               || strcmp (symname, "etext") == 0
               || strcmp (symname, "_gp") == 0
@@ -4811,13 +4811,15 @@ s3_nopic_need_relax (symbolS * sym, int before_relaxing)
         {
           return 1;
         }
-      else if ((!S_IS_DEFINED (sym) || S_IS_COMMON (sym)) && (0
-							      /* We must defer this decision until after the whole file has been read,
-								 since there might be a .extern after the first use of this symbol.  */
-							      || (before_relaxing
-								  && S_GET_VALUE (sym) == 0)
-							      || (S_GET_VALUE (sym) != 0
-								  && S_GET_VALUE (sym) <= s3_g_switch_value)))
+      else if ((!S_IS_DEFINED (sym) || S_IS_COMMON (sym))
+	       && (0
+		   /* We must defer this decision until after the
+		      whole file has been read, since there might be a
+		      .extern after the first use of this symbol.  */
+		   || (before_relaxing
+		       && S_GET_VALUE (sym) == 0)
+		   || (S_GET_VALUE (sym) != 0
+		       && S_GET_VALUE (sym) <= s3_g_switch_value)))
         {
           return 0;
         }
@@ -4825,8 +4827,8 @@ s3_nopic_need_relax (symbolS * sym, int before_relaxing)
       segname = segment_name (S_GET_SEGMENT (sym));
       return (strcmp (segname, ".sdata") != 0
 	      && strcmp (segname, ".sbss") != 0
-	      && strncmp (segname, ".sdata.", 7) != 0
-	      && strncmp (segname, ".gnu.linkonce.s.", 16) != 0);
+	      && !startswith (segname, ".sdata.")
+	      && !startswith (segname, ".gnu.linkonce.s."));
     }
   /* We are not optimizing for the $gp register.  */
   else
@@ -4860,8 +4862,8 @@ s3_build_lwst_pic (int reg_rd, expressionS exp, const char *insn_name)
       /* Fix part
          For an external symbol: lw rD, <sym>($gp)
 	 (BFD_RELOC_SCORE_GOT15)  */
-      sprintf (tmp, "lw_pic r1, %s", add_symbol->bsym->name);
-      if (s3_append_insn (tmp, FALSE) == (int) s3_FAIL)
+      sprintf (tmp, "lw_pic r1, %s", S_GET_NAME (add_symbol));
+      if (s3_append_insn (tmp, false) == s3_FAIL)
         return;
 
       memcpy (&fix_insts[0], &s3_inst, sizeof (struct s3_score_it));
@@ -4872,8 +4874,8 @@ s3_build_lwst_pic (int reg_rd, expressionS exp, const char *insn_name)
 	 addi rD, <sym>       (BFD_RELOC_GOT_LO16) */
       s3_inst.reloc.type = BFD_RELOC_SCORE_GOT15;
       memcpy (&var_insts[0], &s3_inst, sizeof (struct s3_score_it));
-      sprintf (tmp, "addi_s_pic r1, %s", add_symbol->bsym->name);
-      if (s3_append_insn (tmp, FALSE) == (int) s3_FAIL)
+      sprintf (tmp, "addi_s_pic r1, %s", S_GET_NAME (add_symbol));
+      if (s3_append_insn (tmp, false) == s3_FAIL)
         return;
 
       memcpy (&var_insts[1], &s3_inst, sizeof (struct s3_score_it));
@@ -4881,7 +4883,7 @@ s3_build_lwst_pic (int reg_rd, expressionS exp, const char *insn_name)
 
       /* Insn 2 or Insn 3: lw/st rD, [r1, constant]  */
       sprintf (tmp, "%s r%d, [r1, %d]", insn_name, reg_rd, add_number);
-      if (s3_append_insn (tmp, TRUE) == (int) s3_FAIL)
+      if (s3_append_insn (tmp, true) == s3_FAIL)
         return;
 
       /* Set bwarn as -1, so macro instruction itself will not be generated frag.  */
@@ -4917,10 +4919,10 @@ s3_do_macro_ldst_label (char *str)
   backup_str = verifystr;
 
   s3_skip_whitespace (backup_str);
-  if ((reg_rd = s3_reg_required_here (&backup_str, -1, s3_REG_TYPE_SCORE)) == (int) s3_FAIL)
+  if ((reg_rd = s3_reg_required_here (&backup_str, -1, s3_REG_TYPE_SCORE)) == s3_FAIL)
     return;
 
-  if (s3_skip_past_comma (&backup_str) == (int) s3_FAIL)
+  if (s3_skip_past_comma (&backup_str) == s3_FAIL)
     return;
 
   label_str = backup_str;
@@ -4937,18 +4939,18 @@ s3_do_macro_ldst_label (char *str)
   absolute_value = backup_str;
   s3_inst.type = Rd_rvalueRs_SI15;
 
-  if (s3_my_get_expression (&s3_inst.reloc.exp, &backup_str) == (int) s3_FAIL)
+  if (s3_my_get_expression (&s3_inst.reloc.exp, &backup_str) == s3_FAIL)
     {
       s3_inst.error = _("expression error");
       return;
     }
   else if ((s3_inst.reloc.exp.X_add_symbol == NULL)
-           && (s3_validate_immediate (s3_inst.reloc.exp.X_add_number, _VALUE, 0) == (int) s3_FAIL))
+           && (s3_validate_immediate (s3_inst.reloc.exp.X_add_number, _VALUE, 0) == s3_FAIL))
     {
       s3_inst.error = _("value not in range [0, 0x7fffffff]");
       return;
     }
-  else if (s3_end_of_line (backup_str) == (int) s3_FAIL)
+  else if (s3_end_of_line (backup_str) == s3_FAIL)
     {
       s3_inst.error = _("end on line error");
       return;
@@ -4966,8 +4968,8 @@ s3_do_macro_ldst_label (char *str)
   /* Ld/st rD, label.  */
   s3_inst.type = Rd_rvalueRs_SI15;
   backup_str = absolute_value;
-  if ((s3_data_op2 (&backup_str, 1, _GP_IMM15) == (int) s3_FAIL)
-      || (s3_end_of_line (backup_str) == (int) s3_FAIL))
+  if ((s3_data_op2 (&backup_str, 1, _GP_IMM15) == s3_FAIL)
+      || (s3_end_of_line (backup_str) == s3_FAIL))
     {
       return;
     }
@@ -5025,7 +5027,7 @@ s3_do_macro_ldst_label (char *str)
      ld/st rd, [r1, 0]  */
   for (i = 0; i < 3; i++)
     {
-      if (s3_append_insn (append_str[i], FALSE) == (int) s3_FAIL)
+      if (s3_append_insn (append_str[i], false) == s3_FAIL)
 	return;
 
       memcpy (&inst_expand[i], &s3_inst, sizeof (struct s3_score_it));
@@ -5118,10 +5120,10 @@ s3_do_lw_pic (char *str)
   int reg_rd;
 
   s3_skip_whitespace (str);
-  if (((reg_rd = s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE)) == (int) s3_FAIL)
-      || (s3_skip_past_comma (&str) == (int) s3_FAIL)
-      || (s3_my_get_expression (&s3_inst.reloc.exp, &str) == (int) s3_FAIL)
-      || (s3_end_of_line (str) == (int) s3_FAIL))
+  if (((reg_rd = s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE)) == s3_FAIL)
+      || (s3_skip_past_comma (&str) == s3_FAIL)
+      || (s3_my_get_expression (&s3_inst.reloc.exp, &str) == s3_FAIL)
+      || (s3_end_of_line (str) == s3_FAIL))
     {
       return;
     }
@@ -5155,7 +5157,7 @@ s3_do_empty (char *str)
           return;
         }
     }
-  if (s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_end_of_line (str) == s3_FAIL)
     return;
 
   if (s3_inst.relax_inst != 0x8000)
@@ -5184,8 +5186,8 @@ s3_do_jump (char *str)
   char *save_in;
 
   s3_skip_whitespace (str);
-  if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 
   if (s3_inst.reloc.exp.X_add_symbol == 0)
@@ -5211,8 +5213,8 @@ s3_do_jump (char *str)
 static void
 s3_do_branch (char *str)
 {
-  if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_my_get_expression (&s3_inst.reloc.exp, &str) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     {
       return;
     }
@@ -5250,8 +5252,8 @@ s3_do_branch (char *str)
 static void
 s3_do16_branch (char *str)
 {
-  if ((s3_my_get_expression (&s3_inst.reloc.exp, &str) == (int) s3_FAIL
-       || s3_end_of_line (str) == (int) s3_FAIL))
+  if ((s3_my_get_expression (&s3_inst.reloc.exp, &str) == s3_FAIL
+       || s3_end_of_line (str) == s3_FAIL))
     {
       ;
     }
@@ -5275,11 +5277,11 @@ s3_do16_branch (char *str)
 }
 
 /* Return true if the given symbol should be considered local for s3_PIC.  */
-static bfd_boolean
+static bool
 s3_pic_need_relax (symbolS *sym, asection *segtype)
 {
   asection *symsec;
-  bfd_boolean linkonce;
+  bool linkonce;
 
   /* Handle the case of a symbol equated to another symbol.  */
   while (symbol_equated_reloc_p (sym))
@@ -5297,18 +5299,17 @@ s3_pic_need_relax (symbolS *sym, asection *segtype)
   symsec = S_GET_SEGMENT (sym);
 
   /* duplicate the test for LINK_ONCE sections as in adjust_reloc_syms */
-  linkonce = FALSE;
+  linkonce = false;
   if (symsec != segtype && ! S_IS_LOCAL (sym))
     {
-      if ((bfd_get_section_flags (stdoutput, symsec) & SEC_LINK_ONCE) != 0)
-	linkonce = TRUE;
+      if ((bfd_section_flags (symsec) & SEC_LINK_ONCE) != 0)
+	linkonce = true;
 
       /* The GNU toolchain uses an extension for ELF: a section
 	 beginning with the magic string .gnu.linkonce is a linkonce
 	 section.  */
-      if (strncmp (segment_name (symsec), ".gnu.linkonce",
-		   sizeof ".gnu.linkonce" - 1) == 0)
-	linkonce = TRUE;
+      if (startswith (segment_name (symsec), ".gnu.linkonce"))
+	linkonce = true;
     }
 
   /* This must duplicate the test in adjust_reloc_syms.  */
@@ -5344,13 +5345,13 @@ s3_parse_pce_inst (char *insnstr)
   p += 2;
   sprintf (second, "%s", p);
 
-  s3_parse_16_32_inst (first, FALSE);
+  s3_parse_16_32_inst (first, false);
   if (s3_inst.error)
     return;
 
   memcpy (&pec_part_1, &s3_inst, sizeof (s3_inst));
 
-  s3_parse_16_32_inst (second, FALSE);
+  s3_parse_16_32_inst (second, false);
   if (s3_inst.error)
     return;
 
@@ -5382,8 +5383,8 @@ s3_do16_dsp (char *str)
 
   s3_skip_whitespace (str);
 
-  if ((rd = s3_reglow_required_here (&str, 0)) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if ((rd = s3_reglow_required_here (&str, 0)) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     {
       return;
     }
@@ -5406,10 +5407,10 @@ s3_do16_dsp2 (char *str)
 
   s3_skip_whitespace (str);
 
-  if (s3_reglow_required_here (&str, 4) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reglow_required_here (&str, 0) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reglow_required_here (&str, 4) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reglow_required_here (&str, 0) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     {
       return;
     }
@@ -5433,10 +5434,10 @@ s3_do_dsp (char *str)
 
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 
   if ((s3_inst.relax_inst != 0x8000) && (((s3_inst.instruction >> 20) & 0x1f) == 3) )
@@ -5462,12 +5463,12 @@ s3_do_dsp2 (char *str)
 
   s3_skip_whitespace (str);
 
-  if ((reg = s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE)) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if ((reg = s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE)) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reg_required_here (&str, 10, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     {
       return;
     }
@@ -5511,10 +5512,10 @@ s3_do_dsp3 (char *str)
 
   s3_skip_whitespace (str);
 
-  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_skip_past_comma (&str) == (int) s3_FAIL
-      || s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == (int) s3_FAIL
-      || s3_end_of_line (str) == (int) s3_FAIL)
+  if (s3_reg_required_here (&str, 20, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_skip_past_comma (&str) == s3_FAIL
+      || s3_reg_required_here (&str, 15, s3_REG_TYPE_SCORE) == s3_FAIL
+      || s3_end_of_line (str) == s3_FAIL)
     return;
 
   if ((s3_inst.relax_inst != 0x8000) && (((s3_inst.instruction >> 20) & 0x1f) == 3) )
@@ -5526,27 +5527,11 @@ s3_do_dsp3 (char *str)
     s3_inst.relax_inst = 0x8000;
 }
 
-
-/* If we change section we must dump the literal pool first.  */
-static void
-s3_s_score_bss (int ignore ATTRIBUTE_UNUSED)
-{
-  subseg_set (bss_section, (subsegT) get_absolute_expression ());
-  demand_empty_rest_of_line ();
-}
-
-static void
-s3_s_score_text (int ignore)
-{
-  obj_elf_text (ignore);
-  record_alignment (now_seg, 2);
-}
-
 static void
 s3_score_s_section (int ignore)
 {
   obj_elf_section (ignore);
-  if ((bfd_get_section_flags (stdoutput, now_seg) & SEC_CODE) != 0)
+  if ((bfd_section_flags (now_seg) & SEC_CODE) != 0)
     record_alignment (now_seg, 2);
 
 }
@@ -5568,15 +5553,17 @@ s3_s_change_sec (int sec)
   switch (sec)
     {
     case 'r':
-      seg = subseg_new (s3_RDATA_SECTION_NAME, (subsegT) get_absolute_expression ());
-      bfd_set_section_flags (stdoutput, seg, (SEC_ALLOC | SEC_LOAD | SEC_READONLY | SEC_RELOC | SEC_DATA));
+      seg = subseg_new (s3_RDATA_SECTION_NAME, get_absolute_expression ());
+      bfd_set_section_flags (seg, (SEC_ALLOC | SEC_LOAD | SEC_READONLY
+				   | SEC_RELOC | SEC_DATA));
       if (strcmp (TARGET_OS, "elf") != 0)
         record_alignment (seg, 4);
       demand_empty_rest_of_line ();
       break;
     case 's':
-      seg = subseg_new (".sdata", (subsegT) get_absolute_expression ());
-      bfd_set_section_flags (stdoutput, seg, SEC_ALLOC | SEC_LOAD | SEC_RELOC | SEC_DATA);
+      seg = subseg_new (".sdata", get_absolute_expression ());
+      bfd_set_section_flags (seg, (SEC_ALLOC | SEC_LOAD | SEC_RELOC
+				   | SEC_DATA | SEC_SMALL_DATA));
       if (strcmp (TARGET_OS, "elf") != 0)
         record_alignment (seg, 4);
       demand_empty_rest_of_line ();
@@ -5589,7 +5576,7 @@ s3_s_score_mask (int reg_type ATTRIBUTE_UNUSED)
 {
   long mask, off;
 
-  if (s3_cur_proc_ptr == (s3_procS *) NULL)
+  if (s3_cur_proc_ptr == NULL)
     {
       as_warn (_(".mask outside of .ent"));
       demand_empty_rest_of_line ();
@@ -5616,7 +5603,7 @@ s3_get_symbol (void)
   symbolS *p;
 
   c = get_symbol_name (&name);
-  p = (symbolS *) symbol_find_or_make (name);
+  p = symbol_find_or_make (name);
   (void) restore_line_pointer (c);
   return p;
 }
@@ -5685,17 +5672,10 @@ s3_s_score_ent (int aent)
   if (ISDIGIT (*input_line_pointer) || *input_line_pointer == '-')
     s3_get_number ();
 
-#ifdef BFD_ASSEMBLER
-  if ((bfd_get_section_flags (stdoutput, now_seg) & SEC_CODE) != 0)
+  if ((bfd_section_flags (now_seg) & SEC_CODE) != 0)
     maybe_text = 1;
   else
     maybe_text = 0;
-#else
-  if (now_seg != data_section && now_seg != bss_section)
-    maybe_text = 1;
-  else
-    maybe_text = 0;
-#endif
   if (!maybe_text)
     as_warn (_(".ent or .aent not in text section."));
   if (!aent && s3_cur_proc_ptr)
@@ -5730,7 +5710,7 @@ s3_s_score_frame (int ignore ATTRIBUTE_UNUSED)
   backupstr = input_line_pointer;
 
 #ifdef OBJ_ELF
-  if (s3_cur_proc_ptr == (s3_procS *) NULL)
+  if (s3_cur_proc_ptr == NULL)
     {
       as_warn (_(".frame outside of .ent"));
       demand_empty_rest_of_line ();
@@ -5786,7 +5766,7 @@ s3_s_score_end (int x ATTRIBUTE_UNUSED)
   expressionS exp;
   char *fragp;
 
-  if (!is_end_of_line[(unsigned char)*input_line_pointer])
+  if (!is_end_of_stmt (*input_line_pointer))
     {
       p = s3_get_symbol ();
       demand_empty_rest_of_line ();
@@ -5794,17 +5774,10 @@ s3_s_score_end (int x ATTRIBUTE_UNUSED)
   else
     p = NULL;
 
-#ifdef BFD_ASSEMBLER
-  if ((bfd_get_section_flags (stdoutput, now_seg) & SEC_CODE) != 0)
+  if ((bfd_section_flags (now_seg) & SEC_CODE) != 0)
     maybe_text = 1;
   else
     maybe_text = 0;
-#else
-  if (now_seg != data_section && now_seg != bss_section)
-    maybe_text = 1;
-  else
-    maybe_text = 0;
-#endif
 
   if (!maybe_text)
     as_warn (_(".end not in text section"));
@@ -5842,13 +5815,13 @@ s3_s_score_end (int x ATTRIBUTE_UNUSED)
       exp.X_add_number = 0;
       emit_expr (&exp, 4);
       fragp = frag_more (7 * 4);
-      md_number_to_chars (fragp, (valueT) s3_cur_proc_ptr->reg_mask, 4);
-      md_number_to_chars (fragp + 4, (valueT) s3_cur_proc_ptr->reg_offset, 4);
-      md_number_to_chars (fragp + 8, (valueT) s3_cur_proc_ptr->fpreg_mask, 4);
-      md_number_to_chars (fragp + 12, (valueT) s3_cur_proc_ptr->leaf, 4);
-      md_number_to_chars (fragp + 16, (valueT) s3_cur_proc_ptr->frame_offset, 4);
-      md_number_to_chars (fragp + 20, (valueT) s3_cur_proc_ptr->frame_reg, 4);
-      md_number_to_chars (fragp + 24, (valueT) s3_cur_proc_ptr->pc_reg, 4);
+      md_number_to_chars (fragp, s3_cur_proc_ptr->reg_mask, 4);
+      md_number_to_chars (fragp + 4, s3_cur_proc_ptr->reg_offset, 4);
+      md_number_to_chars (fragp + 8, s3_cur_proc_ptr->fpreg_mask, 4);
+      md_number_to_chars (fragp + 12, s3_cur_proc_ptr->leaf, 4);
+      md_number_to_chars (fragp + 16, s3_cur_proc_ptr->frame_offset, 4);
+      md_number_to_chars (fragp + 20, s3_cur_proc_ptr->frame_reg, 4);
+      md_number_to_chars (fragp + 24, s3_cur_proc_ptr->pc_reg, 4);
       subseg_set (saved_seg, saved_subseg);
 
     }
@@ -5863,7 +5836,7 @@ s3_s_score_set (int x ATTRIBUTE_UNUSED)
   char name[s3_MAX_LITERAL_POOL_SIZE];
   char * orig_ilp = input_line_pointer;
 
-  while (!is_end_of_line[(unsigned char)*input_line_pointer])
+  while (!is_end_of_stmt (*input_line_pointer))
     {
       name[i] = (char) * input_line_pointer;
       i++;
@@ -5932,21 +5905,21 @@ s3_s_score_cpload (int ignore ATTRIBUTE_UNUSED)
       return;
     }
 
-  if ((reg = s3_reg_required_here (&input_line_pointer, -1, s3_REG_TYPE_SCORE)) == (int) s3_FAIL)
+  if ((reg = s3_reg_required_here (&input_line_pointer, -1, s3_REG_TYPE_SCORE)) == s3_FAIL)
     return;
 
   demand_empty_rest_of_line ();
 
   sprintf (insn_str, "ld_i32hi r%d, %s", s3_GP, GP_DISP_LABEL);
-  if (s3_append_insn (insn_str, TRUE) == (int) s3_FAIL)
+  if (s3_append_insn (insn_str, true) == s3_FAIL)
     return;
 
   sprintf (insn_str, "ld_i32lo r%d, %s", s3_GP, GP_DISP_LABEL);
-  if (s3_append_insn (insn_str, TRUE) == (int) s3_FAIL)
+  if (s3_append_insn (insn_str, true) == s3_FAIL)
     return;
 
   sprintf (insn_str, "add r%d, r%d, r%d", s3_GP, s3_GP, reg);
-  if (s3_append_insn (insn_str, TRUE) == (int) s3_FAIL)
+  if (s3_append_insn (insn_str, true) == s3_FAIL)
     return;
 }
 
@@ -5967,8 +5940,8 @@ s3_s_score_cprestore (int ignore ATTRIBUTE_UNUSED)
       return;
     }
 
-  if ((reg = s3_reg_required_here (&input_line_pointer, -1, s3_REG_TYPE_SCORE)) == (int) s3_FAIL
-      || s3_skip_past_comma (&input_line_pointer) == (int) s3_FAIL)
+  if ((reg = s3_reg_required_here (&input_line_pointer, -1, s3_REG_TYPE_SCORE)) == s3_FAIL
+      || s3_skip_past_comma (&input_line_pointer) == s3_FAIL)
     {
       return;
     }
@@ -5978,7 +5951,7 @@ s3_s_score_cprestore (int ignore ATTRIBUTE_UNUSED)
   if (cprestore_offset <= 0x3fff)
     {
       sprintf (insn_str, "sw r%d, [r%d, %d]", s3_GP, reg, cprestore_offset);
-      if (s3_append_insn (insn_str, TRUE) == (int) s3_FAIL)
+      if (s3_append_insn (insn_str, true) == s3_FAIL)
         return;
     }
   else
@@ -5989,15 +5962,15 @@ s3_s_score_cprestore (int ignore ATTRIBUTE_UNUSED)
       s3_nor1 = 0;
 
       sprintf (insn_str, "li r1, %d", cprestore_offset);
-      if (s3_append_insn (insn_str, TRUE) == (int) s3_FAIL)
+      if (s3_append_insn (insn_str, true) == s3_FAIL)
         return;
 
       sprintf (insn_str, "add r1, r1, r%d", reg);
-      if (s3_append_insn (insn_str, TRUE) == (int) s3_FAIL)
+      if (s3_append_insn (insn_str, true) == s3_FAIL)
         return;
 
       sprintf (insn_str, "sw r%d, [r1]", s3_GP);
-      if (s3_append_insn (insn_str, TRUE) == (int) s3_FAIL)
+      if (s3_append_insn (insn_str, true) == s3_FAIL)
         return;
 
       s3_nor1 = r1_bak;
@@ -6028,7 +6001,7 @@ s3_s_score_gpword (int ignore ATTRIBUTE_UNUSED)
     }
   p = frag_more (4);
   s3_md_number_to_chars (p, (valueT) 0, 4);
-  fix_new_exp (frag_now, p - frag_now->fr_literal, 4, &ex, FALSE, BFD_RELOC_GPREL32);
+  fix_new_exp (frag_now, p - frag_now->fr_literal, 4, &ex, false, BFD_RELOC_GPREL32);
   demand_empty_rest_of_line ();
 }
 
@@ -6047,7 +6020,7 @@ s3_s_score_cpadd (int ignore ATTRIBUTE_UNUSED)
       return;
     }
 
-  if ((reg = s3_reg_required_here (&input_line_pointer, -1, s3_REG_TYPE_SCORE)) == (int) s3_FAIL)
+  if ((reg = s3_reg_required_here (&input_line_pointer, -1, s3_REG_TYPE_SCORE)) == s3_FAIL)
     {
       return;
     }
@@ -6055,7 +6028,7 @@ s3_s_score_cpadd (int ignore ATTRIBUTE_UNUSED)
 
   /* Add $gp to the register named as an argument.  */
   sprintf (insn_str, "add r%d, r%d, r%d", reg, reg, s3_GP);
-  if (s3_append_insn (insn_str, TRUE) == (int) s3_FAIL)
+  if (s3_append_insn (insn_str, true) == s3_FAIL)
     return;
 }
 
@@ -6111,7 +6084,7 @@ s3_s_score_lcomm (int bytes_p)
       SKIP_WHITESPACE ();
     }
 
-  if (is_end_of_line[(unsigned char)*input_line_pointer])
+  if (is_end_of_stmt (*input_line_pointer))
     {
       as_bad (_("missing size expression"));
       return;
@@ -6128,15 +6101,14 @@ s3_s_score_lcomm (int bytes_p)
   if (OUTPUT_FLAVOR == bfd_target_ecoff_flavour || OUTPUT_FLAVOR == bfd_target_elf_flavour)
     {
       /* For Score and Alpha ECOFF or ELF, small objects are put in .sbss.  */
-      if ((unsigned)temp <= bfd_get_gp_size (stdoutput))
-        {
-          bss_seg = subseg_new (".sbss", 1);
-          seg_info (bss_seg)->bss = 1;
-#ifdef BFD_ASSEMBLER
-          if (!bfd_set_section_flags (stdoutput, bss_seg, SEC_ALLOC))
-            as_warn (_("error setting flags for \".sbss\": %s"), bfd_errmsg (bfd_get_error ()));
-#endif
-        }
+      if ((unsigned) temp <= bfd_get_gp_size (stdoutput))
+	{
+	  bss_seg = subseg_new (".sbss", 1);
+	  seg_info (bss_seg)->bss = 1;
+	  if (!bfd_set_section_flags (bss_seg, SEC_ALLOC | SEC_SMALL_DATA))
+	    as_warn (_("error setting flags for \".sbss\": %s"),
+		     bfd_errmsg (bfd_get_error ()));
+	}
     }
 #endif
 
@@ -6146,7 +6118,7 @@ s3_s_score_lcomm (int bytes_p)
       ++input_line_pointer;
       SKIP_WHITESPACE ();
 
-      if (is_end_of_line[(unsigned char)*input_line_pointer])
+      if (is_end_of_stmt (*input_line_pointer))
         {
           as_bad (_("missing alignment"));
           return;
@@ -6195,18 +6167,6 @@ s3_s_score_lcomm (int bytes_p)
 
       record_alignment (bss_seg, align);
     }
-  else
-    {
-      /* Assume some objects may require alignment on some systems.  */
-#if defined (TC_ALPHA) && ! defined (VMS)
-      if (temp > 1)
-        {
-          align = ffs (temp) - 1;
-          if (temp % (1 << align))
-            abort ();
-        }
-#endif
-    }
 
   *p = 0;
   symbolP = symbol_find_or_make (name);
@@ -6214,12 +6174,8 @@ s3_s_score_lcomm (int bytes_p)
 
   if (
 #if (defined (OBJ_AOUT) || defined (OBJ_MAYBE_AOUT))
-#ifdef BFD_ASSEMBLER
       (OUTPUT_FLAVOR != bfd_target_aout_flavour
        || (S_GET_OTHER (symbolP) == 0 && S_GET_DESC (symbolP) == 0)) &&
-#else
-      (S_GET_OTHER (symbolP) == 0 && S_GET_DESC (symbolP) == 0) &&
-#endif
 #endif
       (S_GET_SEGMENT (symbolP) == bss_seg || (!S_IS_DEFINED (symbolP) && S_GET_VALUE (symbolP) == 0)))
     {
@@ -6235,7 +6191,7 @@ s3_s_score_lcomm (int bytes_p)
         symbol_get_frag (symbolP)->fr_symbol = NULL;
 
       symbol_set_frag (symbolP, frag_now);
-      pfrag = frag_var (rs_org, 1, 1, (relax_substateT) 0, symbolP, (offsetT) temp, NULL);
+      pfrag = frag_var (rs_org, 1, 1, 0, symbolP, temp, NULL);
       *pfrag = 0;
 
 
@@ -6264,22 +6220,16 @@ s3_s_score_lcomm (int bytes_p)
 }
 
 static void
-s3_insert_reg (const struct s3_reg_entry *r, struct hash_control *htab)
+s3_insert_reg (const struct s3_reg_entry *r, htab_t htab)
 {
-  int i = 0;
-  int len = strlen (r->name) + 2;
-  char *buf = XNEWVEC (char, len);
-  char *buf2 = XNEWVEC (char, len);
+  char *buf = notes_strdup (r->name);
+  char *p;
 
-  strcpy (buf + i, r->name);
-  for (i = 0; buf[i]; i++)
-    {
-      buf2[i] = TOUPPER (buf[i]);
-    }
-  buf2[i] = '\0';
+  for (p = buf; *p; p++)
+    *p = TOUPPER (*p);
 
-  hash_insert (htab, buf, (void *) r);
-  hash_insert (htab, buf2, (void *) r);
+  str_hash_insert (htab, r->name, r, 0);
+  str_hash_insert (htab, buf, r, 0);
 }
 
 static void
@@ -6287,14 +6237,9 @@ s3_build_reg_hsh (struct s3_reg_map *map)
 {
   const struct s3_reg_entry *r;
 
-  if ((map->htab = hash_new ()) == NULL)
-    {
-      as_fatal (_("virtual memory exhausted"));
-    }
+  map->htab = str_htab_create ();
   for (r = map->names; r->name != NULL; r++)
-    {
-      s3_insert_reg (r, map->htab);
-    }
+    s3_insert_reg (r, map->htab);
 }
 
 /* Iterate over the base tables to create the instruction patterns.  */
@@ -6302,28 +6247,25 @@ static void
 s3_build_score_ops_hsh (void)
 {
   unsigned int i;
-  static struct obstack insn_obstack;
 
-  obstack_begin (&insn_obstack, 4000);
   for (i = 0; i < sizeof (s3_score_insns) / sizeof (struct s3_asm_opcode); i++)
     {
       const struct s3_asm_opcode *insn = s3_score_insns + i;
-      size_t len = strlen (insn->template_name);
+      size_t len = strlen (insn->template_name) + 1;
       struct s3_asm_opcode *new_opcode;
       char *template_name;
-      new_opcode = (struct s3_asm_opcode *)
-	obstack_alloc (&insn_obstack, sizeof (struct s3_asm_opcode));
-      template_name = (char *) obstack_alloc (& insn_obstack, len + 1);
 
-      strcpy (template_name, insn->template_name);
+      new_opcode = notes_alloc (sizeof (*new_opcode));
+      template_name = notes_memdup (insn->template_name, len, len);
+
       new_opcode->template_name = template_name;
       new_opcode->parms = insn->parms;
       new_opcode->value = insn->value;
       new_opcode->relax_value = insn->relax_value;
       new_opcode->type = insn->type;
       new_opcode->bitmask = insn->bitmask;
-      hash_insert (s3_score_ops_hsh, new_opcode->template_name,
-                   (void *) new_opcode);
+      str_hash_insert (s3_score_ops_hsh, new_opcode->template_name,
+		       new_opcode, 0);
     }
 }
 
@@ -6331,45 +6273,28 @@ static void
 s3_build_dependency_insn_hsh (void)
 {
   unsigned int i;
-  static struct obstack dependency_obstack;
 
-  obstack_begin (&dependency_obstack, 4000);
   for (i = 0; i < sizeof (s3_insn_to_dependency_table) / sizeof (s3_insn_to_dependency_table[0]); i++)
     {
       const struct s3_insn_to_dependency *tmp = s3_insn_to_dependency_table + i;
-      size_t len = strlen (tmp->insn_name);
+      size_t len = strlen (tmp->insn_name) + 1;
       struct s3_insn_to_dependency *new_i2n;
       char *buf;
 
-      new_i2n = (struct s3_insn_to_dependency *)
-	obstack_alloc (&dependency_obstack,
-		       sizeof (struct s3_insn_to_dependency));
-      buf = (char *) obstack_alloc (&dependency_obstack, len + 1);
+      new_i2n = notes_alloc (sizeof (*new_i2n));
+      buf = notes_memdup (tmp->insn_name, len, len);
 
-      strcpy (buf, tmp->insn_name);
       new_i2n->insn_name = buf;
       new_i2n->type = tmp->type;
-      hash_insert (s3_dependency_insn_hsh, new_i2n->insn_name,
-                   (void *) new_i2n);
+      str_hash_insert (s3_dependency_insn_hsh, new_i2n->insn_name, new_i2n, 0);
     }
-}
-
-static void
-s_score_bss (int ignore ATTRIBUTE_UNUSED)
-{
-  if (score3)
-    return s3_s_score_bss (ignore);
-  else
-    return s7_s_score_bss (ignore);
 }
 
 static void
 s_score_text (int ignore)
 {
-  if (score3)
-    return s3_s_score_text (ignore);
-  else
-    return s7_s_score_text (ignore);
+  obj_elf_text (ignore);
+  record_alignment (now_seg, 2);
 }
 
 static void
@@ -6490,9 +6415,9 @@ s3_assemble (char *str)
   if (s3_INSN_IS_PCE_P (str))
     s3_parse_pce_inst (str);
   else if (s3_INSN_IS_48_P (str))
-    s3_parse_48_inst (str, TRUE);
+    s3_parse_48_inst (str, true);
   else
-    s3_parse_16_32_inst (str, TRUE);
+    s3_parse_16_32_inst (str, true);
 
   if (s3_inst.error)
     as_bad (_("%s -- `%s'"), s3_inst.error, s3_inst.str);
@@ -6518,17 +6443,15 @@ s3_begin (void)
   segT seg;
   subsegT subseg;
 
-  if ((s3_score_ops_hsh = hash_new ()) == NULL)
-    as_fatal (_("virtual memory exhausted"));
+  s3_score_ops_hsh = str_htab_create ();
 
   s3_build_score_ops_hsh ();
 
-  if ((s3_dependency_insn_hsh = hash_new ()) == NULL)
-    as_fatal (_("virtual memory exhausted"));
+  s3_dependency_insn_hsh = str_htab_create ();
 
   s3_build_dependency_insn_hsh ();
 
-  for (i = (int)s3_REG_TYPE_FIRST; i < (int)s3_REG_TYPE_MAX; i++)
+  for (i = s3_REG_TYPE_FIRST; i < s3_REG_TYPE_MAX; i++)
     s3_build_reg_hsh (s3_all_reg_maps + i);
 
   /* Initialize dependency vector.  */
@@ -6537,9 +6460,9 @@ s3_begin (void)
   bfd_set_arch_mach (stdoutput, TARGET_ARCH, 0);
   seg = now_seg;
   subseg = now_subseg;
-  s3_pdr_seg = subseg_new (".pdr", (subsegT) 0);
-  (void)bfd_set_section_flags (stdoutput, s3_pdr_seg, SEC_READONLY | SEC_RELOC | SEC_DEBUGGING);
-  (void)bfd_set_section_alignment (stdoutput, s3_pdr_seg, 2);
+  s3_pdr_seg = subseg_new (".pdr", 0);
+  bfd_set_section_flags (s3_pdr_seg, SEC_READONLY | SEC_RELOC | SEC_DEBUGGING);
+  bfd_set_section_alignment (s3_pdr_seg, 2);
   subseg_set (seg, subseg);
 
   if (s3_USE_GLOBAL_POINTER_OPT)
@@ -6556,17 +6479,16 @@ s3_number_to_chars (char *buf, valueT val, int n)
 }
 
 static valueT
-s3_normal_chars_to_number (char *buf, int n)
+s3_normal_chars_to_number (const char *buf, int n)
 {
   valueT result = 0;
-  unsigned char *where = (unsigned char *)buf;
 
   if (target_big_endian)
     {
       while (n--)
         {
           result <<= 8;
-          result |= (*where++ & 255);
+          result |= (*buf++ & 255);
         }
     }
   else
@@ -6574,7 +6496,7 @@ s3_normal_chars_to_number (char *buf, int n)
       while (n--)
         {
           result <<= 8;
-          result |= (where[n] & 255);
+          result |= (buf[n] & 255);
         }
     }
 
@@ -6584,7 +6506,7 @@ s3_normal_chars_to_number (char *buf, int n)
 static void
 s3_number_to_chars_littleendian (void *p, valueT data, int n)
 {
-  char *buf = (char *) p;
+  char *buf = p;
 
   switch (n)
     {
@@ -6607,7 +6529,7 @@ s3_number_to_chars_littleendian (void *p, valueT data, int n)
 static valueT
 s3_chars_to_number_littleendian (const void *p, int n)
 {
-  char *buf = (char *) p;
+  const char *buf = p;
   valueT result = 0;
 
   switch (n)
@@ -6656,7 +6578,7 @@ static const char *
 s3_atof (int type, char *litP, int *sizeP)
 {
   int prec;
-  LITTLENUM_TYPE words[s3_MAX_LITTLENUMS];
+  LITTLENUM_TYPE words[MAX_LITTLENUMS];
   char *t;
   int i;
 
@@ -6693,19 +6615,19 @@ s3_atof (int type, char *litP, int *sizeP)
   if (target_big_endian)
     {
       for (i = 0; i < prec; i++)
-        {
-          s3_md_number_to_chars (litP, (valueT) words[i], 2);
-          litP += 2;
-        }
+	{
+	  s3_md_number_to_chars (litP, words[i], 2);
+	  litP += 2;
+	}
     }
   else
     {
       for (i = 0; i < prec; i += 2)
-        {
-          s3_md_number_to_chars (litP, (valueT) words[i + 1], 2);
-          s3_md_number_to_chars (litP + 2, (valueT) words[i], 2);
-          litP += 4;
-        }
+	{
+	  s3_md_number_to_chars (litP, words[i + 1], 2);
+	  s3_md_number_to_chars (litP + 2, words[i], 2);
+	  litP += 4;
+	}
     }
 
   return 0;
@@ -6741,7 +6663,7 @@ s3_force_relocation (struct fix *fixp)
   return retval;
 }
 
-static bfd_boolean
+static bool
 s3_fix_adjustable (fixS * fixP)
 {
   if (fixP->fx_addsy == NULL)
@@ -6847,10 +6769,7 @@ s3_relax_branch_inst16 (fragS * fragp)
   if (s == NULL)
     frag_addr = 0;
   else
-    {
-      if (s->bsym != NULL)
-        symbol_address = (addressT) symbol_get_frag (s)->fr_address;
-    }
+    symbol_address = symbol_get_frag (s)->fr_address;
 
   inst_value = s3_md_chars_to_number (fragp->fr_literal, s3_INSN16_SIZE);
   offset = (inst_value & 0x1ff) << 1;
@@ -6862,7 +6781,6 @@ s3_relax_branch_inst16 (fragS * fragp)
   if (relaxable_p
       && (!((value & 0xfffffe00) == 0 || (value & 0xfffffe00) == 0xfffffe00))
       && fragp->fr_fix == 2
-      && (s->bsym != NULL)
       && (S_IS_DEFINED (s)
           && !S_IS_COMMON (s)
           && !S_IS_EXTERNAL (s)))
@@ -6894,10 +6812,7 @@ s3_relax_cmpbranch_inst32 (fragS * fragp)
   if (s == NULL)
     frag_addr = 0;
   else
-    {
-      if (s->bsym != NULL)
-	symbol_address = (addressT) symbol_get_frag (s)->fr_address;
-    }
+    symbol_address = symbol_get_frag (s)->fr_address;
 
   inst_value = s3_md_chars_to_number (fragp->fr_literal, s3_INSN_SIZE);
   offset = (inst_value & 0x1)
@@ -6921,8 +6836,7 @@ s3_relax_cmpbranch_inst32 (fragS * fragp)
   /* need to translate when extern or not defined or common symbol */
   else if ((relaxable_p
 	    && (!((value & 0xfffffe00) == 0 || (value & 0xfffffe00) == 0xfffffe00))
-	    && fragp->fr_fix == 4
-	    && (s->bsym != NULL))
+	    && fragp->fr_fix == 4)
 	   || !S_IS_DEFINED (s)
 	   ||S_IS_COMMON (s)
 	   ||S_IS_EXTERNAL (s))
@@ -7018,8 +6932,8 @@ s3_relax_frag (asection * sec ATTRIBUTE_UNUSED, fragS * fragp, long stretch ATTR
 static void
 s3_convert_frag (bfd * abfd ATTRIBUTE_UNUSED, segT sec ATTRIBUTE_UNUSED, fragS * fragp)
 {
-  int r_old;
-  int r_new;
+  unsigned int r_old;
+  unsigned int r_new;
   char backup[20];
   fixS *fixp;
 
@@ -7084,17 +6998,17 @@ s3_pcrel_from (fixS * fixP)
 static valueT
 s3_section_align (segT segment ATTRIBUTE_UNUSED, valueT size)
 {
-  int align = bfd_get_section_alignment (stdoutput, segment);
+  int align = bfd_section_alignment (segment);
   return ((size + (1 << align) - 1) & -(1 << align));
 }
 
 static void
 s3_apply_fix (fixS *fixP, valueT *valP, segT seg)
 {
-  offsetT value = *valP;
-  offsetT newval;
-  offsetT content;
-  unsigned short HI, LO;
+  valueT value = *valP;
+  valueT newval;
+  valueT content;
+  valueT HI, LO;
 
   char *buf = fixP->fx_frag->fr_literal + fixP->fx_where;
 
@@ -7125,7 +7039,7 @@ s3_apply_fix (fixS *fixP, valueT *valP, segT seg)
       if (fixP->fx_done)        /* For la rd, imm32.  */
         {
           newval = s3_md_chars_to_number (buf, s3_INSN_SIZE);
-          HI = (value) >> 16;   /* mul to 2, then take the hi 16 bit.  */
+          HI = value >> 16;   /* mul to 2, then take the hi 16 bit.  */
           newval |= (HI & 0x3fff) << 1;
           newval |= ((HI >> 14) & 0x3) << 16;
           s3_md_number_to_chars (buf, newval, s3_INSN_SIZE);
@@ -7135,7 +7049,7 @@ s3_apply_fix (fixS *fixP, valueT *valP, segT seg)
       if (fixP->fx_done)        /* For la rd, imm32.  */
         {
           newval = s3_md_chars_to_number (buf, s3_INSN_SIZE);
-          LO = (value) & 0xffff;
+          LO = value & 0xffff;
           newval |= (LO & 0x3fff) << 1; /* 16 bit: imm -> 14 bit in lo, 2 bit in hi.  */
           newval |= ((LO >> 14) & 0x3) << 16;
           s3_md_number_to_chars (buf, newval, s3_INSN_SIZE);
@@ -7395,10 +7309,10 @@ s3_gen_reloc (asection * section ATTRIBUTE_UNUSED, fixS * fixp)
   bfd_reloc_code_real_type code;
   const char *type;
 
-  reloc = retval[0] = XNEW (arelent);
+  reloc = notes_alloc (sizeof (arelent));
+  reloc->sym_ptr_ptr = notes_alloc (sizeof (asymbol *));
+  retval[0] = reloc;
   retval[1] = NULL;
-
-  reloc->sym_ptr_ptr = XNEW (asymbol *);
   *reloc->sym_ptr_ptr = symbol_get_bfdsym (fixp->fx_addsy);
   reloc->address = fixp->fx_frag->fr_address + fixp->fx_where;
   reloc->addend = fixp->fx_offset;
@@ -7426,9 +7340,9 @@ s3_gen_reloc (asection * section ATTRIBUTE_UNUSED, fixS * fixp)
       newval |= (((off >> 14) & 0x3) << 16);
       s3_md_number_to_chars (buf, newval, s3_INSN_SIZE);
 
-      retval[1] = XNEW (arelent);
+      retval[1] = notes_alloc (sizeof (arelent));
+      retval[1]->sym_ptr_ptr = notes_alloc (sizeof (asymbol *));
       retval[2] = NULL;
-      retval[1]->sym_ptr_ptr = XNEW (asymbol *);
       *retval[1]->sym_ptr_ptr = symbol_get_bfdsym (fixp->fx_addsy);
       retval[1]->address = (reloc->address + s3_RELAX_RELOC2 (fixp->fx_frag->fr_subtype));
 
@@ -7578,7 +7492,7 @@ score_force_relocation (struct fix *fixp)
 
 /* Implementation of md_frag_check.
    Called after md_convert_frag().  */
-bfd_boolean
+bool
 score_fix_adjustable (fixS * fixP)
 {
   if (score3)

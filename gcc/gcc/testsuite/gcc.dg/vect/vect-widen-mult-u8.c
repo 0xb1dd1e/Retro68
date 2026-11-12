@@ -1,3 +1,4 @@
+/* { dg-additional-options "--param vect-epilogues-nomask=0" } */
 /* { dg-require-effective-target vect_int } */
 
 #include <stdarg.h>
@@ -33,6 +34,7 @@ int main (void)
 
   foo1 (N);
 
+#pragma GCC novector
   for (i=0; i<N; i++) {
     if (result[i] != X[i] * Y[i])
       abort ();

@@ -71,7 +71,6 @@ enum
     AF_BRIDGE     = PF_BRIDGE,
     AF_ATMPVC     = PF_ATMPVC,
     AF_X25        = PF_X25,
-    AF_INET6      = PF_INET6,
     AF_ROSE       = PF_ROSE,
     AF_DECnet     = PF_DECnet,
     AF_NETBEUI    = PF_NETBEUI,
@@ -155,4 +154,22 @@ enum
     SCM_TIMESTAMPING_PKTINFO   = 58,
     SO_PEERGROUPS              = 59,
     SO_ZEROCOPY                = 60,
+}
+
+enum : uint
+{
+    MSG_TRYHARD      = 0x04,
+    MSG_PROXY        = 0x10,
+    MSG_DONTWAIT     = 0x40,
+    MSG_FIN          = 0x200,
+    MSG_SYN          = 0x400,
+    MSG_CONFIRM      = 0x800,
+    MSG_RST          = 0x1000,
+    MSG_ERRQUEUE     = 0x2000,
+    MSG_MORE         = 0x8000,
+    MSG_WAITFORONE   = 0x10000,
+    MSG_BATCH        = 0x40000,
+    MSG_ZEROCOPY     = 0x4000000,
+    MSG_FASTOPEN     = 0x20000000,
+    MSG_CMSG_CLOEXEC = 0x40000000
 }

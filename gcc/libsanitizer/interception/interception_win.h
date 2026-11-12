@@ -1,7 +1,8 @@
 //===-- interception_linux.h ------------------------------------*- C++ -*-===//
 //
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -40,6 +41,11 @@ bool OverrideImportedFunction(const char *module_to_patch,
                               const char *function_name, uptr new_function,
                               uptr *orig_old_func);
 
+// Sets a callback to be used for reporting errors by interception_win. The
+// callback will be called with printf-like arguments. Intended to be used with
+// __sanitizer::Report. Pass nullptr to disable error reporting (default).
+void SetErrorReportCallback(void (*callback)(const char *format, ...));
+
 #if !SANITIZER_WINDOWS64
 // Exposed for unittests
 bool OverrideFunctionWithDetour(
@@ -56,6 +62,9 @@ bool OverrideFunctionWithTrampoline(
 
 // Exposed for unittests
 void TestOnlyReleaseTrampolineRegions();
+
+// Exposed for unittests
+SIZE_T TestOnlyGetInstructionSize(uptr address, SIZE_T *rel_offset);
 
 }  // namespace __interception
 

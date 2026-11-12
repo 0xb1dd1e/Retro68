@@ -2,7 +2,7 @@
 #source: dsofnf.s
 #source: gotrel1.s
 #source: dso-1.s
-#as: --pic --no-underscore --em=criself
+#as: --pic --no-underscore --emulation=criself
 #ld: -shared -m crislinux -z nocombreloc --hash-style=sysv
 #objdump: -sR
 
@@ -12,7 +12,7 @@
 .*:     file format elf32-cris
 
 DYNAMIC RELOCATION RECORDS
-OFFSET   TYPE              VALUE 
+OFFSET +TYPE +VALUE
 000021e8 R_CRIS_GLOB_DAT   dsofn
 
 Contents of section .*

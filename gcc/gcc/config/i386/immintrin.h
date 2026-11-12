@@ -1,4 +1,4 @@
-/* Copyright (C) 2008-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2008-2026 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -24,6 +24,8 @@
 #ifndef _IMMINTRIN_H_INCLUDED
 #define _IMMINTRIN_H_INCLUDED
 
+#include <x86gprintrin.h>
+
 #include <mmintrin.h>
 
 #include <xmmintrin.h>
@@ -38,25 +40,19 @@
 
 #include <wmmintrin.h>
 
-#include <fxsrintrin.h>
-
-#include <xsaveintrin.h>
-
-#include <xsaveoptintrin.h>
-
-#include <xsavesintrin.h>
-
-#include <xsavecintrin.h>
-
 #include <avxintrin.h>
+
+#include <avxvnniintrin.h>
+
+#include <avxifmaintrin.h>
+
+#include <avxvnniint8intrin.h>
+
+#include <avxvnniint16intrin.h>
 
 #include <avx2intrin.h>
 
 #include <avx512fintrin.h>
-
-#include <avx512erintrin.h>
-
-#include <avx512pfintrin.h>
 
 #include <avx512cdintrin.h>
 
@@ -78,10 +74,6 @@
 
 #include <avx512vbmivlintrin.h>
 
-#include <avx5124fmapsintrin.h>
-
-#include <avx5124vnniwintrin.h>
-
 #include <avx512vpopcntdqintrin.h>
 
 #include <avx512vbmi2intrin.h>
@@ -96,13 +88,23 @@
 
 #include <avx512bitalgintrin.h>
 
+#include <avx512bitalgvlintrin.h>
+
+#include <avx512vp2intersectintrin.h>
+
+#include <avx512vp2intersectvlintrin.h>
+
+#include <avx512fp16intrin.h>
+
+#include <avx512fp16vlintrin.h>
+
 #include <shaintrin.h>
 
-#include <lzcntintrin.h>
+#include <sm3intrin.h>
 
-#include <bmiintrin.h>
+#include <sha512intrin.h>
 
-#include <bmi2intrin.h>
+#include <sm4intrin.h>
 
 #include <fmaintrin.h>
 
@@ -110,195 +112,55 @@
 
 #include <rtmintrin.h>
 
-#include <xtestintrin.h>
-
-#include <cetintrin.h>
-
 #include <gfniintrin.h>
 
 #include <vaesintrin.h>
 
 #include <vpclmulqdqintrin.h>
 
-#include <movdirintrin.h>
+#include <avx512bf16vlintrin.h>
 
-#include <sgxintrin.h>
+#include <avx512bf16intrin.h>
 
-#include <pconfigintrin.h>
+#include <avxneconvertintrin.h>
 
-#include <waitpkgintrin.h>
+#include <amxtileintrin.h>
 
-#include <cldemoteintrin.h>
+#include <amxint8intrin.h>
 
-#include <rdseedintrin.h>
+#include <amxbf16intrin.h>
+
+#include <amxcomplexintrin.h>
+
+#include <amxavx512intrin.h>
+
+#include <amxtf32intrin.h>
+
+#include <amxfp8intrin.h>
 
 #include <prfchwintrin.h>
 
-#include <adxintrin.h>
+#include <keylockerintrin.h>
 
-#include <clwbintrin.h>
+#include <amxfp16intrin.h>
 
-#include <clflushoptintrin.h>
+#include <avx10_2mediaintrin.h>
 
-#include <wbnoinvdintrin.h>
+#include <avx10_2convertintrin.h>
 
-#include <pkuintrin.h>
+#include <avx10_2bf16intrin.h>
 
-extern __inline void
-__attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_wbinvd (void)
-{
-  __builtin_ia32_wbinvd ();
-}
+#include <avx10_2satcvtintrin.h>
 
-#ifndef __RDRND__
-#pragma GCC push_options
-#pragma GCC target("rdrnd")
-#define __DISABLE_RDRND__
-#endif /* __RDRND__ */
-extern __inline int
-__attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_rdrand16_step (unsigned short *__P)
-{
-  return __builtin_ia32_rdrand16_step (__P);
-}
+#include <avx10_2minmaxintrin.h>
 
-extern __inline int
-__attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_rdrand32_step (unsigned int *__P)
-{
-  return __builtin_ia32_rdrand32_step (__P);
-}
-#ifdef __DISABLE_RDRND__
-#undef __DISABLE_RDRND__
-#pragma GCC pop_options
-#endif /* __DISABLE_RDRND__ */
+#include <avx10_2copyintrin.h>
 
-#ifndef __RDPID__
-#pragma GCC push_options
-#pragma GCC target("rdpid")
-#define __DISABLE_RDPID__
-#endif /* __RDPID__ */
-extern __inline unsigned int
-__attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_rdpid_u32 (void)
-{
-  return __builtin_ia32_rdpid ();
-}
-#ifdef __DISABLE_RDPID__
-#undef __DISABLE_RDPID__
-#pragma GCC pop_options
-#endif /* __DISABLE_RDPID__ */
+#include <movrsintrin.h>
 
-#ifdef  __x86_64__
+#include <amxmovrsintrin.h>
 
-#ifndef __FSGSBASE__
-#pragma GCC push_options
-#pragma GCC target("fsgsbase")
-#define __DISABLE_FSGSBASE__
-#endif /* __FSGSBASE__ */
-extern __inline unsigned int
-__attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_readfsbase_u32 (void)
-{
-  return __builtin_ia32_rdfsbase32 ();
-}
+#include <avx512bmmintrin.h>
 
-extern __inline unsigned long long
-__attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_readfsbase_u64 (void)
-{
-  return __builtin_ia32_rdfsbase64 ();
-}
-
-extern __inline unsigned int
-__attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_readgsbase_u32 (void)
-{
-  return __builtin_ia32_rdgsbase32 ();
-}
-
-extern __inline unsigned long long
-__attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_readgsbase_u64 (void)
-{
-  return __builtin_ia32_rdgsbase64 ();
-}
-
-extern __inline void
-__attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_writefsbase_u32 (unsigned int __B)
-{
-  __builtin_ia32_wrfsbase32 (__B);
-}
-
-extern __inline void
-__attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_writefsbase_u64 (unsigned long long __B)
-{
-  __builtin_ia32_wrfsbase64 (__B);
-}
-
-extern __inline void
-__attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_writegsbase_u32 (unsigned int __B)
-{
-  __builtin_ia32_wrgsbase32 (__B);
-}
-
-extern __inline void
-__attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_writegsbase_u64 (unsigned long long __B)
-{
-  __builtin_ia32_wrgsbase64 (__B);
-}
-#ifdef __DISABLE_FSGSBASE__
-#undef __DISABLE_FSGSBASE__
-#pragma GCC pop_options
-#endif /* __DISABLE_FSGSBASE__ */
-
-#ifndef __RDRND__
-#pragma GCC push_options
-#pragma GCC target("rdrnd")
-#define __DISABLE_RDRND__
-#endif /* __RDRND__ */
-extern __inline int
-__attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_rdrand64_step (unsigned long long *__P)
-{
-  return __builtin_ia32_rdrand64_step (__P);
-}
-#ifdef __DISABLE_RDRND__
-#undef __DISABLE_RDRND__
-#pragma GCC pop_options
-#endif /* __DISABLE_RDRND__ */
-
-#endif /* __x86_64__  */
-
-#ifndef __PTWRITE__
-#pragma GCC push_options
-#pragma GCC target("ptwrite")
-#define __DISABLE_PTWRITE__
-#endif
-
-#ifdef __x86_64__
-extern __inline void
-__attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_ptwrite64 (unsigned long long __B)
-{
-  __builtin_ia32_ptwrite64 (__B);
-}
-#endif /* __x86_64__ */
-
-extern __inline void
-__attribute__((__gnu_inline__, __always_inline__, __artificial__))
-_ptwrite32 (unsigned __B)
-{
-  __builtin_ia32_ptwrite32 (__B);
-}
-#ifdef __DISABLE_PTWRITE__
-#undef __DISABLE_PTWRITE__
-#pragma GCC pop_options
-#endif /* __DISABLE_PTWRITE__ */
-
+#include <avx512bmmvlintrin.h>
 #endif /* _IMMINTRIN_H_INCLUDED */

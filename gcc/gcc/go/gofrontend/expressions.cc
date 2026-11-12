@@ -59,6 +59,67 @@ Expression::traverse_subexpressions(Traverse* traverse)
   return this->do_traverse(traverse);
 }
 
+// A traversal used to set the location of subexpressions.
+
+class Set_location : public Traverse
+{
+ public:
+  Set_location(Location loc)
+    : Traverse(traverse_expressions),
+      loc_(loc)
+  { }
+
+  int
+  expression(Expression** pexpr);
+
+ private:
+  Location loc_;
+};
+
+// Set the location of an expression.
+
+int
+Set_location::expression(Expression** pexpr)
+{
+  // Some expressions are shared or don't have an independent
+  // location, so we shouldn't change their location.  This is the set
+  // of expressions for which do_copy is just "return this" or
+  // otherwise does not pass down the location.
+  switch ((*pexpr)->classification())
+    {
+    case Expression::EXPRESSION_ERROR:
+    case Expression::EXPRESSION_VAR_REFERENCE:
+    case Expression::EXPRESSION_ENCLOSED_VAR_REFERENCE:
+    case Expression::EXPRESSION_STRING:
+    case Expression::EXPRESSION_FUNC_DESCRIPTOR:
+    case Expression::EXPRESSION_TYPE:
+    case Expression::EXPRESSION_BOOLEAN:
+    case Expression::EXPRESSION_CONST_REFERENCE:
+    case Expression::EXPRESSION_NIL:
+    case Expression::EXPRESSION_TYPE_DESCRIPTOR:
+    case Expression::EXPRESSION_GC_SYMBOL:
+    case Expression::EXPRESSION_PTRMASK_SYMBOL:
+    case Expression::EXPRESSION_TYPE_INFO:
+    case Expression::EXPRESSION_STRUCT_FIELD_OFFSET:
+      return TRAVERSE_CONTINUE;
+    default:
+      break;
+    }
+
+  (*pexpr)->location_ = this->loc_;
+  return TRAVERSE_CONTINUE;
+}
+
+// Set the location of an expression and its subexpressions.
+
+void
+Expression::set_location(Location loc)
+{
+  this->location_ = loc;
+  Set_location sl(loc);
+  this->traverse_subexpressions(&sl);
+}
+
 // Default implementation for do_traverse for child classes.
 
 int
@@ -87,12 +148,39 @@ Expression::do_export(Export_function_body*) const
   go_unreachable();
 }
 
+// Write a name to the export data.
+
+void
+Expression::export_name(Export_function_body* efb, const Named_object* no)
+{
+  if (no->package() != NULL)
+    {
+      char buf[50];
+      snprintf(buf, sizeof buf, "<p%d>", efb->package_index(no->package()));
+      efb->write_c_string(buf);
+    }
+
+  if (!Gogo::is_hidden_name(no->name()))
+    efb->write_string(no->name());
+  else
+    {
+      efb->write_c_string(".");
+      efb->write_string(Gogo::unpack_hidden_name(no->name()));
+    }
+}
+
 // Give an error saying that the value of the expression is not used.
 
 void
 Expression::unused_value_error()
 {
-  this->report_error(_("value computed is not used"));
+  if (this->type()->is_error())
+    {
+      go_assert(saw_errors());
+      this->set_is_error();
+    }
+  else
+    this->report_error(_("value computed is not used"));
 }
 
 // Note that this expression is an error.  This is called by children
@@ -113,22 +201,60 @@ Expression::report_error(const char* msg)
   this->set_is_error();
 }
 
+// A convenience function for handling a type in do_is_untyped.  If
+// TYPE is not abstract, return false.  Otherwise set *PTYPE to TYPE
+// and return true.
+
+bool
+Expression::is_untyped_type(Type* type, Type** ptype)
+{
+  if (!type->is_abstract())
+    return false;
+  *ptype = type;
+  return true;
+}
+
+// Report whether this is a type expression.
+
+bool
+Expression::is_type_expression() const
+{
+  if (this->classification_ == EXPRESSION_TYPE)
+    return true;
+  if (this->unknown_expression() != NULL)
+    {
+      Named_object* no = this->unknown_expression()->named_object();
+      if (no->is_unknown())
+	{
+	  no = no->unknown_value()->real_named_object();
+	  if (no == NULL)
+	    return false;
+	}
+      return no->is_type();
+    }
+  if (this->unary_expression() != NULL
+      && this->unary_expression()->op() == OPERATOR_MULT
+      && this->unary_expression()->operand()->is_type_expression())
+    return true;
+  return false;
+}
+
 // Set types of variables and constants.  This is implemented by the
 // child class.
 
 void
-Expression::determine_type(const Type_context* context)
+Expression::determine_type(Gogo* gogo, const Type_context* context)
 {
-  this->do_determine_type(context);
+  this->do_determine_type(gogo, context);
 }
 
 // Set types when there is no context.
 
 void
-Expression::determine_type_no_context()
+Expression::determine_type_no_context(Gogo* gogo)
 {
   Type_context context;
-  this->do_determine_type(&context);
+  this->do_determine_type(gogo, &context);
 }
 
 // Return true if two expressions refer to the same variable or struct
@@ -162,6 +288,24 @@ Expression::is_same_variable(Expression* a, Expression* b)
 					      bu->operand()));
     }
 
+  Array_index_expression* aie = a->array_index_expression();
+  if (aie != NULL)
+    {
+      Array_index_expression* bie = b->array_index_expression();
+      return (aie->end() == NULL
+	      && bie->end() == NULL
+	      && Expression::is_same_variable(aie->array(), bie->array())
+	      && Expression::is_same_variable(aie->start(), bie->start()));
+    }
+
+  Numeric_constant aval;
+  if (a->numeric_constant_value(&aval))
+    {
+      Numeric_constant bval;
+      if (b->numeric_constant_value(&bval))
+	return aval.equals(bval);
+    }
+
   return false;
 }
 
@@ -169,7 +313,7 @@ Expression::is_same_variable(Expression* a, Expression* b)
 // assignment.
 
 Expression*
-Expression::convert_for_assignment(Gogo*, Type* lhs_type,
+Expression::convert_for_assignment(Gogo* gogo, Type* lhs_type,
 				   Expression* rhs, Location location)
 {
   Type* rhs_type = rhs->type();
@@ -182,25 +326,25 @@ Expression::convert_for_assignment(Gogo*, Type* lhs_type,
 					   (Type::COMPARE_ERRORS
 					    | Type::COMPARE_TAGS),
 					   NULL);
+  Expression* ret;
   if (!are_identical && lhs_type->interface_type() != NULL)
     {
-      if (rhs_type->interface_type() == NULL)
-        return Expression::convert_type_to_interface(lhs_type, rhs, location);
-      else
-        return Expression::convert_interface_to_interface(lhs_type, rhs, false,
-                                                          location);
+      // Type to interface conversions have been made explicit early.
+      go_assert(rhs_type->interface_type() != NULL);
+      ret = Expression::convert_interface_to_interface(gogo, lhs_type, rhs,
+						       false, location);
     }
   else if (!are_identical && rhs_type->interface_type() != NULL)
-    return Expression::convert_interface_to_type(lhs_type, rhs, location);
+    ret = Expression::convert_interface_to_type(gogo, lhs_type, rhs, location);
   else if (lhs_type->is_slice_type() && rhs_type->is_nil_type())
     {
       // Assigning nil to a slice.
       Expression* nil = Expression::make_nil(location);
       Expression* zero = Expression::make_integer_ul(0, NULL, location);
-      return Expression::make_slice_value(lhs_type, nil, zero, zero, location);
+      ret = Expression::make_slice_value(lhs_type, nil, zero, zero, location);
     }
   else if (rhs_type->is_nil_type())
-    return Expression::make_nil(location);
+    ret = Expression::make_nil(location);
   else if (are_identical)
     {
       if (lhs_type->forwarded() != rhs_type->forwarded())
@@ -214,9 +358,9 @@ Expression::convert_for_assignment(Gogo*, Type* lhs_type,
       return rhs;
     }
   else if (lhs_type->points_to() != NULL)
-    return Expression::make_unsafe_cast(lhs_type, rhs, location);
+    ret = Expression::make_unsafe_cast(lhs_type, rhs, location);
   else if (lhs_type->is_numeric_type())
-    return Expression::make_cast(lhs_type, rhs, location);
+    ret = Expression::make_cast(lhs_type, rhs, location);
   else if ((lhs_type->struct_type() != NULL
             && rhs_type->struct_type() != NULL)
            || (lhs_type->array_type() != NULL
@@ -224,18 +368,23 @@ Expression::convert_for_assignment(Gogo*, Type* lhs_type,
     {
       // This conversion must be permitted by Go, or we wouldn't have
       // gotten here.
-      return Expression::make_unsafe_cast(lhs_type, rhs, location);
+      ret = Expression::make_unsafe_cast(lhs_type, rhs, location);
     }
   else
     return rhs;
+
+  Type_context context(lhs_type, false);
+  ret->determine_type(gogo, &context);
+  return ret;
 }
 
 // Return an expression for a conversion from a non-interface type to an
-// interface type.
+// interface type.  If ON_STACK is true, it can allocate the storage on
+// stack.
 
 Expression*
 Expression::convert_type_to_interface(Type* lhs_type, Expression* rhs,
-                                      Location location)
+                                      bool on_stack, Location location)
 {
   Interface_type* lhs_interface_type = lhs_type->interface_type();
   bool lhs_is_empty = lhs_interface_type->is_empty();
@@ -292,22 +441,88 @@ Expression::convert_type_to_interface(Type* lhs_type, Expression* rhs,
     }
 
   Expression* obj;
-  if (rhs_type->points_to() != NULL)
+  if (rhs_type->is_direct_iface_type())
     {
       // We are assigning a pointer to the interface; the interface
       // holds the pointer itself.
-      obj = rhs;
+      obj = unpack_direct_iface(rhs, location);
     }
   else
     {
       // We are assigning a non-pointer value to the interface; the
       // interface gets a copy of the value in the heap if it escapes.
-      // TODO(cmang): Associate escape state state of RHS with newly
-      // created OBJ.
-      obj = Expression::make_heap_expression(rhs, location);
+
+      // An exception is &global if global is notinheap, which is a
+      // pointer value but not a direct-iface type and we can't simply
+      // take its address.
+      bool is_address = (rhs->unary_expression() != NULL
+                         && rhs->unary_expression()->op() == OPERATOR_AND);
+
+      if (rhs->is_constant() && !is_address)
+        obj = Expression::make_unary(OPERATOR_AND, rhs, location);
+      else
+        {
+          obj = Expression::make_heap_expression(rhs, location);
+          if (on_stack)
+            obj->heap_expression()->set_allocate_on_stack();
+        }
     }
 
   return Expression::make_interface_value(lhs_type, first_field, obj, location);
+}
+
+// Return an expression for the pointer-typed value of a direct interface
+// type.  Specifically, for single field struct or array, get the single
+// field, and do this recursively.  The reason for this is that we don't
+// want to assign a struct or an array to a pointer-typed field.  The
+// backend may not like that.
+
+Expression*
+Expression::unpack_direct_iface(Expression* rhs, Location loc)
+{
+  Struct_type* st = rhs->type()->struct_type();
+  if (st != NULL)
+    {
+      go_assert(st->field_count() == 1);
+      Expression* field = Expression::make_field_reference(rhs, 0, loc);
+      return unpack_direct_iface(field, loc);
+    }
+  Array_type* at = rhs->type()->array_type();
+  if (at != NULL)
+    {
+      int64_t len;
+      bool ok = at->int_length(&len);
+      go_assert(ok && len == 1);
+      Type* int_type = Type::lookup_integer_type("int");
+      Expression* index = Expression::make_integer_ul(0, int_type, loc);
+      Expression* elem = Expression::make_array_index(rhs, index, NULL, NULL, loc);
+      return unpack_direct_iface(elem, loc);
+    }
+  return rhs;
+}
+
+// The opposite of unpack_direct_iface.
+
+Expression*
+Expression::pack_direct_iface(Type* t, Expression* rhs, Location loc)
+{
+  if (rhs->type() == t)
+    return rhs;
+  Struct_type* st = t->struct_type();
+  if (st != NULL)
+    {
+      Expression_list* vals = new Expression_list();
+      vals->push_back(pack_direct_iface(st->field(0)->type(), rhs, loc));
+      return Expression::make_struct_composite_literal(t, vals, loc);
+    }
+  Array_type* at = t->array_type();
+  if (at != NULL)
+    {
+      Expression_list* vals = new Expression_list();
+      vals->push_back(pack_direct_iface(at->element_type(), rhs, loc));
+      return Expression::make_array_composite_literal(t, vals, loc);
+    }
+  return Expression::make_unsafe_cast(t, rhs, loc);
 }
 
 // Return an expression for the type descriptor of RHS.
@@ -340,7 +555,8 @@ Expression::get_interface_type_descriptor(Expression* rhs)
 // interface type.
 
 Expression*
-Expression::convert_interface_to_interface(Type *lhs_type, Expression* rhs,
+Expression::convert_interface_to_interface(Gogo* gogo, Type *lhs_type,
+					   Expression* rhs,
                                            bool for_type_guard,
                                            Location location)
 {
@@ -361,7 +577,7 @@ Expression::convert_interface_to_interface(Type *lhs_type, Expression* rhs,
   // method table.
 
   // We are going to evaluate RHS multiple times.
-  go_assert(rhs->is_variable());
+  go_assert(rhs->is_multi_eval_safe());
 
   // Get the type descriptor for the right hand side.  This will be
   // NULL for a nil interface.
@@ -373,7 +589,7 @@ Expression::convert_interface_to_interface(Type *lhs_type, Expression* rhs,
   if (for_type_guard)
     {
       // A type assertion fails when converting a nil interface.
-      first_field = Runtime::make_call(Runtime::ASSERTITAB, location, 2,
+      first_field = Runtime::make_call(gogo, Runtime::ASSERTITAB, location, 2,
 				       lhs_type_expr, rhs_type_expr);
     }
   else if (lhs_is_empty)
@@ -386,29 +602,38 @@ Expression::convert_interface_to_interface(Type *lhs_type, Expression* rhs,
     {
       // A conversion to a non-empty interface may fail, but unlike a
       // type assertion converting nil will always succeed.
-      first_field = Runtime::make_call(Runtime::REQUIREITAB, location, 2,
+      first_field = Runtime::make_call(gogo, Runtime::REQUIREITAB, location, 2,
 				       lhs_type_expr, rhs_type_expr);
     }
 
   // The second field is simply the object pointer.
   Expression* obj =
       Expression::make_interface_info(rhs, INTERFACE_INFO_OBJECT, location);
-  return Expression::make_interface_value(lhs_type, first_field, obj, location);
+  Expression* ret = Expression::make_interface_value(lhs_type, first_field,
+						     obj, location);
+  Type_context context(lhs_type, false);
+  ret->determine_type(gogo, &context);
+  return ret;
 }
 
 // Return an expression for the conversion of an interface type to a
 // non-interface type.
 
 Expression*
-Expression::convert_interface_to_type(Type *lhs_type, Expression* rhs,
+Expression::convert_interface_to_type(Gogo* gogo, Type *lhs_type, Expression* rhs,
                                       Location location)
 {
   // We are going to evaluate RHS multiple times.
-  go_assert(rhs->is_variable());
+  go_assert(rhs->is_multi_eval_safe());
 
-  // Call a function to check that the type is valid.  The function
-  // will panic with an appropriate runtime type error if the type is
-  // not valid.
+  // Build an expression to check that the type is valid.  It will
+  // panic with an appropriate runtime type error if the type is not
+  // valid.
+  // (lhs_type == rhs_type ? nil /*dummy*/ :
+  //    panicdottype(lhs_type, rhs_type, inter_type))
+  // For some Oses, we need to call runtime.eqtype instead of
+  // lhs_type == rhs_type, as we may have unmerged type descriptors
+  // from shared libraries.
   Expression* lhs_type_expr = Expression::make_type_descriptor(lhs_type,
                                                                 location);
   Expression* rhs_descriptor =
@@ -418,24 +643,41 @@ Expression::convert_interface_to_type(Type *lhs_type, Expression* rhs,
   Expression* rhs_inter_expr = Expression::make_type_descriptor(rhs_type,
                                                                 location);
 
-  Expression* check_iface = Runtime::make_call(Runtime::ASSERTI2T,
-                                               location, 3, lhs_type_expr,
-                                               rhs_descriptor, rhs_inter_expr);
+  Expression* cond;
+  if (gogo->need_eqtype()) {
+    cond = Runtime::make_call(gogo, Runtime::EQTYPE, location,
+                              2, lhs_type_expr,
+                              rhs_descriptor);
+  } else {
+    cond = Expression::make_binary(OPERATOR_EQEQ, lhs_type_expr,
+                                   rhs_descriptor, location);
+  }
 
-  // If the call succeeds, pull out the value.
+  rhs_descriptor = Expression::get_interface_type_descriptor(rhs);
+  Expression* panic = Runtime::make_call(gogo, Runtime::PANICDOTTYPE, location,
+                                         3, lhs_type_expr->copy(),
+                                         rhs_descriptor,
+                                         rhs_inter_expr);
+  Expression* nil = Expression::make_nil(location);
+  Expression* check = Expression::make_conditional(cond, nil, panic,
+                                                   location);
+
+  // If the conversion succeeds, pull out the value.
   Expression* obj = Expression::make_interface_info(rhs, INTERFACE_INFO_OBJECT,
                                                     location);
 
-  // If the value is a pointer, then it is the value we want.
+  // If the value is a direct interface, then it is the value we want.
   // Otherwise it points to the value.
-  if (lhs_type->points_to() == NULL)
+  if (lhs_type->is_direct_iface_type())
+    obj = Expression::pack_direct_iface(lhs_type, obj, location);
+  else
     {
       obj = Expression::make_unsafe_cast(Type::make_pointer_type(lhs_type), obj,
                                          location);
       obj = Expression::make_dereference(obj, NIL_CHECK_NOT_NEEDED,
                                          location);
     }
-  return Expression::make_compound(check_iface, obj, location);
+  return Expression::make_compound(check, obj, location);
 }
 
 // Convert an expression to its backend representation.  This is implemented by
@@ -447,7 +689,10 @@ Expression::get_backend(Translate_context* context)
 {
   // The child may have marked this expression as having an error.
   if (this->classification_ == EXPRESSION_ERROR)
-    return context->backend()->error_expression();
+    {
+      go_assert(saw_errors());
+      return context->backend()->error_expression();
+    }
 
   return this->do_get_backend(context);
 }
@@ -503,67 +748,113 @@ Expression::backend_numeric_constant_expression(Translate_context* context,
   return ret;
 }
 
-// Return an expression which evaluates to true if VAL, of arbitrary integer
-// type, is negative or is more than the maximum value of the Go type "int".
+// Insert bounds checks for an index expression.  Check that that VAL
+// >= 0 and that it fits in an int.  Then check that VAL OP BOUND is
+// true.  If any condition is false, call one of the CODE runtime
+// functions, which will panic.
 
-Expression*
-Expression::check_bounds(Expression* val, Location loc)
+void
+Expression::check_bounds(Gogo* gogo, Expression* val, Operator op,
+			 Expression* bound,
+			 Runtime::Function code,
+			 Runtime::Function code_u,
+			 Runtime::Function code_extend,
+			 Runtime::Function code_extend_u,
+			 Statement_inserter* inserter,
+			 Location loc)
 {
+  go_assert(val->is_multi_eval_safe());
+  go_assert(bound->is_multi_eval_safe());
+
+  Type* int_type = Type::lookup_integer_type("int");
+  int int_type_size = int_type->integer_type()->bits();
+
   Type* val_type = val->type();
-  Type* bound_type = Type::lookup_integer_type("int");
-
-  int val_type_size;
-  bool val_is_unsigned = false;
-  if (val_type->integer_type() != NULL)
+  if (val_type->integer_type() == NULL)
     {
-      val_type_size = val_type->integer_type()->bits();
-      val_is_unsigned = val_type->integer_type()->is_unsigned();
+      go_assert(saw_errors());
+      return;
     }
-  else
-    {
-      if (!val_type->is_numeric_type()
-          || !Type::are_convertible(bound_type, val_type, NULL))
-        {
-          go_assert(saw_errors());
-          return Expression::make_boolean(true, loc);
-        }
+  int val_type_size = val_type->integer_type()->bits();
+  bool val_is_unsigned = val_type->integer_type()->is_unsigned();
 
-      if (val_type->complex_type() != NULL)
-        val_type_size = val_type->complex_type()->bits();
-      else
-        val_type_size = val_type->float_type()->bits();
-    }
-
-  Expression* negative_index = Expression::make_boolean(false, loc);
-  Expression* index_overflows = Expression::make_boolean(false, loc);
+  // Check that VAL >= 0.
+  Expression* check = NULL;
   if (!val_is_unsigned)
     {
       Expression* zero = Expression::make_integer_ul(0, val_type, loc);
-      negative_index = Expression::make_binary(OPERATOR_LT, val, zero, loc);
+      check = Expression::make_binary(OPERATOR_GE, val->copy(), zero, loc);
     }
 
-  int bound_type_size = bound_type->integer_type()->bits();
-  if (val_type_size > bound_type_size
-      || (val_type_size == bound_type_size
+  // If VAL's type is larger than int, check that VAL fits in an int.
+  if (val_type_size > int_type_size
+      || (val_type_size == int_type_size
 	  && val_is_unsigned))
     {
       mpz_t one;
       mpz_init_set_ui(one, 1UL);
 
-      // maxval = 2^(bound_type_size - 1) - 1
+      // maxval = 2^(int_type_size - 1) - 1
       mpz_t maxval;
       mpz_init(maxval);
-      mpz_mul_2exp(maxval, one, bound_type_size - 1);
+      mpz_mul_2exp(maxval, one, int_type_size - 1);
       mpz_sub_ui(maxval, maxval, 1);
       Expression* max = Expression::make_integer_z(&maxval, val_type, loc);
       mpz_clear(one);
       mpz_clear(maxval);
 
-      index_overflows = Expression::make_binary(OPERATOR_GT, val, max, loc);
+      Expression* cmp = Expression::make_binary(OPERATOR_LE, val->copy(),
+						max, loc);
+      if (check == NULL)
+	check = cmp;
+      else
+	check = Expression::make_binary(OPERATOR_ANDAND, check, cmp, loc);
     }
 
-  return Expression::make_binary(OPERATOR_OROR, negative_index, index_overflows,
-                                 loc);
+  // For the final check we can assume that VAL fits in an int.
+  Expression* ival;
+  if (val_type == int_type)
+    ival = val->copy();
+  else
+    ival = Expression::make_cast(int_type, val->copy(), loc);
+
+  // BOUND is assumed to fit in an int.  Either it comes from len or
+  // cap, or it was checked by an earlier call.
+  Expression* ibound;
+  if (bound->type() == int_type)
+    ibound = bound->copy();
+  else
+    ibound = Expression::make_cast(int_type, bound->copy(), loc);
+
+  Expression* cmp = Expression::make_binary(op, ival, ibound, loc);
+  if (check == NULL)
+    check = cmp;
+  else
+    check = Expression::make_binary(OPERATOR_ANDAND, check, cmp, loc);
+
+  Runtime::Function c;
+  if (val_type_size > int_type_size)
+    {
+      if (val_is_unsigned)
+	c = code_extend_u;
+      else
+	c = code_extend;
+    }
+  else
+    {
+      if (val_is_unsigned)
+	c = code_u;
+      else
+	c = code;
+    }
+
+  Expression* ignore = Expression::make_boolean(true, loc);
+  Expression* crash = Runtime::make_call(gogo, c, loc, 2,
+					 val->copy(), bound->copy());
+  Expression* cond = Expression::make_conditional(check, ignore, crash, loc);
+  Statement* s = Statement::make_statement(cond, true);
+  s->determine_types(gogo);
+  inserter->insert(s);
 }
 
 void
@@ -587,11 +878,12 @@ class Error_expression : public Expression
   { return true; }
 
   bool
-  do_numeric_constant_value(Numeric_constant* nc) const
-  {
-    nc->set_unsigned_long(NULL, 0);
-    return true;
-  }
+  do_is_untyped(Type**) const
+  { return false; }
+
+  bool
+  do_numeric_constant_value(Numeric_constant*)
+  { return false; }
 
   bool
   do_discarding_value()
@@ -602,7 +894,7 @@ class Error_expression : public Expression
   { return Type::make_error_type(); }
 
   void
-  do_determine_type(const Type_context*)
+  do_determine_type(Gogo*, const Type_context*)
   { }
 
   Expression*
@@ -638,8 +930,7 @@ Expression::make_error(Location location)
 // An expression which is really a type.  This is used during parsing.
 // It is an error if these survive after lowering.
 
-class
-Type_expression : public Expression
+class Type_expression : public Expression
 {
  public:
   Type_expression(Type* type, Location location)
@@ -657,20 +948,18 @@ Type_expression : public Expression
   { return this->type_; }
 
   void
-  do_determine_type(const Type_context*)
+  do_determine_type(Gogo*, const Type_context*)
   { }
 
   void
-  do_check_types(Gogo*)
-  { this->report_error(_("invalid use of type")); }
+  do_check_types(Gogo*);
 
   Expression*
   do_copy()
   { return this; }
 
   Bexpression*
-  do_get_backend(Translate_context*)
-  { go_unreachable(); }
+  do_get_backend(Translate_context*);
 
   void do_dump_expression(Ast_dump_context*) const;
 
@@ -678,6 +967,24 @@ Type_expression : public Expression
   // The type which we are representing as an expression.
   Type* type_;
 };
+
+void
+Type_expression::do_check_types(Gogo*)
+{
+  if (this->type_->is_error())
+    {
+      go_assert(saw_errors());
+      this->set_is_error();
+    }
+}
+
+Bexpression*
+Type_expression::do_get_backend(Translate_context* context)
+{
+  if (!this->is_error_expression())
+    this->report_error("invalid use of type");
+  return context->backend()->error_expression();
+}
 
 void
 Type_expression::do_dump_expression(Ast_dump_context* ast_dump_context) const
@@ -691,19 +998,6 @@ Expression::make_type(Type* type, Location location)
   return new Type_expression(type, location);
 }
 
-// Class Parser_expression.
-
-Type*
-Parser_expression::do_type()
-{
-  // We should never really ask for the type of a Parser_expression.
-  // However, it can happen, at least when we have an invalid const
-  // whose initializer refers to the const itself.  In that case we
-  // may ask for the type when lowering the const itself.
-  go_assert(saw_errors());
-  return Type::make_error_type();
-}
-
 // Class Var_expression.
 
 // Lower a variable expression.  Here we just make sure that the
@@ -713,7 +1007,7 @@ Parser_expression::do_type()
 
 Expression*
 Var_expression::do_lower(Gogo* gogo, Named_object* function,
-			 Statement_inserter* inserter, int)
+			 Statement_inserter* inserter)
 {
   if (this->variable_->is_variable())
     {
@@ -747,10 +1041,10 @@ Var_expression::do_type()
 // Determine the type of a reference to a variable.
 
 void
-Var_expression::do_determine_type(const Type_context*)
+Var_expression::do_determine_type(Gogo* gogo, const Type_context*)
 {
   if (this->variable_->is_variable())
-    this->variable_->var_value()->determine_type();
+    this->variable_->var_value()->determine_type(gogo);
 }
 
 // Something takes the address of this variable.  This means that we
@@ -786,29 +1080,16 @@ Var_expression::do_address_taken(bool escapes)
     }
 }
 
-// The cost to inline a variable reference.  We currently only support
-// references to parameters.
-
-int
-Var_expression::do_inlining_cost() const
-{
-  if (this->variable_->is_variable())
-    {
-      if (this->variable_->var_value()->is_parameter())
-	return 1;
-    }
-  else if (this->variable_->is_result_variable())
-    return 1;
-
-  return 0x100000;
-}
-
 // Export a reference to a variable.
 
 void
 Var_expression::do_export(Export_function_body* efb) const
 {
-  efb->write_string(Gogo::unpack_hidden_name(this->variable_->name()));
+  Named_object* no = this->variable_;
+  if (no->is_result_variable() || !no->var_value()->is_global())
+    efb->write_string(Gogo::unpack_hidden_name(no->name()));
+  else
+    Expression::export_name(efb, no);
 }
 
 // Get the backend representation for a reference to a variable.
@@ -857,6 +1138,8 @@ Expression::make_var_reference(Named_object* var, Location location)
 {
   if (var->is_sink())
     return Expression::make_sink(location);
+  if (var->is_redefinition())
+    return Expression::make_error(location);
 
   // FIXME: Creating a new object for each reference to a variable is
   // wasteful.
@@ -875,7 +1158,7 @@ Enclosed_var_expression::do_traverse(Traverse*)
 
 Expression*
 Enclosed_var_expression::do_lower(Gogo* gogo, Named_object* function,
-				  Statement_inserter* inserter, int)
+				  Statement_inserter* inserter)
 {
   gogo->lower_expression(function, inserter, &this->reference_);
   return this;
@@ -956,6 +1239,57 @@ Temporary_reference_expression::do_address_taken(bool)
   this->statement_->set_is_address_taken();
 }
 
+// Export a reference to a temporary.
+
+void
+Temporary_reference_expression::do_export(Export_function_body* efb) const
+{
+  unsigned int idx = efb->temporary_index(this->statement_);
+  char buf[50];
+  snprintf(buf, sizeof buf, "$t%u", idx);
+  efb->write_c_string(buf);
+}
+
+// Import a reference to a temporary.
+
+Expression*
+Temporary_reference_expression::do_import(Import_function_body* ifb,
+					  Location loc)
+{
+  std::string id = ifb->read_identifier();
+  go_assert(id[0] == '$' && id[1] == 't');
+  const char *p = id.c_str();
+  char *end;
+  long idx = strtol(p + 2, &end, 10);
+  if (*end != '\0' || idx > 0x7fffffff)
+    {
+      if (!ifb->saw_error())
+	go_error_at(loc,
+		    ("invalid export data for %qs: "
+		     "invalid temporary reference index at %lu"),
+		    ifb->name().c_str(),
+		    static_cast<unsigned long>(ifb->off()));
+      ifb->set_saw_error();
+      return Expression::make_error(loc);
+    }
+
+  Temporary_statement* temp =
+    ifb->temporary_statement(static_cast<unsigned int>(idx));
+  if (temp == NULL)
+    {
+      if (!ifb->saw_error())
+	go_error_at(loc,
+		    ("invalid export data for %qs: "
+		     "undefined temporary reference index at %lu"),
+		    ifb->name().c_str(),
+		    static_cast<unsigned long>(ifb->off()));
+      ifb->set_saw_error();
+      return Expression::make_error(loc);
+    }
+
+  return Expression::make_temporary_reference(temp, loc);
+}
+
 // Get a backend expression referring to the variable.
 
 Bexpression*
@@ -996,6 +1330,7 @@ Temporary_reference_expression*
 Expression::make_temporary_reference(Temporary_statement* statement,
 				     Location location)
 {
+  statement->add_use();
   return new Temporary_reference_expression(statement, location);
 }
 
@@ -1013,9 +1348,10 @@ Set_and_use_temporary_expression::do_type()
 
 void
 Set_and_use_temporary_expression::do_determine_type(
+    Gogo* gogo,
     const Type_context* context)
 {
-  this->expr_->determine_type(context);
+  this->expr_->determine_type(gogo, context);
 }
 
 // Take the address.
@@ -1088,7 +1424,7 @@ class Sink_expression : public Expression
   do_type();
 
   void
-  do_determine_type(const Type_context*);
+  do_determine_type(Gogo*, const Type_context*);
 
   Expression*
   do_copy()
@@ -1120,7 +1456,7 @@ Sink_expression::do_type()
 // Determine the type of a sink expression.
 
 void
-Sink_expression::do_determine_type(const Type_context* context)
+Sink_expression::do_determine_type(Gogo*, const Type_context* context)
 {
   if (context->type != NULL)
     this->type_ = context->type;
@@ -1136,7 +1472,12 @@ Sink_expression::do_get_backend(Translate_context* context)
   Gogo* gogo = context->gogo();
   if (this->bvar_ == NULL)
     {
-      go_assert(this->type_ != NULL && !this->type_->is_sink_type());
+      if (this->type_ == NULL || this->type_->is_sink_type())
+	{
+	  go_assert(saw_errors());
+	  return gogo->backend()->error_expression();
+	}
+
       Named_object* fn = context->function();
       go_assert(fn != NULL);
       Bfunction* fn_ctx = fn->func_value()->get_or_make_decl(gogo, fn);
@@ -1144,7 +1485,7 @@ Sink_expression::do_get_backend(Translate_context* context)
       Bstatement* decl;
       this->bvar_ =
 	gogo->backend()->temporary_variable(fn_ctx, context->bblock(), bt, NULL,
-					    false, loc, &decl);
+					    0, loc, &decl);
       Bexpression* var_ref =
           gogo->backend()->var_expression(this->bvar_, loc);
       var_ref = gogo->backend()->compound_expression(decl, var_ref, loc);
@@ -1217,7 +1558,8 @@ Func_expression::get_code_pointer(Gogo* gogo, Named_object* no, Location loc)
   if (fntype->is_builtin())
     {
       go_error_at(loc,
-		  "invalid use of special builtin function %qs; must be called",
+		  ("invalid use of special built-in function %qs; "
+		   "must be called"),
 		  no->message_name().c_str());
       return gogo->backend()->error_expression();
     }
@@ -1256,7 +1598,7 @@ Func_expression::do_get_backend(Translate_context* context)
 	  if (no->func_declaration_value()->type()->is_builtin())
 	    {
 	      go_error_at(this->location(),
-			  ("invalid use of special builtin function %qs; "
+			  ("invalid use of special built-in function %qs; "
 			   "must be called"),
 			  no->message_name().c_str());
 	      return gogo->backend()->error_expression();
@@ -1284,6 +1626,29 @@ Func_expression::do_get_backend(Translate_context* context)
   Gogo* gogo = context->gogo();
   Btype *btype = this->type()->get_backend(gogo);
   return gogo->backend()->convert_expression(btype, bexpr, this->location());
+}
+
+// The cost of inlining a function reference.
+
+int
+Func_expression::do_inlining_cost() const
+{
+  // FIXME: We don't inline references to nested functions.
+  if (this->closure_ != NULL)
+    return 0x100000;
+  if (this->function_->is_function()
+      && this->function_->func_value()->enclosing() != NULL)
+    return 0x100000;
+
+  return 1;
+}
+
+// Export a reference to a function.
+
+void
+Func_expression::do_export(Export_function_body* efb) const
+{
+  Expression::export_name(efb, this->function_);
 }
 
 // Ast dump for function.
@@ -1367,7 +1732,8 @@ Func_descriptor_expression::do_get_backend(Translate_context* context)
     return context->backend()->var_expression(this->dvar_, loc);
 
   Gogo* gogo = context->gogo();
-  std::string var_name(gogo->function_descriptor_name(no));
+  Backend_name bname;
+  gogo->function_descriptor_backend_name(no, &bname);
   bool is_descriptor = false;
   if (no->is_function_declaration()
       && !no->func_declaration_value()->asm_name().empty()
@@ -1387,10 +1753,11 @@ Func_descriptor_expression::do_get_backend(Translate_context* context)
   Btype* btype = this->type()->get_backend(gogo);
 
   Bvariable* bvar;
-  std::string asm_name(go_selectively_encode_id(var_name));
   if (no->package() != NULL || is_descriptor)
-    bvar = context->backend()->immutable_struct_reference(var_name, asm_name,
-                                                          btype, loc);
+    bvar =
+      context->backend()->immutable_struct_reference(bname.name(),
+						     bname.optional_asm_name(),
+						     btype, loc);
   else
     {
       Location bloc = Linemap::predeclared_location();
@@ -1412,9 +1779,15 @@ Func_descriptor_expression::do_get_backend(Translate_context* context)
 			    && !is_exported_runtime)
 			|| Gogo::is_thunk(no));
 
-      bvar = context->backend()->immutable_struct(var_name, asm_name,
-                                                  is_hidden, false,
-						  btype, bloc);
+      if (no->is_function() && no->func_value()->is_referenced_by_inline())
+	is_hidden = false;
+
+      unsigned int flags = 0;
+      if (is_hidden)
+	flags |= Backend::variable_is_hidden;
+      bvar = context->backend()->immutable_struct(bname.name(),
+						  bname.optional_asm_name(),
+						  flags, btype, bloc);
       Expression_list* vals = new Expression_list();
       vals->push_back(Expression::make_func_code_reference(this->fn_, bloc));
       Expression* init =
@@ -1422,8 +1795,8 @@ Func_descriptor_expression::do_get_backend(Translate_context* context)
       Translate_context bcontext(gogo, NULL, NULL, NULL);
       bcontext.set_is_const();
       Bexpression* binit = init->get_backend(&bcontext);
-      context->backend()->immutable_struct_set_init(bvar, var_name, is_hidden,
-						    false, btype, bloc, binit);
+      context->backend()->immutable_struct_set_init(bvar, bname.name(),
+						    flags, btype, bloc, binit);
     }
 
   this->dvar_ = bvar;
@@ -1478,7 +1851,7 @@ class Func_code_reference_expression : public Expression
   { return Type::make_pointer_type(Type::make_void_type()); }
 
   void
-  do_determine_type(const Type_context*)
+  do_determine_type(Gogo*, const Type_context*)
   { }
 
   Expression*
@@ -1527,57 +1900,209 @@ Unknown_expression::name() const
   return this->named_object_->name();
 }
 
-// Lower a reference to an unknown name.
+// Set the iota value if this could be a reference to iota.
 
-Expression*
-Unknown_expression::do_lower(Gogo*, Named_object*, Statement_inserter*, int)
+void
+Unknown_expression::set_iota_value(int iota_value)
 {
-  Location location = this->location();
-  Named_object* no = this->named_object_;
-  Named_object* real;
-  if (!no->is_unknown())
-    real = no;
-  else
+  this->iota_value_ = iota_value;
+  this->is_iota_ = true;
+}
+
+// Traversal.
+
+int
+Unknown_expression::do_traverse(Traverse* traverse)
+{
+  if (this->lowered_ != NULL)
     {
-      real = no->unknown_value()->real_named_object();
+      if (Expression::traverse(&this->lowered_, traverse) == TRAVERSE_EXIT)
+	return TRAVERSE_EXIT;
+    }
+  return TRAVERSE_CONTINUE;
+}
+
+// Determine the type of a reference to an unknown name.  At this
+// point we have to figure out what the name refers to.
+
+void
+Unknown_expression::do_determine_type(Gogo* gogo, const Type_context* context)
+{
+  if (this->is_error_expression())
+    return;
+
+  if (this->lowered_ != NULL)
+    {
+      this->lowered_->determine_type(gogo, context);
+      return;
+    }
+
+  Location loc = this->location();
+
+  Named_object* no = this->named_object_;
+  if (no->is_unknown())
+    {
+      Named_object* real = no->unknown_value()->real_named_object();
       if (real == NULL)
 	{
-	  if (this->is_composite_literal_key_)
-	    return this;
 	  if (!this->no_error_message_)
-	    go_error_at(location, "reference to undefined name %qs",
-			this->named_object_->message_name().c_str());
-	  return Expression::make_error(location);
+	    go_error_at(loc, "reference to undefined name %qs",
+			no->message_name().c_str());
+	  this->set_is_error();
+	  return;
 	}
+      no = real;
+      this->named_object_ = real;
     }
-  switch (real->classification())
+
+  switch (no->classification())
     {
-    case Named_object::NAMED_OBJECT_CONST:
-      return Expression::make_const_reference(real, location);
     case Named_object::NAMED_OBJECT_TYPE:
-      return Expression::make_type(real->type_value(), location);
-    case Named_object::NAMED_OBJECT_TYPE_DECLARATION:
-      if (this->is_composite_literal_key_)
-	return this;
-      if (!this->no_error_message_)
-	go_error_at(location, "reference to undefined type %qs",
-		    real->message_name().c_str());
-      return Expression::make_error(location);
-    case Named_object::NAMED_OBJECT_VAR:
-      real->var_value()->set_is_used();
-      return Expression::make_var_reference(real, location);
+      this->lowered_ = Expression::make_type(no->type_value(), loc);
+      break;
     case Named_object::NAMED_OBJECT_FUNC:
     case Named_object::NAMED_OBJECT_FUNC_DECLARATION:
-      return Expression::make_func_reference(real, NULL, location);
-    case Named_object::NAMED_OBJECT_PACKAGE:
-      if (this->is_composite_literal_key_)
-	return this;
+      this->lowered_ = Expression::make_func_reference(no, NULL, loc);
+      break;
+    case Named_object::NAMED_OBJECT_CONST:
+      this->lowered_ = Expression::make_const_reference(no, loc);
+      this->lowered_->determine_type(gogo, context);
+      if (this->is_iota_)
+	this->lowered_->const_expression()->set_iota_value(this->iota_value_);
+      break;
+    case Named_object::NAMED_OBJECT_VAR:
+      this->lowered_ = Expression::make_var_reference(no, loc);
+      no->var_value()->set_is_used();
+      this->lowered_->determine_type(gogo, context);
+      break;
+    case Named_object::NAMED_OBJECT_TYPE_DECLARATION:
       if (!this->no_error_message_)
-	go_error_at(location, "unexpected reference to package");
-      return Expression::make_error(location);
+	go_error_at(this->location(), "reference to undefined type %qs",
+		    no->message_name().c_str());
+      this->set_is_error();
+      break;
+    case Named_object::NAMED_OBJECT_PACKAGE:
+      if (!this->no_error_message_)
+	this->report_error(_("unexpected reference to package"));
+      this->set_is_error();
+      break;
     default:
       go_unreachable();
     }
+}
+
+Type*
+Unknown_expression::do_type()
+{
+  if (this->is_error_expression())
+    return Type::make_error_type();
+  go_assert(this->lowered_ != NULL);
+  return this->lowered_->type();
+}
+
+bool
+Unknown_expression::do_is_constant() const
+{
+  if (this->is_error_expression())
+    return true;
+  if (this->lowered_ != NULL)
+    return this->lowered_->is_constant();
+
+  // This can be called before do_determine_types by
+  // Binary_expression::do_determine_type, which needs to know which
+  // values are constant before it works out the appropriate
+  // Type_context to pass down.
+  Named_object* no = this->named_object_;
+  if (no->is_unknown())
+    {
+      no = no->unknown_value()->real_named_object();
+      if (no == NULL)
+	return true;
+    }
+  return no->is_const();
+}
+
+bool
+Unknown_expression::do_is_untyped(Type** ptype) const
+{
+  if (this->is_error_expression())
+    return false;
+  if (this->lowered_ != NULL)
+    return this->lowered_->is_untyped(ptype);
+
+  Named_object* no = this->named_object_;
+  if (no->is_unknown())
+    {
+      no = no->unknown_value()->real_named_object();
+      if (no == NULL)
+	return false;
+    }
+
+  if (!no->is_const())
+    return false;
+  Type* t = no->const_value()->type();
+  if (t != NULL)
+    return Expression::is_untyped_type(t, ptype);
+  return no->const_value()->expr()->is_untyped(ptype);
+}
+
+bool
+Unknown_expression::do_numeric_constant_value(Numeric_constant* nc)
+{
+  if (this->is_error_expression())
+    return false;
+  if (this->lowered_ != NULL)
+    return this->lowered_->numeric_constant_value(nc);
+
+  // This can be called before the determine_types pass.
+  Named_object* no = this->named_object_;
+  if (no->is_unknown())
+    {
+      no = no->unknown_value()->real_named_object();
+      if (no == NULL)
+	return false;
+    }
+  if (!no->is_const())
+    return false;
+  return no->const_value()->expr()->numeric_constant_value(nc);
+}
+
+bool
+Unknown_expression::do_string_constant_value(std::string* val)
+{
+  if (this->is_error_expression())
+    return false;
+  go_assert(this->lowered_ != NULL);
+  return this->lowered_->string_constant_value(val);
+}
+
+bool
+Unknown_expression::do_boolean_constant_value(bool* val)
+{
+  if (this->is_error_expression())
+    return false;
+  go_assert(this->lowered_ != NULL);
+  return this->lowered_->boolean_constant_value(val);
+}
+
+bool
+Unknown_expression::do_is_addressable() const
+{
+  if (this->is_error_expression())
+    return true;
+  go_assert(this->lowered_ != NULL);
+  return this->lowered_->is_addressable();
+}
+
+// Lower a reference to an unknown name.
+
+Expression*
+Unknown_expression::do_lower(Gogo*, Named_object*, Statement_inserter*)
+{
+  if (this->is_error_expression())
+    return Expression::make_error(this->location());
+  go_assert(this->lowered_ != NULL);
+  return this->lowered_;
 }
 
 // Dump the ast representation for an unknown expression to a dump context.
@@ -1585,8 +2110,11 @@ Unknown_expression::do_lower(Gogo*, Named_object*, Statement_inserter*, int)
 void
 Unknown_expression::do_dump_expression(Ast_dump_context* ast_dump_context) const
 {
-  ast_dump_context->ostream() << "_Unknown_(" << this->named_object_->name()
-			      << ")";
+  if (this->lowered_ != NULL)
+    this->lowered_->dump_expression(ast_dump_context);
+  else
+    ast_dump_context->ostream() << "_Unknown_(" << this->named_object_->name()
+				<< ")";
 }
 
 // Make a reference to an unknown name.
@@ -1595,6 +2123,31 @@ Unknown_expression*
 Expression::make_unknown_reference(Named_object* no, Location location)
 {
   return new Unknown_expression(no, location);
+}
+
+// Start exporting a type conversion for a constant, if needed.  This
+// returns whether we need to export a closing parenthesis.
+
+bool
+Expression::export_constant_type(Export_function_body* efb, Type* type)
+{
+  if (type == NULL
+      || type->is_abstract()
+      || type == efb->type_context())
+    return false;
+  efb->write_c_string("$convert(");
+  efb->write_type(type);
+  efb->write_c_string(", ");
+  return true;
+}
+
+// Finish a type conversion for a constant.
+
+void
+Expression::finish_export_constant_type(Export_function_body* efb, bool needed)
+{
+  if (needed)
+    efb->write_c_string(")");
 }
 
 // A boolean expression.
@@ -1611,9 +2164,26 @@ class Boolean_expression : public Expression
   do_import(Import_expression*, Location);
 
  protected:
+  int
+  do_traverse(Traverse*);
+
   bool
   do_is_constant() const
   { return true; }
+
+  bool
+  do_is_untyped(Type**) const;
+
+  bool
+  do_is_zero_value() const
+  { return this->val_ == false; }
+
+  bool
+  do_boolean_constant_value(bool* val)
+  {
+    *val = this->val_;
+    return true;
+  }
 
   bool
   do_is_static_initializer() const
@@ -1623,7 +2193,7 @@ class Boolean_expression : public Expression
   do_type();
 
   void
-  do_determine_type(const Type_context*);
+  do_determine_type(Gogo*, const Type_context*);
 
   Expression*
   do_copy()
@@ -1638,19 +2208,38 @@ class Boolean_expression : public Expression
   { return 1; }
 
   void
-  do_export(Export_function_body* efb) const
-  { efb->write_c_string(this->val_ ? "$true" : "$false"); }
+  do_export(Export_function_body* efb) const;
 
   void
   do_dump_expression(Ast_dump_context* ast_dump_context) const
   { ast_dump_context->ostream() << (this->val_ ? "true" : "false"); }
-  
+
  private:
   // The constant.
   bool val_;
   // The type as determined by context.
   Type* type_;
 };
+
+// Traverse a boolean expression.  We just need to traverse the type
+// if there is one.
+
+int
+Boolean_expression::do_traverse(Traverse* traverse)
+{
+  if (this->type_ != NULL)
+    return Type::traverse(this->type_, traverse);
+  return TRAVERSE_CONTINUE;
+}
+
+bool
+Boolean_expression::do_is_untyped(Type** ptype) const
+{
+  if (this->type_ != NULL)
+    return Expression::is_untyped_type(this->type_, ptype);
+  *ptype = Type::make_boolean_type();
+  return true;
+}
 
 // Get the type.
 
@@ -1665,7 +2254,7 @@ Boolean_expression::do_type()
 // Set the type from the context.
 
 void
-Boolean_expression::do_determine_type(const Type_context* context)
+Boolean_expression::do_determine_type(Gogo*, const Type_context* context)
 {
   if (this->type_ != NULL && !this->type_->is_abstract())
     ;
@@ -1673,6 +2262,16 @@ Boolean_expression::do_determine_type(const Type_context* context)
     this->type_ = context->type;
   else if (!context->may_be_abstract)
     this->type_ = Type::lookup_bool_type();
+}
+
+// Export a boolean constant.
+
+void
+Boolean_expression::do_export(Export_function_body* efb) const
+{
+  bool exported_type = Expression::export_constant_type(efb, this->type_);
+  efb->write_c_string(this->val_ ? "$true" : "$false");
+  Expression::finish_export_constant_type(efb, exported_type);
 }
 
 // Import a boolean constant.
@@ -1704,6 +2303,26 @@ Expression::make_boolean(bool val, Location location)
 
 // Class String_expression.
 
+// Traverse a string expression.  We just need to traverse the type
+// if there is one.
+
+int
+String_expression::do_traverse(Traverse* traverse)
+{
+  if (this->type_ != NULL)
+    return Type::traverse(this->type_, traverse);
+  return TRAVERSE_CONTINUE;
+}
+
+bool
+String_expression::do_is_untyped(Type** ptype) const
+{
+  if (this->type_ != NULL)
+    return Expression::is_untyped_type(this->type_, ptype);
+  *ptype = Type::make_string_type();
+  return true;
+}
+
 // Get the type.
 
 Type*
@@ -1717,7 +2336,7 @@ String_expression::do_type()
 // Set the type from the context.
 
 void
-String_expression::do_determine_type(const Type_context* context)
+String_expression::do_determine_type(Gogo*, const Type_context* context)
 {
   if (this->type_ != NULL && !this->type_->is_abstract())
     ;
@@ -1737,9 +2356,15 @@ String_expression::do_get_backend(Translate_context* context)
 
   Location loc = this->location();
   std::vector<Bexpression*> init(2);
-  Bexpression* str_cst =
-      gogo->backend()->string_constant_expression(this->val_);
-  init[0] = gogo->backend()->address_expression(str_cst, loc);
+
+  if (this->val_.size() == 0)
+    init[0] = gogo->backend()->nil_pointer_expression();
+  else
+    {
+      Bexpression* str_cst =
+	gogo->backend()->string_constant_expression(this->val_);
+      init[0] = gogo->backend()->address_expression(str_cst, loc);
+    }
 
   Btype* int_btype = Type::lookup_integer_type("int")->get_backend(gogo);
   mpz_t lenval;
@@ -1793,7 +2418,9 @@ String_expression::export_string(String_dump* exp,
 void
 String_expression::do_export(Export_function_body* efb) const
 {
+  bool exported_type = Expression::export_constant_type(efb, this->type_);
   String_expression::export_string(efb, this);
+  Expression::finish_export_constant_type(efb, exported_type);
 }
 
 // Import a string expression.
@@ -1879,8 +2506,8 @@ class String_info_expression : public Expression
   do_type();
 
   void
-  do_determine_type(const Type_context*)
-  { go_unreachable(); }
+  do_determine_type(Gogo*, const Type_context*)
+  { }
 
   Expression*
   do_copy()
@@ -1955,8 +2582,8 @@ String_info_expression::do_dump_expression(
   ast_dump_context->ostream() << "stringinfo(";
   this->string_->dump_expression(ast_dump_context);
   ast_dump_context->ostream() << ",";
-  ast_dump_context->ostream() << 
-      (this->string_info_ == STRING_INFO_DATA ? "data" 
+  ast_dump_context->ostream() <<
+      (this->string_info_ == STRING_INFO_DATA ? "data"
     : this->string_info_ == STRING_INFO_LENGTH ? "length"
     : "unknown");
   ast_dump_context->ostream() << ")";
@@ -1969,6 +2596,90 @@ Expression::make_string_info(Expression* string, String_info string_info,
                             Location location)
 {
   return new String_info_expression(string, string_info, location);
+}
+
+// An expression that represents an string value: a struct with value pointer
+// and length fields.
+
+class String_value_expression : public Expression
+{
+ public:
+  String_value_expression(Expression* valptr, Expression* len, Location location)
+      : Expression(EXPRESSION_STRING_VALUE, location),
+        valptr_(valptr), len_(len)
+  { }
+
+ protected:
+  int
+  do_traverse(Traverse*);
+
+  Type*
+  do_type()
+  { return Type::make_string_type(); }
+
+  void
+  do_determine_type(Gogo*, const Type_context*)
+  { go_unreachable(); }
+
+  Expression*
+  do_copy()
+  {
+    return new String_value_expression(this->valptr_->copy(),
+                                       this->len_->copy(),
+                                       this->location());
+  }
+
+  Bexpression*
+  do_get_backend(Translate_context* context);
+
+  void
+  do_dump_expression(Ast_dump_context*) const;
+
+ private:
+  // The value pointer.
+  Expression* valptr_;
+  // The length.
+  Expression* len_;
+};
+
+int
+String_value_expression::do_traverse(Traverse* traverse)
+{
+  if (Expression::traverse(&this->valptr_, traverse) == TRAVERSE_EXIT
+      || Expression::traverse(&this->len_, traverse) == TRAVERSE_EXIT)
+    return TRAVERSE_EXIT;
+  return TRAVERSE_CONTINUE;
+}
+
+Bexpression*
+String_value_expression::do_get_backend(Translate_context* context)
+{
+  std::vector<Bexpression*> vals(2);
+  vals[0] = this->valptr_->get_backend(context);
+  vals[1] = this->len_->get_backend(context);
+
+  Gogo* gogo = context->gogo();
+  Btype* btype = Type::make_string_type()->get_backend(gogo);
+  return gogo->backend()->constructor_expression(btype, vals, this->location());
+}
+
+void
+String_value_expression::do_dump_expression(
+    Ast_dump_context* ast_dump_context) const
+{
+  ast_dump_context->ostream() << "stringvalue(";
+  ast_dump_context->ostream() << "value: ";
+  this->valptr_->dump_expression(ast_dump_context);
+  ast_dump_context->ostream() << ", length: ";
+  this->len_->dump_expression(ast_dump_context);
+  ast_dump_context->ostream() << ")";
+}
+
+Expression*
+Expression::make_string_value(Expression* valptr, Expression* len,
+                              Location location)
+{
+  return new String_value_expression(valptr, len, location);
 }
 
 // Make an integer expression.
@@ -1994,22 +2705,32 @@ class Integer_expression : public Expression
   dump_integer(Ast_dump_context* ast_dump_context, const mpz_t val);
 
  protected:
+  int
+  do_traverse(Traverse*);
+
   bool
   do_is_constant() const
   { return true; }
+
+  bool
+  do_is_untyped(Type**) const;
+
+  bool
+  do_is_zero_value() const
+  { return mpz_sgn(this->val_) == 0; }
 
   bool
   do_is_static_initializer() const
   { return true; }
 
   bool
-  do_numeric_constant_value(Numeric_constant* nc) const;
+  do_numeric_constant_value(Numeric_constant* nc);
 
   Type*
   do_type();
 
   void
-  do_determine_type(const Type_context* context);
+  do_determine_type(Gogo*, const Type_context* context);
 
   void
   do_check_types(Gogo*);
@@ -2053,16 +2774,39 @@ class Integer_expression : public Expression
   bool is_character_constant_;
 };
 
+// Traverse an integer expression.  We just need to traverse the type
+// if there is one.
+
+int
+Integer_expression::do_traverse(Traverse* traverse)
+{
+  if (this->type_ != NULL)
+    return Type::traverse(this->type_, traverse);
+  return TRAVERSE_CONTINUE;
+}
+
 // Return a numeric constant for this expression.  We have to mark
 // this as a character when appropriate.
 
 bool
-Integer_expression::do_numeric_constant_value(Numeric_constant* nc) const
+Integer_expression::do_numeric_constant_value(Numeric_constant* nc)
 {
   if (this->is_character_constant_)
     nc->set_rune(this->type_, this->val_);
   else
     nc->set_int(this->type_, this->val_);
+  return true;
+}
+
+bool
+Integer_expression::do_is_untyped(Type** ptype) const
+{
+  if (this->type_ != NULL)
+    return Expression::is_untyped_type(this->type_, ptype);
+  if (this->is_character_constant_)
+    *ptype = Type::make_abstract_character_type();
+  else
+    *ptype = Type::make_abstract_integer_type();
   return true;
 }
 
@@ -2086,7 +2830,7 @@ Integer_expression::do_type()
 // abstract type to a real type.
 
 void
-Integer_expression::do_determine_type(const Type_context* context)
+Integer_expression::do_determine_type(Gogo*, const Type_context* context)
 {
   if (this->type_ != NULL && !this->type_->is_abstract())
     ;
@@ -2158,8 +2902,7 @@ Integer_expression::do_get_backend(Translate_context* context)
       else
         {
           if (!saw_errors())
-            go_error_at(this->location(),
-                        "unknown type for large integer constant");
+            go_error_at(this->location(), "integer constant overflow");
           return context->gogo()->backend()->error_expression();
         }
     }
@@ -2183,16 +2926,7 @@ Integer_expression::export_integer(String_dump* exp, const mpz_t val)
 void
 Integer_expression::do_export(Export_function_body* efb) const
 {
-  bool added_type = false;
-  if (this->type_ != NULL
-      && !this->type_->is_abstract()
-      && this->type_ != efb->type_context())
-    {
-      efb->write_c_string("$convert(");
-      efb->write_type(this->type_);
-      efb->write_c_string(", ");
-      added_type = true;
-    }
+  bool exported_type = Expression::export_constant_type(efb, this->type_);
 
   Integer_expression::export_integer(efb, this->val_);
   if (this->is_character_constant_)
@@ -2200,8 +2934,7 @@ Integer_expression::do_export(Export_function_body* efb) const
   // A trailing space lets us reliably identify the end of the number.
   efb->write_c_string(" ");
 
-  if (added_type)
-    efb->write_c_string(")");
+  Expression::finish_export_constant_type(efb, exported_type);
 }
 
 // Import an integer, floating point, or complex value.  This handles
@@ -2229,11 +2962,11 @@ Integer_expression::do_import(Import_expression* imp, Location loc)
 	  return Expression::make_error(loc);
 	}
       if (pos == std::string::npos)
-	mpfr_set_ui(real, 0, GMP_RNDN);
+	mpfr_init_set_ui(real, 0, MPFR_RNDN);
       else
 	{
 	  std::string real_str = num.substr(0, pos);
-	  if (mpfr_init_set_str(real, real_str.c_str(), 10, GMP_RNDN) != 0)
+	  if (mpfr_init_set_str(real, real_str.c_str(), 10, MPFR_RNDN) != 0)
 	    {
 	      go_error_at(imp->location(), "bad number in import data: %qs",
 			  real_str.c_str());
@@ -2248,7 +2981,7 @@ Integer_expression::do_import(Import_expression* imp, Location loc)
 	imag_str = num.substr(pos);
       imag_str = imag_str.substr(0, imag_str.size() - 1);
       mpfr_t imag;
-      if (mpfr_init_set_str(imag, imag_str.c_str(), 10, GMP_RNDN) != 0)
+      if (mpfr_init_set_str(imag, imag_str.c_str(), 10, MPFR_RNDN) != 0)
 	{
 	  go_error_at(imp->location(), "bad number in import data: %qs",
 		      imag_str.c_str());
@@ -2288,7 +3021,7 @@ Integer_expression::do_import(Import_expression* imp, Location loc)
   else
     {
       mpfr_t val;
-      if (mpfr_init_set_str(val, num.c_str(), 10, GMP_RNDN) != 0)
+      if (mpfr_init_set_str(val, num.c_str(), 10, MPFR_RNDN) != 0)
 	{
 	  go_error_at(imp->location(), "bad number in import data: %qs",
 		      num.c_str());
@@ -2402,7 +3135,7 @@ class Float_expression : public Expression
     : Expression(EXPRESSION_FLOAT, location),
       type_(type)
   {
-    mpfr_init_set(this->val_, *val, GMP_RNDN);
+    mpfr_init_set(this->val_, *val, MPFR_RNDN);
   }
 
   // Write VAL to export data.
@@ -2414,16 +3147,29 @@ class Float_expression : public Expression
   dump_float(Ast_dump_context* ast_dump_context, const mpfr_t val);
 
  protected:
+  int
+  do_traverse(Traverse*);
+
   bool
   do_is_constant() const
   { return true; }
+
+  bool
+  do_is_untyped(Type**) const;
+
+  bool
+  do_is_zero_value() const
+  {
+    return mpfr_zero_p(this->val_) != 0
+           && mpfr_signbit(this->val_) == 0;
+  }
 
   bool
   do_is_static_initializer() const
   { return true; }
 
   bool
-  do_numeric_constant_value(Numeric_constant* nc) const
+  do_numeric_constant_value(Numeric_constant* nc)
   {
     nc->set_float(this->type_, this->val_);
     return true;
@@ -2433,7 +3179,7 @@ class Float_expression : public Expression
   do_type();
 
   void
-  do_determine_type(const Type_context*);
+  do_determine_type(Gogo*, const Type_context*);
 
   void
   do_check_types(Gogo*);
@@ -2466,6 +3212,26 @@ class Float_expression : public Expression
   Type* type_;
 };
 
+// Traverse a float expression.  We just need to traverse the type if
+// there is one.
+
+int
+Float_expression::do_traverse(Traverse* traverse)
+{
+  if (this->type_ != NULL)
+    return Type::traverse(this->type_, traverse);
+  return TRAVERSE_CONTINUE;
+}
+
+bool
+Float_expression::do_is_untyped(Type** ptype) const
+{
+  if (this->type_ != NULL)
+    return Expression::is_untyped_type(this->type_, ptype);
+  *ptype = Type::make_abstract_float_type();
+  return true;
+}
+
 // Return the current type.  If we haven't set the type yet, we return
 // an abstract float type.
 
@@ -2481,7 +3247,7 @@ Float_expression::do_type()
 // abstract type to a real type.
 
 void
-Float_expression::do_determine_type(const Type_context* context)
+Float_expression::do_determine_type(Gogo*, const Type_context* context)
 {
   if (this->type_ != NULL && !this->type_->is_abstract())
     ;
@@ -2551,8 +3317,8 @@ Float_expression::do_get_backend(Translate_context* context)
 void
 Float_expression::export_float(String_dump *exp, const mpfr_t val)
 {
-  mp_exp_t exponent;
-  char* s = mpfr_get_str(NULL, &exponent, 10, 0, val, GMP_RNDN);
+  mpfr_exp_t exponent;
+  char* s = mpfr_get_str(NULL, &exponent, 10, 0, val, MPFR_RNDN);
   if (*s == '-')
     exp->write_c_string("-");
   exp->write_c_string("0.");
@@ -2568,23 +3334,13 @@ Float_expression::export_float(String_dump *exp, const mpfr_t val)
 void
 Float_expression::do_export(Export_function_body* efb) const
 {
-  bool added_type = false;
-  if (this->type_ != NULL
-      && !this->type_->is_abstract()
-      && this->type_ != efb->type_context())
-    {
-      efb->write_c_string("$convert(");
-      efb->write_type(this->type_);
-      efb->write_c_string(", ");
-      added_type = true;
-    }
+  bool exported_type = Expression::export_constant_type(efb, this->type_);
 
   Float_expression::export_float(efb, this->val_);
   // A trailing space lets us reliably identify the end of the number.
   efb->write_c_string(" ");
 
-  if (added_type)
-    efb->write_c_string(")");
+  Expression::finish_export_constant_type(efb, exported_type);
 }
 
 // Dump a floating point number to the dump file.
@@ -2623,18 +3379,33 @@ class Complex_expression : public Expression
   // Write REAL/IMAG to dump context.
   static void
   dump_complex(Ast_dump_context* ast_dump_context, const mpc_t val);
-  
+
  protected:
+  int
+  do_traverse(Traverse*);
+
   bool
   do_is_constant() const
   { return true; }
+
+  bool
+  do_is_untyped(Type**) const;
+
+  bool
+  do_is_zero_value() const
+  {
+    return mpfr_zero_p(mpc_realref(this->val_)) != 0
+           && mpfr_signbit(mpc_realref(this->val_)) == 0
+           && mpfr_zero_p(mpc_imagref(this->val_)) != 0
+           && mpfr_signbit(mpc_imagref(this->val_)) == 0;
+  }
 
   bool
   do_is_static_initializer() const
   { return true; }
 
   bool
-  do_numeric_constant_value(Numeric_constant* nc) const
+  do_numeric_constant_value(Numeric_constant* nc)
   {
     nc->set_complex(this->type_, this->val_);
     return true;
@@ -2644,7 +3415,7 @@ class Complex_expression : public Expression
   do_type();
 
   void
-  do_determine_type(const Type_context*);
+  do_determine_type(Gogo*, const Type_context*);
 
   void
   do_check_types(Gogo*);
@@ -2679,6 +3450,26 @@ class Complex_expression : public Expression
   Type* type_;
 };
 
+// Traverse a complex expression.  We just need to traverse the type
+// if there is one.
+
+int
+Complex_expression::do_traverse(Traverse* traverse)
+{
+  if (this->type_ != NULL)
+    return Type::traverse(this->type_, traverse);
+  return TRAVERSE_CONTINUE;
+}
+
+bool
+Complex_expression::do_is_untyped(Type** ptype) const
+{
+  if (this->type_ != NULL)
+    return Expression::is_untyped_type(this->type_, ptype);
+  *ptype = Type::make_abstract_complex_type();
+  return true;
+}
+
 // Return the current type.  If we haven't set the type yet, we return
 // an abstract complex type.
 
@@ -2694,7 +3485,7 @@ Complex_expression::do_type()
 // abstract type to a real type.
 
 void
-Complex_expression::do_determine_type(const Type_context* context)
+Complex_expression::do_determine_type(Gogo*, const Type_context* context)
 {
   if (this->type_ != NULL && !this->type_->is_abstract())
     ;
@@ -2776,23 +3567,13 @@ Complex_expression::export_complex(String_dump* exp, const mpc_t val)
 void
 Complex_expression::do_export(Export_function_body* efb) const
 {
-  bool added_type = false;
-  if (this->type_ != NULL
-      && !this->type_->is_abstract()
-      && this->type_ != efb->type_context())
-    {
-      efb->write_c_string("$convert(");
-      efb->write_type(this->type_);
-      efb->write_c_string(", ");
-      added_type = true;
-    }
+  bool exported_type = Expression::export_constant_type(efb, this->type_);
 
   Complex_expression::export_complex(efb, this->val_);
   // A trailing space lets us reliably identify the end of the number.
   efb->write_c_string(" ");
 
-  if (added_type)
-    efb->write_c_string(")");
+  Expression::finish_export_constant_type(efb, exported_type);
 }
 
 // Dump a complex expression to the dump file.
@@ -2837,82 +3618,7 @@ class Find_named_object : public Traverse
   bool found_;
 };
 
-// A reference to a const in an expression.
-
-class Const_expression : public Expression
-{
- public:
-  Const_expression(Named_object* constant, Location location)
-    : Expression(EXPRESSION_CONST_REFERENCE, location),
-      constant_(constant), type_(NULL), seen_(false)
-  { }
-
-  Named_object*
-  named_object()
-  { return this->constant_; }
-
-  // Check that the initializer does not refer to the constant itself.
-  void
-  check_for_init_loop();
-
- protected:
-  int
-  do_traverse(Traverse*);
-
-  Expression*
-  do_lower(Gogo*, Named_object*, Statement_inserter*, int);
-
-  bool
-  do_is_constant() const
-  { return true; }
-
-  bool
-  do_is_static_initializer() const
-  { return true; }
-
-  bool
-  do_numeric_constant_value(Numeric_constant* nc) const;
-
-  bool
-  do_string_constant_value(std::string* val) const;
-
-  Type*
-  do_type();
-
-  // The type of a const is set by the declaration, not the use.
-  void
-  do_determine_type(const Type_context*);
-
-  void
-  do_check_types(Gogo*);
-
-  Expression*
-  do_copy()
-  { return this; }
-
-  Bexpression*
-  do_get_backend(Translate_context* context);
-
-  // When exporting a reference to a const as part of a const
-  // expression, we export the value.  We ignore the fact that it has
-  // a name.
-  void
-  do_export(Export_function_body* efb) const
-  { this->constant_->const_value()->expr()->export_expression(efb); }
-
-  void
-  do_dump_expression(Ast_dump_context*) const;
-
- private:
-  // The constant.
-  Named_object* constant_;
-  // The type of this reference.  This is used if the constant has an
-  // abstract type.
-  Type* type_;
-  // Used to prevent infinite recursion when a constant incorrectly
-  // refers to itself.
-  mutable bool seen_;
-};
+// Class Const_expression.
 
 // Traversal.
 
@@ -2924,24 +3630,29 @@ Const_expression::do_traverse(Traverse* traverse)
   return TRAVERSE_CONTINUE;
 }
 
+// Whether this is the zero value.
+
+bool
+Const_expression::do_is_zero_value() const
+{
+  return this->constant_->const_value()->expr()->is_zero_value();
+}
+
 // Lower a constant expression.  This is where we convert the
 // predeclared constant iota into an integer value.
 
 Expression*
-Const_expression::do_lower(Gogo* gogo, Named_object*,
-			   Statement_inserter*, int iota_value)
+Const_expression::do_lower(Gogo* gogo, Named_object*, Statement_inserter*)
 {
-  if (this->constant_->const_value()->expr()->classification()
-      == EXPRESSION_IOTA)
-    {
-      if (iota_value == -1)
-	{
-	  go_error_at(this->location(),
-		      "iota is only defined in const declarations");
-	  iota_value = 0;
-	}
-      return Expression::make_integer_ul(iota_value, NULL, this->location());
-    }
+  Location loc = this->location();
+
+  if (this->is_error_expression())
+    return Expression::make_error(loc);
+  if (this->constant_->const_value()->expr()->is_error_expression())
+    return Expression::make_error(loc);
+
+  if (this->is_iota_)
+    return Expression::make_integer_ul(this->iota_value_, NULL, loc);
 
   // Make sure that the constant itself has been lowered.
   gogo->lower_constant(this->constant_);
@@ -2952,10 +3663,23 @@ Const_expression::do_lower(Gogo* gogo, Named_object*,
 // Return a numeric constant value.
 
 bool
-Const_expression::do_numeric_constant_value(Numeric_constant* nc) const
+Const_expression::do_numeric_constant_value(Numeric_constant* nc)
 {
   if (this->seen_)
     return false;
+
+  Type* ctype;
+  if (this->type_ != NULL)
+    ctype = this->type_;
+  else
+    ctype = this->constant_->const_value()->type();
+
+  if (this->is_iota_)
+    {
+      nc->set_unsigned_long(ctype,
+			    static_cast<unsigned long>(this->iota_value_));
+      return true;
+    }
 
   Expression* e = this->constant_->const_value()->expr();
 
@@ -2965,11 +3689,6 @@ Const_expression::do_numeric_constant_value(Numeric_constant* nc) const
 
   this->seen_ = false;
 
-  Type* ctype;
-  if (this->type_ != NULL)
-    ctype = this->type_;
-  else
-    ctype = this->constant_->const_value()->type();
   if (r && ctype != NULL)
     {
       if (!nc->set_type(ctype, false, this->location()))
@@ -2980,9 +3699,11 @@ Const_expression::do_numeric_constant_value(Numeric_constant* nc) const
 }
 
 bool
-Const_expression::do_string_constant_value(std::string* val) const
+Const_expression::do_string_constant_value(std::string* val)
 {
   if (this->seen_)
+    return false;
+  if (this->is_iota_)
     return false;
 
   Expression* e = this->constant_->const_value()->expr();
@@ -2994,82 +3715,108 @@ Const_expression::do_string_constant_value(std::string* val) const
   return ok;
 }
 
+bool
+Const_expression::do_boolean_constant_value(bool* val)
+{
+  if (this->seen_)
+    return false;
+  if (this->is_iota_)
+    return false;
+
+  Expression* e = this->constant_->const_value()->expr();
+
+  this->seen_ = true;
+  bool ok = e->boolean_constant_value(val);
+  this->seen_ = false;
+
+  return ok;
+}
+
+// Whether this is untyped.
+
+bool
+Const_expression::do_is_untyped(Type** ptype) const
+{
+  if (this->type_ != NULL)
+    return Expression::is_untyped_type(this->type_, ptype);
+
+  Named_constant* nc = this->constant_->const_value();
+  if (nc->type() != NULL)
+    return Expression::is_untyped_type(nc->type(), ptype);
+
+  return nc->expr()->is_untyped(ptype);
+}
+
 // Return the type of the const reference.
 
 Type*
 Const_expression::do_type()
 {
-  if (this->type_ != NULL)
-    return this->type_;
-
-  Named_constant* nc = this->constant_->const_value();
-
-  if (this->seen_ || nc->lowering())
+  if (this->type_ == NULL)
     {
-      if (nc->type() == NULL || !nc->type()->is_error_type())
-	{
-	  Location loc = this->location();
-	  if (!this->seen_)
-	    loc = nc->location();
-	  go_error_at(loc, "constant refers to itself");
-	}
-      this->set_is_error();
-      this->type_ = Type::make_error_type();
-      nc->set_type(this->type_);
-      return this->type_;
+      go_assert(saw_errors());
+      return Type::make_error_type();
     }
 
-  this->seen_ = true;
-
-  Type* ret = nc->type();
-
-  if (ret != NULL)
-    {
-      this->seen_ = false;
-      return ret;
-    }
-
-  // During parsing, a named constant may have a NULL type, but we
-  // must not return a NULL type here.
-  ret = nc->expr()->type();
-
-  this->seen_ = false;
-
-  if (ret->is_error_type())
-    nc->set_type(ret);
-
-  return ret;
+  return this->type_;
 }
 
 // Set the type of the const reference.
 
 void
-Const_expression::do_determine_type(const Type_context* context)
+Const_expression::do_determine_type(Gogo* gogo, const Type_context* context)
 {
-  Type* ctype = this->constant_->const_value()->type();
-  Type* cetype = (ctype != NULL
-		  ? ctype
-		  : this->constant_->const_value()->expr()->type());
-  if (ctype != NULL && !ctype->is_abstract())
-    ;
+  if (this->type_ != NULL)
+    return;
+
+  // The type may depend on the type of other constants.  Avoid an
+  // endless loop.
+  if (this->seen_)
+    {
+      if (!saw_errors())
+	go_error_at(this->location(), "constant refers to itself");
+      this->set_is_error();
+      this->type_ = Type::make_error_type();
+      return;
+    }
+
+  this->seen_ = true;
+
+  Named_constant* nc = this->constant_->const_value();
+  nc->determine_type(gogo);
+
+  Type* ctype = nc->type();
+
+  this->seen_ = false;
+
+  if (ctype == NULL)
+    {
+      go_error_at(nc->expr()->location(), "constant refers to itself");
+      this->set_is_error();
+      this->type_ = Type::make_error_type();
+    }
+  else if (!ctype->is_abstract())
+    this->type_ = ctype;
   else if (context->type != NULL
 	   && context->type->is_numeric_type()
-	   && cetype->is_numeric_type())
+	   && ctype->is_numeric_type())
     this->type_ = context->type;
   else if (context->type != NULL
 	   && context->type->is_string_type()
-	   && cetype->is_string_type())
+	   && ctype->is_string_type())
     this->type_ = context->type;
   else if (context->type != NULL
 	   && context->type->is_boolean_type()
-	   && cetype->is_boolean_type())
+	   && ctype->is_boolean_type())
     this->type_ = context->type;
   else if (!context->may_be_abstract)
     {
-      if (cetype->is_abstract())
-	cetype = cetype->make_non_abstract_type();
-      this->type_ = cetype;
+      if (ctype->is_abstract())
+	ctype = ctype->make_non_abstract_type();
+      this->type_ = ctype;
     }
+  else
+    this->type_ = ctype;
 }
 
 // Check for a loop in which the initializer of a constant refers to
@@ -3078,8 +3825,15 @@ Const_expression::do_determine_type(const Type_context* context)
 void
 Const_expression::check_for_init_loop()
 {
+  if (this->is_error_expression())
+    return;
   if (this->type_ != NULL && this->type_->is_error())
     return;
+  if (this->constant_->const_value()->expr()->is_error_expression())
+    {
+      this->set_is_error();
+      return;
+    }
 
   if (this->seen_)
     {
@@ -3106,21 +3860,61 @@ Const_expression::check_for_init_loop()
     }
 }
 
+// Set the iota value if this is a reference to iota.
+
+void
+Const_expression::set_iota_value(int iota_value)
+{
+  Named_constant* nc = this->constant_->const_value();
+  if (nc->expr()->classification() == EXPRESSION_IOTA)
+    {
+      this->is_iota_ = true;
+      this->iota_value_ = iota_value;
+    }
+}
+
 // Check types of a const reference.
 
 void
 Const_expression::do_check_types(Gogo*)
 {
+  if (this->is_error_expression())
+    return;
   if (this->type_ != NULL && this->type_->is_error())
     return;
+  if (this->constant_->const_value()->expr()->is_error_expression())
+    {
+      this->set_is_error();
+      return;
+    }
+
+  Expression* expr = this->constant_->const_value()->expr();
+  if (expr->classification() == EXPRESSION_IOTA && !this->is_iota_)
+    {
+      go_error_at(this->location(),
+		  "iota is only defined in const declarations");
+      // Avoid knock-on errors.
+      this->is_iota_ = true;
+      this->iota_value_ = 0;
+    }
+
+  if (this->is_iota_ && this->type_->is_numeric_type())
+    {
+      Numeric_constant nc;
+      nc.set_unsigned_long(Type::make_abstract_integer_type(),
+			   static_cast<unsigned long>(this->iota_value_));
+      if (!nc.set_type(this->type_, true, this->location()))
+	this->set_is_error();
+      return;
+    }
 
   this->check_for_init_loop();
 
   // Check that numeric constant fits in type.
-  if (this->type_ != NULL && this->type_->is_numeric_type())
+  if (this->type_->is_numeric_type())
     {
       Numeric_constant nc;
-      if (this->constant_->const_value()->expr()->numeric_constant_value(&nc))
+      if (expr->numeric_constant_value(&nc))
 	{
 	  if (!nc.set_type(this->type_, true, this->location()))
 	    this->set_is_error();
@@ -3139,6 +3933,8 @@ Const_expression::do_get_backend(Translate_context* context)
       go_assert(saw_errors());
       return context->backend()->error_expression();
     }
+
+  go_assert(!this->is_iota_);
 
   // If the type has been set for this expression, but the underlying
   // object is an abstract int or float, we try to get the abstract
@@ -3161,6 +3957,16 @@ Const_expression::do_get_backend(Translate_context* context)
   if (this->type_ != NULL)
     expr = Expression::make_cast(this->type_, expr, this->location());
   return expr->get_backend(context);
+}
+
+// When exporting a reference to a const as part of a const
+// expression, we export the value.  We ignore the fact that it has
+// a name.
+
+void
+Const_expression::do_export(Export_function_body* efb) const
+{
+  this->constant_->const_value()->expr()->export_expression(efb);
 }
 
 // Dump ast representation for constant expression.
@@ -3192,12 +3998,6 @@ Find_named_object::expression(Expression** pexpr)
 	Const_expression* ce = static_cast<Const_expression*>(*pexpr);
 	if (ce->named_object() == this->no_)
 	  break;
-
-	// We need to check a constant initializer explicitly, as
-	// loops here will not be caught by the loop checking for
-	// variable initializers.
-	ce->check_for_init_loop();
-
 	return TRAVERSE_CONTINUE;
       }
 
@@ -3209,6 +4009,8 @@ Find_named_object::expression(Expression** pexpr)
       if ((*pexpr)->func_expression()->named_object() == this->no_)
 	break;
       return TRAVERSE_CONTINUE;
+    case Expression::EXPRESSION_ERROR:
+      return TRAVERSE_EXIT;
     default:
       return TRAVERSE_CONTINUE;
     }
@@ -3234,6 +4036,17 @@ class Nil_expression : public Expression
   { return true; }
 
   bool
+  do_untyped_type(Type** ptype) const
+  {
+    *ptype = Type::make_nil_type();
+    return true;
+  }
+
+  bool
+  do_is_zero_value() const
+  { return true; }
+
+  bool
   do_is_static_initializer() const
   { return true; }
 
@@ -3242,7 +4055,7 @@ class Nil_expression : public Expression
   { return Type::make_nil_type(); }
 
   void
-  do_determine_type(const Type_context*)
+  do_determine_type(Gogo*, const Type_context*)
   { }
 
   Expression*
@@ -3298,8 +4111,16 @@ class Iota_expression : public Parser_expression
   { }
 
  protected:
+  Type*
+  do_type()
+  { return Type::make_abstract_integer_type(); }
+
+  void
+  do_determine_type(Gogo*, const Type_context*)
+  { }
+
   Expression*
-  do_lower(Gogo*, Named_object*, Statement_inserter*, int)
+  do_lower(Gogo*, Named_object*, Statement_inserter*)
   { go_unreachable(); }
 
   // There should only ever be one of these.
@@ -3335,11 +4156,22 @@ Type_conversion_expression::do_traverse(Traverse* traverse)
   return TRAVERSE_CONTINUE;
 }
 
-// Convert to a constant at lowering time.
+// Return the type of the expression.
+
+Type*
+Type_conversion_expression::do_type()
+{
+  if (this->is_error_expression() || this->expr_->is_error_expression())
+    return Type::make_error_type();
+  return this->type_;
+}
+
+// Convert to a constant at lowering time.  Also lower conversions
+// from slice to pointer-to-array, as they can panic.
 
 Expression*
-Type_conversion_expression::do_lower(Gogo*, Named_object*,
-				     Statement_inserter*, int)
+Type_conversion_expression::do_lower(Gogo* gogo, Named_object*,
+				     Statement_inserter* inserter)
 {
   Type* type = this->type_;
   Expression* val = this->expr_;
@@ -3427,6 +4259,60 @@ Type_conversion_expression::do_lower(Gogo*, Named_object*,
 	}
     }
 
+  if (type->points_to() != NULL
+      && type->points_to()->array_type() != NULL
+      && !type->points_to()->is_slice_type()
+      && val->type()->is_slice_type()
+      && Type::are_identical(type->points_to()->array_type()->element_type(),
+			     val->type()->array_type()->element_type(),
+			     0, NULL))
+    {
+      Temporary_statement* val_temp = NULL;
+      if (!val->is_multi_eval_safe())
+	{
+	  val_temp = Statement::make_temporary(val->type(), NULL, location);
+	  inserter->insert(val_temp);
+	  val = Expression::make_set_and_use_temporary(val_temp, val,
+						       location);
+	}
+
+      Type* int_type = Type::lookup_integer_type("int");
+      Temporary_statement* vallen_temp =
+	Statement::make_temporary(int_type, NULL, location);
+      inserter->insert(vallen_temp);
+
+      Expression* arrlen = type->points_to()->array_type()->length();
+      Expression* vallen =
+	Expression::make_slice_info(val, Expression::SLICE_INFO_LENGTH,
+				    location);
+      vallen = Expression::make_set_and_use_temporary(vallen_temp, vallen,
+						      location);
+      Expression* cond = Expression::make_binary(OPERATOR_GT, arrlen, vallen,
+						 location);
+
+      vallen = Expression::make_temporary_reference(vallen_temp, location);
+      Expression* panic = Runtime::make_call(gogo,
+					     Runtime::PANIC_SLICE_CONVERT,
+					     location, 2, arrlen, vallen);
+
+      Expression* nil = Expression::make_nil(location);
+      Expression* check = Expression::make_conditional(cond, panic, nil,
+						       location);
+
+      if (val_temp == NULL)
+	val = val->copy();
+      else
+	val = Expression::make_temporary_reference(val_temp, location);
+      Expression* ptr =
+	Expression::make_slice_info(val, Expression::SLICE_INFO_VALUE_POINTER,
+				    location);
+      ptr = Expression::make_unsafe_cast(type, ptr, location);
+
+      Expression* ret = Expression::make_compound(check, ptr, location);
+      ret->determine_type_no_context(gogo);
+      return ret;
+    }
+
   return this;
 }
 
@@ -3446,12 +4332,23 @@ Type_conversion_expression::do_flatten(Gogo*, Named_object*,
   if (((this->type()->is_string_type()
         && this->expr_->type()->is_slice_type())
        || this->expr_->type()->interface_type() != NULL)
-      && !this->expr_->is_variable())
+      && !this->expr_->is_multi_eval_safe())
     {
       Temporary_statement* temp =
           Statement::make_temporary(NULL, this->expr_, this->location());
       inserter->insert(temp);
       this->expr_ = Expression::make_temporary_reference(temp, this->location());
+    }
+
+  // For interface conversion and string to/from slice conversions,
+  // decide if we can allocate on stack.
+  if (this->type()->interface_type() != NULL
+      || this->type()->is_string_type()
+      || this->expr_->type()->is_string_type())
+    {
+      Node* n = Node::make_node(this);
+      if ((n->encoding() & ESCAPE_MASK) == Node::ESCAPE_NONE)
+        this->no_escape_ = true;
     }
   return this;
 }
@@ -3473,6 +4370,28 @@ Type_conversion_expression::do_is_constant() const
       && !type->is_boolean_type()
       && !type->is_string_type())
     return false;
+
+  return true;
+}
+
+// Return whether a type conversion is a zero value.
+
+bool
+Type_conversion_expression::do_is_zero_value() const
+{
+  if (!this->expr_->is_zero_value())
+    return false;
+
+  // Some type conversion from zero value is still not zero value.
+  // For example, []byte("") or interface{}(0).
+  // Conservatively, only report true if the RHS is nil.
+  Type* type = this->type_;
+  if (type->integer_type() == NULL
+      && type->float_type() == NULL
+      && type->complex_type() == NULL
+      && !type->is_boolean_type()
+      && !type->is_string_type())
+    return this->expr_->is_nil_expression();
 
   return true;
 }
@@ -3516,7 +4435,7 @@ Type_conversion_expression::do_is_static_initializer() const
 
 bool
 Type_conversion_expression::do_numeric_constant_value(
-    Numeric_constant* nc) const
+    Numeric_constant* nc)
 {
   if (!this->type_->is_numeric_type())
     return false;
@@ -3528,8 +4447,11 @@ Type_conversion_expression::do_numeric_constant_value(
 // Return the constant string value if there is one.
 
 bool
-Type_conversion_expression::do_string_constant_value(std::string* val) const
+Type_conversion_expression::do_string_constant_value(std::string* val)
 {
+  if (this->type_->is_string_type() && this->expr_->type()->is_string_type())
+    return this->expr_->string_constant_value(val);
+
   if (this->type_->is_string_type()
       && this->expr_->type()->integer_type() != NULL)
     {
@@ -3539,8 +4461,16 @@ Type_conversion_expression::do_string_constant_value(std::string* val) const
 	  unsigned long ival;
 	  if (nc.to_unsigned_long(&ival) == Numeric_constant::NC_UL_VALID)
 	    {
+	      unsigned int cval = static_cast<unsigned int>(ival);
+	      if (static_cast<unsigned long>(cval) != ival)
+		{
+		  go_warning_at(this->location(), 0,
+				"unicode code point 0x%lx out of range",
+				ival);
+		  cval = 0xfffd; // Unicode "replacement character."
+		}
 	      val->clear();
-	      Lex::append_char(ival, true, val, this->location());
+	      Lex::append_char(cval, true, val, this->location());
 	      return true;
 	    }
 	}
@@ -3551,13 +4481,23 @@ Type_conversion_expression::do_string_constant_value(std::string* val) const
   return false;
 }
 
+// Return the constant boolean value if there is one.
+
+bool
+Type_conversion_expression::do_boolean_constant_value(bool* val)
+{
+  if (!this->type_->is_boolean_type())
+    return false;
+  return this->expr_->boolean_constant_value(val);
+}
+
 // Determine the resulting type of the conversion.
 
 void
-Type_conversion_expression::do_determine_type(const Type_context*)
+Type_conversion_expression::do_determine_type(Gogo* gogo, const Type_context*)
 {
   Type_context subcontext(this->type_, false);
-  this->expr_->determine_type(&subcontext);
+  this->expr_->determine_type(gogo, &subcontext);
 }
 
 // Check that types are convertible.
@@ -3583,6 +4523,12 @@ Type_conversion_expression::do_check_types(Gogo*)
   if (Type::are_convertible(type, expr_type, &reason))
     return;
 
+  // We can convert all numeric types if the value is a constant.
+  if (type->is_numeric_type()
+      && expr_type->is_numeric_type()
+      && this->expr_->is_constant())
+    return;
+
   go_error_at(this->location(), "%s", reason.c_str());
   this->set_is_error();
 }
@@ -3592,9 +4538,11 @@ Type_conversion_expression::do_check_types(Gogo*)
 Expression*
 Type_conversion_expression::do_copy()
 {
-  return new Type_conversion_expression(this->type_->copy_expressions(),
-					this->expr_->copy(),
-					this->location());
+  Expression* ret = new Type_conversion_expression(this->type_->copy_expressions(),
+                                                   this->expr_->copy(),
+                                                   this->location());
+  ret->conversion_expression()->set_no_copy(this->no_copy_);
+  return ret;
 }
 
 // Get the backend representation for a type conversion.
@@ -3604,6 +4552,7 @@ Type_conversion_expression::do_get_backend(Translate_context* context)
 {
   Type* type = this->type_;
   Type* expr_type = this->expr_->type();
+  Type_context tcontext(type, false);
 
   Gogo* gogo = context->gogo();
   Btype* btype = type->get_backend(gogo);
@@ -3617,11 +4566,21 @@ Type_conversion_expression::do_get_backend(Translate_context* context)
       return gogo->backend()->convert_expression(btype, bexpr, loc);
     }
   else if (type->interface_type() != NULL
+           && expr_type->interface_type() == NULL)
+    {
+      Expression* conversion =
+          Expression::convert_type_to_interface(type, this->expr_,
+                                                this->no_escape_, loc);
+      conversion->determine_type(gogo, &tcontext);
+      return conversion->get_backend(context);
+    }
+  else if (type->interface_type() != NULL
 	   || expr_type->interface_type() != NULL)
     {
       Expression* conversion =
           Expression::convert_for_assignment(gogo, type, this->expr_,
-                                             this->location());
+                                             loc);
+      conversion->determine_type(gogo, &tcontext);
       return conversion->get_backend(context);
     }
   else if (type->is_string_type()
@@ -3630,38 +4589,98 @@ Type_conversion_expression::do_get_backend(Translate_context* context)
       mpz_t intval;
       Numeric_constant nc;
       if (this->expr_->numeric_constant_value(&nc)
-	  && nc.to_int(&intval)
-	  && mpz_fits_ushort_p(intval))
+	  && nc.to_int(&intval))
 	{
 	  std::string s;
-	  Lex::append_char(mpz_get_ui(intval), true, &s, loc);
+          unsigned int x;
+          if (mpz_fits_uint_p(intval))
+            x = mpz_get_ui(intval);
+          else
+            {
+              char* ms = mpz_get_str(NULL, 16, intval);
+              go_warning_at(loc, 0,
+                            "unicode code point 0x%s out of range in string",
+                            ms);
+              free(ms);
+              x = 0xfffd;
+            }
+	  Lex::append_char(x, true, &s, loc);
 	  mpz_clear(intval);
 	  Expression* se = Expression::make_string(s, loc);
+	  se->determine_type(gogo, &tcontext);
 	  return se->get_backend(context);
 	}
 
+      Expression* buf;
+      if (this->no_escape_)
+        {
+          Type* byte_type = Type::lookup_integer_type("uint8");
+          Expression* buflen =
+            Expression::make_integer_ul(4, NULL, loc);
+          Type* array_type = Type::make_array_type(byte_type, buflen);
+          buf = Expression::make_allocation(array_type, loc);
+          buf->allocation_expression()->set_allocate_on_stack();
+          buf->allocation_expression()->set_no_zero();
+        }
+      else
+        buf = Expression::make_nil(loc);
       Expression* i2s_expr =
-          Runtime::make_call(Runtime::INTSTRING, loc, 2,
-			     Expression::make_nil(loc), this->expr_);
-      return Expression::make_cast(type, i2s_expr, loc)->get_backend(context);
+        Runtime::make_call(gogo, Runtime::INTSTRING, loc, 2, buf, this->expr_);
+      Expression* ret = Expression::make_cast(type, i2s_expr, loc);
+      Type_context tcontext(type, false);
+      ret->determine_type(gogo, &tcontext);
+      return ret->get_backend(context);
     }
   else if (type->is_string_type() && expr_type->is_slice_type())
     {
       Array_type* a = expr_type->array_type();
       Type* e = a->element_type()->forwarded();
       go_assert(e->integer_type() != NULL);
-      go_assert(this->expr_->is_variable());
+      go_assert(this->expr_->is_multi_eval_safe());
 
-      Runtime::Function code;
+      Expression* buf;
+      if (this->no_escape_ && !this->no_copy_)
+        {
+          Type* byte_type = Type::lookup_integer_type("uint8");
+          Expression* buflen =
+            Expression::make_integer_ul(tmp_string_buf_size, NULL, loc);
+          Type* array_type = Type::make_array_type(byte_type, buflen);
+          buf = Expression::make_allocation(array_type, loc);
+          buf->allocation_expression()->set_allocate_on_stack();
+          buf->allocation_expression()->set_no_zero();
+        }
+      else
+        buf = Expression::make_nil(loc);
+
       if (e->integer_type()->is_byte())
-        code = Runtime::SLICEBYTETOSTRING;
+        {
+	  Expression* ptr =
+	    Expression::make_slice_info(this->expr_, SLICE_INFO_VALUE_POINTER,
+					loc);
+	  Expression* len =
+	    Expression::make_slice_info(this->expr_, SLICE_INFO_LENGTH, loc);
+          if (this->no_copy_)
+            {
+              if (gogo->debug_optimization())
+                go_debug(loc, "no copy string([]byte)");
+              Expression* str = Expression::make_string_value(ptr, len, loc);
+              return str->get_backend(context);
+            }
+	  Expression* ret = Runtime::make_call(gogo, Runtime::SLICEBYTETOSTRING,
+					       loc, 3, buf, ptr, len);
+	  Type_context tcontext(type, false);
+	  ret->determine_type(gogo, &tcontext);
+	  return ret->get_backend(context);
+        }
       else
         {
           go_assert(e->integer_type()->is_rune());
-          code = Runtime::SLICERUNETOSTRING;
-        }
-      return Runtime::make_call(code, loc, 2, Expression::make_nil(loc),
-				this->expr_)->get_backend(context);
+	  Expression* ret = Runtime::make_call(gogo, Runtime::SLICERUNETOSTRING,
+					       loc, 2, buf, this->expr_);
+	  Type_context tcontext(type, false);
+	  ret->determine_type(gogo, &tcontext);
+	  return ret->get_backend(context);
+	}
     }
   else if (type->is_slice_type() && expr_type->is_string_type())
     {
@@ -3676,10 +4695,25 @@ Type_conversion_expression::do_get_backend(Translate_context* context)
 	  go_assert(e->integer_type()->is_rune());
 	  code = Runtime::STRINGTOSLICERUNE;
 	}
-      Expression* s2a = Runtime::make_call(code, loc, 2,
-					   Expression::make_nil(loc),
+
+      Expression* buf;
+      if (this->no_escape_)
+        {
+          Expression* buflen =
+            Expression::make_integer_ul(tmp_string_buf_size, NULL, loc);
+          Type* array_type = Type::make_array_type(e, buflen);
+          buf = Expression::make_allocation(array_type, loc);
+          buf->allocation_expression()->set_allocate_on_stack();
+          buf->allocation_expression()->set_no_zero();
+        }
+      else
+        buf = Expression::make_nil(loc);
+      Expression* s2a = Runtime::make_call(gogo, code, loc, 2, buf,
 					   this->expr_);
-      return Expression::make_unsafe_cast(type, s2a, loc)->get_backend(context);
+      Expression* ret = Expression::make_unsafe_cast(type, s2a, loc);
+      Type_context tcontext(type, false);
+      ret->determine_type(gogo, &tcontext);
+      return ret->get_backend(context);
     }
   else if (type->is_numeric_type())
     {
@@ -3703,6 +4737,7 @@ Type_conversion_expression::do_get_backend(Translate_context* context)
     {
       Expression* conversion =
           Expression::convert_for_assignment(gogo, type, this->expr_, loc);
+      conversion->determine_type(gogo, &tcontext);
       return conversion->get_backend(context);
     }
 }
@@ -3871,9 +4906,9 @@ Unsafe_type_conversion_expression::do_get_backend(Translate_context* context)
                 && Type::are_convertible(t, et, NULL));
     }
   else if (t->map_type() != NULL)
-    go_assert(et->map_type() != NULL);
+    go_assert(et->map_type() != NULL || et->points_to() != NULL);
   else if (t->channel_type() != NULL)
-    go_assert(et->channel_type() != NULL);
+    go_assert(et->channel_type() != NULL || et->points_to() != NULL);
   else if (t->points_to() != NULL)
     go_assert(et->points_to() != NULL
               || et->channel_type() != NULL
@@ -3881,6 +4916,8 @@ Unsafe_type_conversion_expression::do_get_backend(Translate_context* context)
               || et->function_type() != NULL
 	      || et->integer_type() != NULL
               || et->is_nil_type());
+  else if (t->function_type() != NULL)
+    go_assert(et->points_to() != NULL);
   else if (et->is_unsafe_pointer_type())
     go_assert(t->points_to() != NULL
 	      || (t->integer_type() != NULL
@@ -3899,8 +4936,6 @@ Unsafe_type_conversion_expression::do_get_backend(Translate_context* context)
               || et->map_type() != NULL
               || et->channel_type() != NULL
 	      || et->is_nil_type());
-  else if (t->function_type() != NULL)
-    go_assert(et->points_to() != NULL);
   else
     go_unreachable();
 
@@ -3962,14 +4997,26 @@ Unary_expression::check_operand_address_taken(Gogo*)
 // instead.
 
 Expression*
-Unary_expression::do_lower(Gogo*, Named_object*, Statement_inserter*, int)
+Unary_expression::do_lower(Gogo* gogo, Named_object*, Statement_inserter*)
 {
   Location loc = this->location();
+
+  if (this->is_error_expression())
+    return Expression::make_error(loc);
+
   Operator op = this->op_;
   Expression* expr = this->expr_;
 
+  if (expr->is_error_expression())
+    return Expression::make_error(loc);
+
   if (op == OPERATOR_MULT && expr->is_type_expression())
-    return Expression::make_type(Type::make_pointer_type(expr->type()), loc);
+    {
+      Expression* ret =
+	Expression::make_type(Type::make_pointer_type(expr->type()), loc);
+      ret->determine_type_no_context(gogo);
+      return ret;
+    }
 
   // *&x simplifies to x.  *(*T)(unsafe.Pointer)(&x) does not require
   // moving x to the heap.  FIXME: Is it worth doing a real escape
@@ -4006,14 +5053,6 @@ Unary_expression::do_lower(Gogo*, Named_object*, Statement_inserter*, int)
 	}
     }
 
-  // Catching an invalid indirection of unsafe.Pointer here avoid
-  // having to deal with TYPE_VOID in other places.
-  if (op == OPERATOR_MULT && expr->type()->is_unsafe_pointer_type())
-    {
-      go_error_at(this->location(), "invalid indirect of %<unsafe.Pointer%>");
-      return Expression::make_error(this->location());
-    }
-
   // Check for an invalid pointer dereference.  We need to do this
   // here because Unary_expression::do_type will return an error type
   // in this case.  That can cause code to appear erroneous, and
@@ -4031,9 +5070,15 @@ Unary_expression::do_lower(Gogo*, Named_object*, Statement_inserter*, int)
 	{
 	  Numeric_constant result;
 	  bool issued_error;
-	  if (Unary_expression::eval_constant(op, &nc, loc, &result,
-					      &issued_error))
-	    return result.expression(loc);
+	  if (Unary_expression::eval_constant(this->type_, op, &nc, loc,
+					      &result, &issued_error))
+	    {
+	      Expression* ret = result.expression(loc);
+	      Type_context subcontext(this->type_, this->type_->is_abstract());
+	      ret->determine_type(gogo, &subcontext);
+	      ret->check_types(gogo);
+	      return ret;
+	    }
 	  else if (issued_error)
 	    return Expression::make_error(this->location());
 	}
@@ -4059,7 +5104,7 @@ Unary_expression::do_flatten(Gogo* gogo, Named_object*,
 
   Location location = this->location();
   if (this->op_ == OPERATOR_MULT
-      && !this->expr_->is_variable())
+      && !this->expr_->is_multi_eval_safe())
     {
       go_assert(this->expr_->type()->points_to() != NULL);
       switch (this->requires_nil_check(gogo))
@@ -4079,7 +5124,7 @@ Unary_expression::do_flatten(Gogo* gogo, Named_object*,
         }
     }
 
-  if (this->create_temp_ && !this->expr_->is_variable())
+  if (this->create_temp_ && !this->expr_->is_multi_eval_safe())
     {
       Temporary_statement* temp =
           Statement::make_temporary(NULL, this->expr_, location);
@@ -4095,28 +5140,24 @@ Unary_expression::do_flatten(Gogo* gogo, Named_object*,
 bool
 Unary_expression::do_is_constant() const
 {
-  if (this->op_ == OPERATOR_MULT)
+  if (this->op_ == OPERATOR_MULT || this->op_ == OPERATOR_AND)
     {
-      // Indirecting through a pointer is only constant if the object
-      // to which the expression points is constant, but we currently
-      // have no way to determine that.
-      return false;
-    }
-  else if (this->op_ == OPERATOR_AND)
-    {
-      // Taking the address of a variable is constant if it is a
-      // global variable, not constant otherwise.  In other cases taking the
-      // address is probably not a constant.
-      Var_expression* ve = this->expr_->var_expression();
-      if (ve != NULL)
-	{
-	  Named_object* no = ve->named_object();
-	  return no->is_variable() && no->var_value()->is_global();
-	}
+      // These are not constant by Go language rules.
       return false;
     }
   else
     return this->expr_->is_constant();
+}
+
+bool
+Unary_expression::do_is_untyped(Type** ptype) const
+{
+  if (this->type_ != NULL)
+    return Expression::is_untyped_type(this->type_, ptype);
+
+  if (this->op_ == OPERATOR_MULT || this->op_ == OPERATOR_AND)
+    return false;
+  return this->expr_->is_untyped(ptype);
 }
 
 // Return whether a unary expression can be used as a constant
@@ -4216,7 +5257,8 @@ Unary_expression::requires_nil_check(Gogo* gogo)
 // *ISSUED_ERROR.
 
 bool
-Unary_expression::eval_constant(Operator op, const Numeric_constant* unc,
+Unary_expression::eval_constant(Type* type, Operator op,
+				const Numeric_constant* unc,
 				Location location, Numeric_constant* nc,
 				bool* issued_error)
 {
@@ -4236,8 +5278,13 @@ Unary_expression::eval_constant(Operator op, const Numeric_constant* unc,
 	  unc->get_float(&uval);
 	  mpfr_t val;
 	  mpfr_init(val);
-	  mpfr_neg(val, uval, GMP_RNDN);
-	  nc->set_float(unc->type(), val);
+	  mpfr_neg(val, uval, MPFR_RNDN);
+	  Type* utype = unc->type();
+	  if (type != NULL
+	      && type->is_abstract()
+	      && type->is_numeric_type())
+	    utype = type;
+	  nc->set_float(utype, val);
 	  mpfr_clear(uval);
 	  mpfr_clear(val);
 	  return true;
@@ -4249,7 +5296,12 @@ Unary_expression::eval_constant(Operator op, const Numeric_constant* unc,
 	  mpc_t val;
 	  mpc_init2(val, mpc_precision);
 	  mpc_neg(val, uval, MPC_RNDNN);
-	  nc->set_complex(unc->type(), val);
+	  Type* utype = unc->type();
+	  if (type != NULL
+	      && type->is_abstract()
+	      && type->is_numeric_type())
+	    utype = type;
+	  nc->set_complex(utype, val);
 	  mpc_clear(uval);
 	  mpc_clear(val);
 	  return true;
@@ -4376,14 +5428,35 @@ Unary_expression::eval_constant(Operator op, const Numeric_constant* unc,
 // Return the integral constant value of a unary expression, if it has one.
 
 bool
-Unary_expression::do_numeric_constant_value(Numeric_constant* nc) const
+Unary_expression::do_numeric_constant_value(Numeric_constant* nc)
 {
+  if (this->is_error_expression())
+    return false;
+
   Numeric_constant unc;
   if (!this->expr_->numeric_constant_value(&unc))
     return false;
   bool issued_error;
-  return Unary_expression::eval_constant(this->op_, &unc, this->location(),
-					 nc, &issued_error);
+  bool r = Unary_expression::eval_constant(this->type_, this->op_, &unc,
+					   this->location(), nc,
+					   &issued_error);
+  if (issued_error)
+    this->set_is_error();
+  return r;
+}
+
+// Return the boolean constant value of a unary expression, if it has one.
+
+bool
+Unary_expression::do_boolean_constant_value(bool* val)
+{
+  if (this->op_ == OPERATOR_NOT
+      && this->expr_->boolean_constant_value(val))
+    {
+      *val = !*val;
+      return true;
+    }
+  return false;
 }
 
 // Return the type of a unary expression.
@@ -4391,35 +5464,42 @@ Unary_expression::do_numeric_constant_value(Numeric_constant* nc) const
 Type*
 Unary_expression::do_type()
 {
-  switch (this->op_)
+  if (this->type_ == NULL)
     {
-    case OPERATOR_PLUS:
-    case OPERATOR_MINUS:
-    case OPERATOR_NOT:
-    case OPERATOR_XOR:
-      return this->expr_->type();
+      switch (this->op_)
+	{
+	case OPERATOR_AND:
+	  return Type::make_pointer_type(this->expr_->type());
 
-    case OPERATOR_AND:
-      return Type::make_pointer_type(this->expr_->type());
+	case OPERATOR_MULT:
+	  {
+	    if (this->expr_->is_type_expression())
+	      return Type::make_pointer_type(this->expr_->type());
 
-    case OPERATOR_MULT:
-      {
-	Type* subtype = this->expr_->type();
-	Type* points_to = subtype->points_to();
-	if (points_to == NULL)
+	    Type* subtype = this->expr_->type();
+	    Type* points_to = subtype->points_to();
+	    if (points_to == NULL)
+	      {
+		this->report_error(_("expected pointer"));
+		this->type_ = Type::make_error_type();
+		return this->type_;
+	      }
+	    return points_to;
+	  }
+
+	default:
+	  go_assert(saw_errors());
 	  return Type::make_error_type();
-	return points_to;
-      }
-
-    default:
-      go_unreachable();
+	}
     }
+
+  return this->type_;
 }
 
 // Determine abstract types for a unary expression.
 
 void
-Unary_expression::do_determine_type(const Type_context* context)
+Unary_expression::do_determine_type(Gogo* gogo, const Type_context* context)
 {
   switch (this->op_)
     {
@@ -4427,7 +5507,39 @@ Unary_expression::do_determine_type(const Type_context* context)
     case OPERATOR_MINUS:
     case OPERATOR_NOT:
     case OPERATOR_XOR:
-      this->expr_->determine_type(context);
+      {
+	if (this->type_ != NULL)
+	  return;
+
+	Type* dummy;
+	Type_context subcontext(*context);
+	if (this->expr_->is_untyped(&dummy) && this->expr_->is_constant())
+	  {
+	    // We evaluate an untyped operator as untyped.  Then we
+	    // convert it to the desired type.  Otherwise we may, for
+	    // example, give a useless error for one more than the
+	    // most positive integer when it is the operand of a unary
+	    // minus.
+	    subcontext.type = NULL;
+	    subcontext.may_be_abstract = true;
+	  }
+	this->expr_->determine_type(gogo, &subcontext);
+
+	this->type_ = this->expr_->type();
+
+	// If this is an untyped expression in a typed context, use
+	// the context type.  If this doesn't work we'll report an
+	// error later.
+	if (this->type_->is_abstract()
+	    && !context->may_be_abstract
+	    && context->type != NULL)
+	  {
+	    if (context->type->interface_type() == NULL)
+	      this->type_ = context->type;
+	    else
+	      this->type_ = this->type_->make_non_abstract_type();
+	  }
+      }
       break;
 
     case OPERATOR_AND:
@@ -4437,18 +5549,24 @@ Unary_expression::do_determine_type(const Type_context* context)
 			 ? NULL
 			 : context->type->points_to());
 	Type_context subcontext(subtype, false);
-	this->expr_->determine_type(&subcontext);
+	this->expr_->determine_type(gogo, &subcontext);
       }
       break;
 
     case OPERATOR_MULT:
-      // Indirecting through a pointer.
       {
+	if (this->expr_->is_type_expression())
+	  {
+	    this->expr_->determine_type_no_context(gogo);
+	    return;
+	  }
+
+	// Indirecting through a pointer.
 	Type* subtype = (context->type == NULL
 			 ? NULL
 			 : Type::make_pointer_type(context->type));
 	Type_context subcontext(subtype, false);
-	this->expr_->determine_type(&subcontext);
+	this->expr_->determine_type(gogo, &subcontext);
       }
       break;
 
@@ -4462,6 +5580,9 @@ Unary_expression::do_determine_type(const Type_context* context)
 void
 Unary_expression::do_check_types(Gogo*)
 {
+  if (this->is_error_expression())
+    return;
+
   Type* type = this->expr_->type();
   if (type->is_error())
     {
@@ -4503,6 +5624,19 @@ Unary_expression::do_check_types(Gogo*)
       break;
 
     case OPERATOR_MULT:
+      if (this->expr_->is_type_expression())
+	break;
+
+      // Catching an invalid indirection of unsafe.Pointer here avoid
+      // having to deal with TYPE_VOID in other places.
+      if (this->expr_->type()->is_unsafe_pointer_type())
+	{
+	  go_error_at(this->location(),
+		      "invalid indirect of %<unsafe.Pointer%>");
+	  this->set_is_error();
+	  return;
+	}
+
       // Indirecting through a pointer.
       if (type->points_to() == NULL)
 	this->report_error(_("expected pointer"));
@@ -4551,11 +5685,13 @@ Unary_expression::do_get_backend(Translate_context* context)
 
   Bexpression* ret;
   Bexpression* bexpr = this->expr_->get_backend(context);
-  Btype* btype = this->expr_->type()->get_backend(gogo);
+  Btype* btype = (this->type_ == NULL
+		  ? this->expr_->type()->get_backend(gogo)
+		  : this->type_->get_backend(gogo));
   switch (this->op_)
     {
     case OPERATOR_PLUS:
-      ret = bexpr;
+      ret = gogo->backend()->convert_expression(btype, bexpr, loc);
       break;
 
     case OPERATOR_MINUS:
@@ -4566,6 +5702,7 @@ Unary_expression::do_get_backend(Translate_context* context)
     case OPERATOR_NOT:
     case OPERATOR_XOR:
       ret = gogo->backend()->unary_expression(this->op_, bexpr, loc);
+      ret = gogo->backend()->convert_expression(btype, ret, loc);
       break;
 
     case OPERATOR_AND:
@@ -4614,14 +5751,14 @@ Unary_expression::do_get_backend(Translate_context* context)
 	      copy_to_heap = (context->function() != NULL
                               || context->is_const());
 	    }
-	  std::string asm_name(go_selectively_encode_id(var_name));
+	  unsigned int flags = (Backend::variable_is_hidden
+				| Backend::variable_address_is_taken);
+	  if (copy_to_heap)
+	    flags |= Backend::variable_is_constant;
 	  Bvariable* implicit =
-              gogo->backend()->implicit_variable(var_name, asm_name,
-                                                 btype, true, copy_to_heap,
-                                                 false, 0);
+	    gogo->backend()->implicit_variable(var_name, "", btype, flags, 0);
 	  gogo->backend()->implicit_variable_set_init(implicit, var_name, btype,
-						      true, copy_to_heap, false,
-						      bexpr);
+						      flags, bexpr);
 	  bexpr = gogo->backend()->var_expression(implicit, loc);
 
 	  // If we are not copying a slice initializer to the heap,
@@ -4643,16 +5780,28 @@ Unary_expression::do_get_backend(Translate_context* context)
 	       && this->expr_->is_static_initializer())
         {
 	  std::string var_name(gogo->initializer_name());
-	  std::string asm_name(go_selectively_encode_id(var_name));
+	  unsigned int flags = (Backend::variable_is_hidden
+				| Backend::variable_address_is_taken);
           Bvariable* decl =
-              gogo->backend()->immutable_struct(var_name, asm_name,
-                                                true, false, btype, loc);
-          gogo->backend()->immutable_struct_set_init(decl, var_name, true,
-						     false, btype, loc, bexpr);
+	    gogo->backend()->immutable_struct(var_name, "", flags, btype, loc);
+          gogo->backend()->immutable_struct_set_init(decl, var_name, flags,
+						     btype, loc, bexpr);
+          bexpr = gogo->backend()->var_expression(decl, loc);
+        }
+      else if (this->expr_->is_constant())
+        {
+          std::string var_name(gogo->initializer_name());
+	  unsigned int flags = (Backend::variable_is_hidden
+				| Backend::variable_is_constant
+				| Backend::variable_address_is_taken);
+          Bvariable* decl =
+	    gogo->backend()->implicit_variable(var_name, "", btype, flags, 0);
+          gogo->backend()->implicit_variable_set_init(decl, var_name, btype,
+						      flags, bexpr);
           bexpr = gogo->backend()->var_expression(decl, loc);
         }
 
-      go_assert(!this->create_temp_ || this->expr_->is_variable());
+      go_assert(!this->create_temp_ || this->expr_->is_multi_eval_safe());
       ret = gogo->backend()->address_expression(bexpr, loc);
       break;
 
@@ -4660,7 +5809,6 @@ Unary_expression::do_get_backend(Translate_context* context)
       {
         go_assert(this->expr_->type()->points_to() != NULL);
 
-        bool known_valid = false;
         Type* ptype = this->expr_->type()->points_to();
         Btype* pbtype = ptype->get_backend(gogo);
         switch (this->requires_nil_check(gogo))
@@ -4674,7 +5822,7 @@ Unary_expression::do_get_backend(Translate_context* context)
               }
             case NIL_CHECK_NEEDED:
               {
-                go_assert(this->expr_->is_variable());
+                go_assert(this->expr_->is_multi_eval_safe());
 
                 // If we're nil-checking the result of a set-and-use-temporary
                 // expression, then pick out the target temp and use that
@@ -4693,22 +5841,21 @@ Unary_expression::do_get_backend(Translate_context* context)
                 Bexpression* compare =
                     gogo->backend()->binary_expression(OPERATOR_EQEQ, tbexpr,
                                                        nil, loc);
-                Bexpression* crash =
-                    gogo->runtime_error(RUNTIME_ERROR_NIL_DEREFERENCE,
-                                        loc)->get_backend(context);
+		Expression* crash = Runtime::make_call(gogo, Runtime::PANIC_MEM,
+						       loc, 0);
+		crash->determine_type_no_context(gogo);
+		Bexpression* bcrash = crash->get_backend(context);
                 Bfunction* bfn = context->function()->func_value()->get_decl();
                 bexpr = gogo->backend()->conditional_expression(bfn, btype,
                                                                 compare,
-                                                                crash, ubexpr,
+                                                                bcrash, ubexpr,
                                                                 loc);
-                known_valid = true;
                 break;
               }
             case NIL_CHECK_DEFAULT:
               go_unreachable();
           }
-        ret = gogo->backend()->indirect_expression(pbtype, bexpr,
-                                                   known_valid, loc);
+        ret = gogo->backend()->indirect_expression(pbtype, bexpr, false, loc);
       }
       break;
 
@@ -4843,6 +5990,81 @@ Binary_expression::do_traverse(Traverse* traverse)
   if (t == TRAVERSE_EXIT)
     return TRAVERSE_EXIT;
   return Expression::traverse(&this->right_, traverse);
+}
+
+// Return whether a binary expression is untyped.
+
+bool
+Binary_expression::do_is_untyped(Type** ptype) const
+{
+  if (this->type_ != NULL)
+    return Expression::is_untyped_type(this->type_, ptype);
+
+  switch (this->op_)
+    {
+    case OPERATOR_EQEQ:
+    case OPERATOR_NOTEQ:
+    case OPERATOR_LT:
+    case OPERATOR_LE:
+    case OPERATOR_GT:
+    case OPERATOR_GE:
+      // Comparisons are untyped by default.
+      *ptype = Type::make_boolean_type();
+      return true;
+
+    case OPERATOR_LSHIFT:
+    case OPERATOR_RSHIFT:
+      // A shift operation is untyped if the left hand expression is
+      // untyped.  The right hand expression is irrelevant.
+      return this->left_->is_untyped(ptype);
+
+    default:
+      break;
+    }
+
+  Type* tleft;
+  Type* tright;
+  if (!this->left_->is_untyped(&tleft)
+      || !this->right_->is_untyped(&tright))
+    return false;
+
+  // If both sides are numeric, pick a type based on the kind.
+  enum kind { INT, RUNE, FLOAT, COMPLEX };
+  enum kind kleft, kright;
+
+  if (tleft->integer_type() != NULL)
+    kleft = tleft->integer_type()->is_rune() ? RUNE : INT;
+  else if (tleft->float_type() != NULL)
+    kleft = FLOAT;
+  else if (tleft->complex_type() != NULL)
+    kleft = COMPLEX;
+  else
+    {
+      // Not numeric.  If the types are different, we will report an
+      // error later.
+      *ptype = tleft;
+      return true;
+    }
+
+  if (tright->integer_type() != NULL)
+    kright = tright->integer_type()->is_rune() ? RUNE : INT;
+  else if (tright->float_type() != NULL)
+    kright = FLOAT;
+  else if (tright->complex_type() != NULL)
+    kright = COMPLEX;
+  else
+    {
+      // Types are different.  We will report an error later.
+      *ptype = tleft;
+      return true;
+    }
+
+  if (kleft > kright)
+    *ptype = tleft;
+  else
+    *ptype = tright;
+
+  return true;
 }
 
 // Return whether this expression may be used as a static initializer.
@@ -5042,8 +6264,8 @@ Binary_expression::compare_float(const Numeric_constant* left_nc,
   if (!type->is_abstract() && type->float_type() != NULL)
     {
       int bits = type->float_type()->bits();
-      mpfr_prec_round(left_val, bits, GMP_RNDN);
-      mpfr_prec_round(right_val, bits, GMP_RNDN);
+      mpfr_prec_round(left_val, bits, MPFR_RNDN);
+      mpfr_prec_round(right_val, bits, MPFR_RNDN);
     }
 
   *cmp = mpfr_cmp(left_val, right_val);
@@ -5078,10 +6300,10 @@ Binary_expression::compare_complex(const Numeric_constant* left_nc,
   if (!type->is_abstract() && type->complex_type() != NULL)
     {
       int bits = type->complex_type()->bits();
-      mpfr_prec_round(mpc_realref(left_val), bits / 2, GMP_RNDN);
-      mpfr_prec_round(mpc_imagref(left_val), bits / 2, GMP_RNDN);
-      mpfr_prec_round(mpc_realref(right_val), bits / 2, GMP_RNDN);
-      mpfr_prec_round(mpc_imagref(right_val), bits / 2, GMP_RNDN);
+      mpfr_prec_round(mpc_realref(left_val), bits / 2, MPFR_RNDN);
+      mpfr_prec_round(mpc_imagref(left_val), bits / 2, MPFR_RNDN);
+      mpfr_prec_round(mpc_realref(right_val), bits / 2, MPFR_RNDN);
+      mpfr_prec_round(mpc_imagref(right_val), bits / 2, MPFR_RNDN);
     }
 
   *cmp = mpc_cmp(left_val, right_val) != 0;
@@ -5136,19 +6358,20 @@ Binary_expression::eval_constant(Operator op, Numeric_constant* left_nc,
   if (!is_shift && !right_nc->set_type(type, true, location))
     return false;
   if (is_shift
-      && ((left_type->integer_type() == NULL
-           && !left_type->is_abstract())
-          || (right_type->integer_type() == NULL
-              && !right_type->is_abstract())))
+      && right_type->integer_type() == NULL
+      && !right_type->is_abstract())
     return false;
 
   bool r;
   if (type->complex_type() != NULL)
-    r = Binary_expression::eval_complex(op, left_nc, right_nc, location, nc);
+    r = Binary_expression::eval_complex(op, left_nc, right_nc, location, nc,
+					issued_error);
   else if (type->float_type() != NULL)
-    r = Binary_expression::eval_float(op, left_nc, right_nc, location, nc);
+    r = Binary_expression::eval_float(op, left_nc, right_nc, location, nc,
+				      issued_error);
   else
-    r = Binary_expression::eval_integer(op, left_nc, right_nc, location, nc);
+    r = Binary_expression::eval_integer(op, left_nc, right_nc, location, nc,
+					issued_error);
 
   if (r)
     {
@@ -5167,7 +6390,8 @@ Binary_expression::eval_constant(Operator op, Numeric_constant* left_nc,
 bool
 Binary_expression::eval_integer(Operator op, const Numeric_constant* left_nc,
 				const Numeric_constant* right_nc,
-				Location location, Numeric_constant* nc)
+				Location location, Numeric_constant* nc,
+				bool* issued_error)
 {
   mpz_t left_val;
   if (!left_nc->to_int(&left_val))
@@ -5191,6 +6415,7 @@ Binary_expression::eval_integer(Operator op, const Numeric_constant* left_nc,
 	  go_error_at(location, "constant addition overflow");
           nc->set_invalid();
 	  mpz_set_ui(val, 1);
+	  *issued_error = true;
 	}
       break;
     case OPERATOR_MINUS:
@@ -5200,6 +6425,7 @@ Binary_expression::eval_integer(Operator op, const Numeric_constant* left_nc,
 	  go_error_at(location, "constant subtraction overflow");
           nc->set_invalid();
 	  mpz_set_ui(val, 1);
+	  *issued_error = true;
 	}
       break;
     case OPERATOR_OR:
@@ -5215,6 +6441,7 @@ Binary_expression::eval_integer(Operator op, const Numeric_constant* left_nc,
 	  go_error_at(location, "constant multiplication overflow");
           nc->set_invalid();
 	  mpz_set_ui(val, 1);
+	  *issued_error = true;
 	}
       break;
     case OPERATOR_DIV:
@@ -5225,6 +6452,7 @@ Binary_expression::eval_integer(Operator op, const Numeric_constant* left_nc,
 	  go_error_at(location, "division by zero");
           nc->set_invalid();
 	  mpz_set_ui(val, 0);
+	  *issued_error = true;
 	}
       break;
     case OPERATOR_MOD:
@@ -5235,6 +6463,7 @@ Binary_expression::eval_integer(Operator op, const Numeric_constant* left_nc,
 	  go_error_at(location, "division by zero");
           nc->set_invalid();
 	  mpz_set_ui(val, 0);
+	  *issued_error = true;
 	}
       break;
     case OPERATOR_LSHIFT:
@@ -5247,6 +6476,7 @@ Binary_expression::eval_integer(Operator op, const Numeric_constant* left_nc,
 	    go_error_at(location, "shift count overflow");
             nc->set_invalid();
 	    mpz_set_ui(val, 1);
+	    *issued_error = true;
 	  }
 	break;
       }
@@ -5259,6 +6489,7 @@ Binary_expression::eval_integer(Operator op, const Numeric_constant* left_nc,
 	    go_error_at(location, "shift count overflow");
             nc->set_invalid();
 	    mpz_set_ui(val, 1);
+	    *issued_error = true;
 	  }
 	else
 	  {
@@ -5309,7 +6540,8 @@ Binary_expression::eval_integer(Operator op, const Numeric_constant* left_nc,
 bool
 Binary_expression::eval_float(Operator op, const Numeric_constant* left_nc,
 			      const Numeric_constant* right_nc,
-			      Location location, Numeric_constant* nc)
+			      Location location, Numeric_constant* nc,
+			      bool* issued_error)
 {
   mpfr_t left_val;
   if (!left_nc->to_float(&left_val))
@@ -5328,10 +6560,10 @@ Binary_expression::eval_float(Operator op, const Numeric_constant* left_nc,
   switch (op)
     {
     case OPERATOR_PLUS:
-      mpfr_add(val, left_val, right_val, GMP_RNDN);
+      mpfr_add(val, left_val, right_val, MPFR_RNDN);
       break;
     case OPERATOR_MINUS:
-      mpfr_sub(val, left_val, right_val, GMP_RNDN);
+      mpfr_sub(val, left_val, right_val, MPFR_RNDN);
       break;
     case OPERATOR_OR:
     case OPERATOR_XOR:
@@ -5340,20 +6572,21 @@ Binary_expression::eval_float(Operator op, const Numeric_constant* left_nc,
     case OPERATOR_MOD:
     case OPERATOR_LSHIFT:
     case OPERATOR_RSHIFT:
-      mpfr_set_ui(val, 0, GMP_RNDN);
+      mpfr_set_ui(val, 0, MPFR_RNDN);
       ret = false;
       break;
     case OPERATOR_MULT:
-      mpfr_mul(val, left_val, right_val, GMP_RNDN);
+      mpfr_mul(val, left_val, right_val, MPFR_RNDN);
       break;
     case OPERATOR_DIV:
       if (!mpfr_zero_p(right_val))
-	mpfr_div(val, left_val, right_val, GMP_RNDN);
+	mpfr_div(val, left_val, right_val, MPFR_RNDN);
       else
 	{
 	  go_error_at(location, "division by zero");
           nc->set_invalid();
-	  mpfr_set_ui(val, 0, GMP_RNDN);
+	  mpfr_set_ui(val, 0, MPFR_RNDN);
+	  *issued_error = true;
 	}
       break;
     default:
@@ -5376,7 +6609,8 @@ Binary_expression::eval_float(Operator op, const Numeric_constant* left_nc,
 bool
 Binary_expression::eval_complex(Operator op, const Numeric_constant* left_nc,
 				const Numeric_constant* right_nc,
-				Location location, Numeric_constant* nc)
+				Location location, Numeric_constant* nc,
+				bool* issued_error)
 {
   mpc_t left_val;
   if (!left_nc->to_complex(&left_val))
@@ -5419,6 +6653,7 @@ Binary_expression::eval_complex(Operator op, const Numeric_constant* left_nc,
 	  go_error_at(location, "division by zero");
           nc->set_invalid();
 	  mpc_set_ui(val, 0, MPC_RNDNN);
+	  *issued_error = true;
 	  break;
 	}
       mpc_div(val, left_val, right_val, MPC_RNDNN);
@@ -5442,12 +6677,19 @@ Binary_expression::eval_complex(Operator op, const Numeric_constant* left_nc,
 
 Expression*
 Binary_expression::do_lower(Gogo* gogo, Named_object*,
-			    Statement_inserter* inserter, int)
+			    Statement_inserter* inserter)
 {
   Location location = this->location();
+
+  if (this->is_error_expression())
+    return Expression::make_error(location);
+
   Operator op = this->op_;
   Expression* left = this->left_;
   Expression* right = this->right_;
+
+  if (left->is_error_expression() || right->is_error_expression())
+    return Expression::make_error(location);
 
   const bool is_comparison = (op == OPERATOR_EQEQ
 			      || op == OPERATOR_NOTEQ
@@ -5463,6 +6705,7 @@ Binary_expression::do_lower(Gogo* gogo, Named_object*,
     if (left->numeric_constant_value(&left_nc)
 	&& right->numeric_constant_value(&right_nc))
       {
+	Expression* ret;
 	if (is_comparison)
 	  {
 	    bool result;
@@ -5470,10 +6713,7 @@ Binary_expression::do_lower(Gogo* gogo, Named_object*,
 						     &right_nc, location,
 						     &result))
 	      return this;
-	    return Expression::make_cast(Type::make_boolean_type(),
-					 Expression::make_boolean(result,
-								  location),
-					 location);
+	    ret = Expression::make_boolean(result, location);
 	  }
 	else
 	  {
@@ -5487,8 +6727,13 @@ Binary_expression::do_lower(Gogo* gogo, Named_object*,
 		  return Expression::make_error(location);
                 return this;
 	      }
-	    return nc.expression(location);
+	    ret = nc.expression(location);
 	  }
+
+	Type_context subcontext(this->type_, this->type_->is_abstract());
+	ret->determine_type(gogo, &subcontext);
+	ret->check_types(gogo);
+	return ret;
       }
   }
 
@@ -5509,19 +6754,29 @@ Binary_expression::do_lower(Gogo* gogo, Named_object*,
       if (left->string_constant_value(&left_string)
 	  && right->string_constant_value(&right_string))
 	{
+	  Expression* ret = NULL;
 	  if (op == OPERATOR_PLUS)
             {
-              Type* result_type = (left->type()->named_type() != NULL
-                                   ? left->type()
-                                   : right->type());
-              return Expression::make_string_typed(left_string + right_string,
-                                                   result_type, location);
+	      delete left;
+	      delete right;
+              ret = Expression::make_string_typed(left_string + right_string,
+						  this->type_, location);
             }
 	  else if (is_comparison)
 	    {
 	      int cmp = left_string.compare(right_string);
 	      bool r = Binary_expression::cmp_to_bool(op, cmp);
-	      return Expression::make_boolean(r, location);
+	      delete left;
+	      delete right;
+	      ret = Expression::make_boolean(r, location);
+	    }
+
+	  if (ret != NULL)
+	    {
+	      Type_context subcontext(this->type_, this->type_->is_abstract());
+	      ret->determine_type(gogo, &subcontext);
+	      ret->check_types(gogo);
+	      return ret;
 	    }
 	}
     }
@@ -5651,6 +6906,8 @@ Binary_expression::lower_struct_comparison(Gogo* gogo,
   if (this->op_ == OPERATOR_NOTEQ)
     ret = Expression::make_unary(OPERATOR_NOT, ret, loc);
 
+  ret->determine_type_no_context(gogo);
+
   return ret;
 }
 
@@ -5679,10 +6936,8 @@ Binary_expression::lower_array_comparison(Gogo* gogo,
     return this->lower_compare_to_memcmp(gogo, inserter);
 
   // Call the array comparison function.
-  Named_object* hash_fn;
-  Named_object* equal_fn;
-  at->type_functions(gogo, this->left_->type()->named_type(), NULL, NULL,
-		     &hash_fn, &equal_fn);
+  Named_object* equal_fn =
+    at->equal_function(gogo, this->left_->type()->named_type(), NULL);
 
   Location loc = this->location();
 
@@ -5692,10 +6947,25 @@ Binary_expression::lower_array_comparison(Gogo* gogo,
   args->push_back(this->operand_address(inserter, this->left_));
   args->push_back(this->operand_address(inserter, this->right_));
 
-  Expression* ret = Expression::make_call(func, args, false, loc);
+  Call_expression* ce = Expression::make_call(func, args, false, loc);
 
+  // Record that this is a call to a generated equality function.  We
+  // need to do this because a comparison returns an abstract boolean
+  // type, but the function necessarily returns "bool".  The
+  // difference shows up in code like
+  //     type mybool bool
+  //     var b mybool = [10]string{} == [10]string{}
+  // The comparison function returns "bool", but since a comparison
+  // has an abstract boolean type we need an implicit conversion to
+  // "mybool".  The implicit conversion is inserted in
+  // Call_expression::do_flatten.
+  ce->set_is_equal_function();
+
+  Expression* ret = ce;
   if (this->op_ == OPERATOR_NOTEQ)
     ret = Expression::make_unary(OPERATOR_NOT, ret, loc);
+
+  ret->determine_type_no_context(gogo);
 
   return ret;
 }
@@ -5754,7 +7024,8 @@ Binary_expression::lower_interface_value_comparison(Gogo*,
 // Lower a struct or array comparison to a call to memcmp.
 
 Expression*
-Binary_expression::lower_compare_to_memcmp(Gogo*, Statement_inserter* inserter)
+Binary_expression::lower_compare_to_memcmp(Gogo* gogo,
+					   Statement_inserter* inserter)
 {
   Location loc = this->location();
 
@@ -5763,9 +7034,14 @@ Binary_expression::lower_compare_to_memcmp(Gogo*, Statement_inserter* inserter)
   Expression* len = Expression::make_type_info(this->left_->type(),
 					       TYPE_INFO_SIZE);
 
-  Expression* call = Runtime::make_call(Runtime::MEMCMP, loc, 3, a1, a2, len);
-  Expression* zero = Expression::make_integer_ul(0, NULL, loc);
-  return Expression::make_binary(this->op_, call, zero, loc);
+  Expression* call = Runtime::make_call(gogo, Runtime::MEMCMP, loc, 3,
+					a1, a2, len);
+  Type* int32_type = Type::lookup_integer_type("int32");
+  Expression* zero = Expression::make_integer_ul(0, int32_type, loc);
+  Expression* ret = Expression::make_binary(this->op_, call, zero, loc);
+  Type_context context(this->type_, this->type_->is_abstract());
+  ret->determine_type(gogo, &context);
+  return ret;
 }
 
 Expression*
@@ -5790,18 +7066,35 @@ Binary_expression::do_flatten(Gogo* gogo, Named_object*,
   bool is_idiv_op = ((this->op_ == OPERATOR_DIV &&
                       left_type->integer_type() != NULL)
                      || this->op_ == OPERATOR_MOD);
+  bool is_string_op = (left_type->is_string_type()
+                       && this->right_->type()->is_string_type());
+
+  if (is_string_op)
+    {
+      // Mark string([]byte) operands to reuse the backing store.
+      // String comparison does not keep the reference, so it is safe.
+      Type_conversion_expression* lce =
+        this->left_->conversion_expression();
+      if (lce != NULL && lce->expr()->type()->is_slice_type())
+        lce->set_no_copy(true);
+      Type_conversion_expression* rce =
+        this->right_->conversion_expression();
+      if (rce != NULL && rce->expr()->type()->is_slice_type())
+        rce->set_no_copy(true);
+    }
 
   if (is_shift_op
       || (is_idiv_op
-	  && (gogo->check_divide_by_zero() || gogo->check_divide_overflow())))
+	  && (gogo->check_divide_by_zero() || gogo->check_divide_overflow()))
+      || is_string_op)
     {
-      if (!this->left_->is_variable() && !this->left_->is_constant())
+      if (!this->left_->is_multi_eval_safe())
         {
           temp = Statement::make_temporary(NULL, this->left_, loc);
           inserter->insert(temp);
           this->left_ = Expression::make_temporary_reference(temp, loc);
         }
-      if (!this->right_->is_variable() && !this->right_->is_constant())
+      if (!this->right_->is_multi_eval_safe())
         {
           temp =
               Statement::make_temporary(NULL, this->right_, loc);
@@ -5838,8 +7131,11 @@ Binary_expression::operand_address(Statement_inserter* inserter,
 // Return the numeric constant value, if it has one.
 
 bool
-Binary_expression::do_numeric_constant_value(Numeric_constant* nc) const
+Binary_expression::do_numeric_constant_value(Numeric_constant* nc)
 {
+  if (this->is_error_expression())
+    return false;
+
   Numeric_constant left_nc;
   if (!this->left_->numeric_constant_value(&left_nc))
     return false;
@@ -5847,8 +7143,95 @@ Binary_expression::do_numeric_constant_value(Numeric_constant* nc) const
   if (!this->right_->numeric_constant_value(&right_nc))
     return false;
   bool issued_error;
-  return Binary_expression::eval_constant(this->op_, &left_nc, &right_nc,
-					  this->location(), nc, &issued_error);
+  bool r = Binary_expression::eval_constant(this->op_, &left_nc, &right_nc,
+					    this->location(), nc,
+					    &issued_error);
+  if (issued_error)
+    this->set_is_error();
+  return r;
+}
+
+// Return the boolean constant value, if it has one.
+
+bool
+Binary_expression::do_boolean_constant_value(bool* val)
+{
+  if (this->is_error_expression())
+    return false;
+
+  bool is_comparison = false;
+  switch (this->op_)
+    {
+    case OPERATOR_EQEQ:
+    case OPERATOR_NOTEQ:
+    case OPERATOR_LT:
+    case OPERATOR_LE:
+    case OPERATOR_GT:
+    case OPERATOR_GE:
+      is_comparison = true;
+      break;
+    case OPERATOR_ANDAND:
+    case OPERATOR_OROR:
+      break;
+    default:
+      return false;
+    }
+
+  Numeric_constant left_nc, right_nc;
+  if (is_comparison
+      && this->left_->numeric_constant_value(&left_nc)
+      && this->right_->numeric_constant_value(&right_nc))
+    return Binary_expression::compare_constant(this->op_, &left_nc,
+                                               &right_nc,
+                                               this->location(),
+                                               val);
+
+  std::string left_str, right_str;
+  if (is_comparison
+      && this->left_->string_constant_value(&left_str)
+      && this->right_->string_constant_value(&right_str))
+    {
+      *val = Binary_expression::cmp_to_bool(this->op_,
+                                            left_str.compare(right_str));
+      return true;
+    }
+
+  bool left_bval;
+  if (this->left_->boolean_constant_value(&left_bval))
+    {
+      if (this->op_ == OPERATOR_ANDAND && !left_bval)
+        {
+          *val = false;
+          return true;
+        }
+      else if (this->op_ == OPERATOR_OROR && left_bval)
+        {
+          *val = true;
+          return true;
+        }
+
+      bool right_bval;
+      if (this->right_->boolean_constant_value(&right_bval))
+        {
+          switch (this->op_)
+            {
+            case OPERATOR_EQEQ:
+              *val = (left_bval == right_bval);
+              return true;
+            case OPERATOR_NOTEQ:
+              *val = (left_bval != right_bval);
+              return true;
+            case OPERATOR_ANDAND:
+            case OPERATOR_OROR:
+              *val = right_bval;
+              return true;
+            default:
+              go_unreachable();
+            }
+        }
+    }
+
+  return false;
 }
 
 // Note that the value is being discarded.
@@ -5870,66 +7253,31 @@ Binary_expression::do_discarding_value()
 Type*
 Binary_expression::do_type()
 {
-  if (this->classification() == EXPRESSION_ERROR)
-    return Type::make_error_type();
-
-  switch (this->op_)
+  if (this->type_ == NULL)
     {
-    case OPERATOR_EQEQ:
-    case OPERATOR_NOTEQ:
-    case OPERATOR_LT:
-    case OPERATOR_LE:
-    case OPERATOR_GT:
-    case OPERATOR_GE:
-      if (this->type_ == NULL)
-	this->type_ = Type::make_boolean_type();
-      return this->type_;
-
-    case OPERATOR_PLUS:
-    case OPERATOR_MINUS:
-    case OPERATOR_OR:
-    case OPERATOR_XOR:
-    case OPERATOR_MULT:
-    case OPERATOR_DIV:
-    case OPERATOR_MOD:
-    case OPERATOR_AND:
-    case OPERATOR_BITCLEAR:
-    case OPERATOR_OROR:
-    case OPERATOR_ANDAND:
-      {
-	Type* type;
-	if (!Binary_expression::operation_type(this->op_,
-					       this->left_->type(),
-					       this->right_->type(),
-					       &type))
-	  return Type::make_error_type();
-	return type;
-      }
-
-    case OPERATOR_LSHIFT:
-    case OPERATOR_RSHIFT:
-      return this->left_->type();
-
-    default:
-      go_unreachable();
+      go_assert(saw_errors());
+      return Type::make_error_type();
     }
+
+  return this->type_;
 }
 
 // Set type for a binary expression.
 
 void
-Binary_expression::do_determine_type(const Type_context* context)
+Binary_expression::do_determine_type(Gogo* gogo, const Type_context* context)
 {
-  Type* tleft = this->left_->type();
-  Type* tright = this->right_->type();
+  if (this->type_ != NULL)
+    return;
 
-  // Both sides should have the same type, except for the shift
-  // operations.  For a comparison, we should ignore the incoming
-  // type.
-
+  // For a shift operation, the type of the binary expression is the
+  // type of the left operand.  If the left operand is a constant,
+  // then it gets its type from the context.
   bool is_shift_op = (this->op_ == OPERATOR_LSHIFT
 		      || this->op_ == OPERATOR_RSHIFT);
 
+  // For a comparison operation, the type of the binary expression is
+  // a boolean type.
   bool is_comparison = (this->op_ == OPERATOR_EQEQ
 			|| this->op_ == OPERATOR_NOTEQ
 			|| this->op_ == OPERATOR_LT
@@ -5942,13 +7290,49 @@ Binary_expression::do_determine_type(const Type_context* context)
   // boolean, numeric, and string constants as operands where it is legal to
   // use non-abstract boolean, numeric, and string constants, respectively.
   // Any issues with the operation will be resolved in the check_types pass.
-  bool is_constant_expr = (this->left_->is_constant()
-                           && this->right_->is_constant());
+  bool left_is_constant = this->left_->is_constant();
+  bool right_is_constant = this->right_->is_constant();
+  bool is_constant_expr = left_is_constant && right_is_constant;
 
   Type_context subcontext(*context);
+  if (is_comparison)
+    subcontext.type = NULL;
 
-  if (is_constant_expr && !is_shift_op)
+  Type* tleft;
+  bool left_is_untyped = this->left_->is_untyped(&tleft);
+  if (!left_is_untyped)
     {
+      this->left_->determine_type(gogo, &subcontext);
+      tleft = this->left_->type();
+    }
+
+  Type* tright;
+  bool right_is_untyped = this->right_->is_untyped(&tright);
+  if (!right_is_untyped)
+    {
+      // For a shift operation, the right operand should always be an
+      // integer.
+      if (is_shift_op)
+	{
+	  subcontext.type = Type::lookup_integer_type("uint");
+	  subcontext.may_be_abstract = false;
+	}
+
+      this->right_->determine_type(gogo, &subcontext);
+      tright = this->right_->type();
+    }
+
+  // For each operand we have the real type or, if the operand is a
+  // untyped, a guess at the type.  Use this to determine the types of
+  // untyped operands.
+
+  subcontext = *context;
+  if (left_is_untyped && (right_is_untyped || is_shift_op) && is_constant_expr)
+    {
+      // We evaluate the operands of an untyped expression as untyped
+      // values.  Then we convert to the desired type.  Otherwise we
+      // may, for example, mishandle a floating-point constant
+      // division as an integer division.
       subcontext.type = NULL;
       subcontext.may_be_abstract = true;
     }
@@ -5960,10 +7344,15 @@ Binary_expression::do_determine_type(const Type_context* context)
     }
 
   // Set the context for the left hand operand.
+
   if (is_shift_op)
     {
       // The right hand operand of a shift plays no role in
       // determining the type of the left hand operand.
+      if (subcontext.type == NULL
+	  && right_is_constant
+	  && context->may_be_abstract)
+	subcontext.type = Type::make_abstract_integer_type();
     }
   else if (!tleft->is_abstract())
     subcontext.type = tleft;
@@ -5973,11 +7362,12 @@ Binary_expression::do_determine_type(const Type_context* context)
     {
       if ((tleft->integer_type() != NULL && tright->integer_type() != NULL)
 	  || (tleft->float_type() != NULL && tright->float_type() != NULL)
-	  || (tleft->complex_type() != NULL && tright->complex_type() != NULL))
+	  || (tleft->complex_type() != NULL && tright->complex_type() != NULL)
+	  || (tleft->is_boolean_type() && tright->is_boolean_type()))
 	{
-	  // Both sides have an abstract integer, abstract float, or
-	  // abstract complex type.  Just let CONTEXT determine
-	  // whether they may remain abstract or not.
+	  // Both sides have an abstract integer, abstract float,
+	  // abstract complex, or abstract boolean type.  Just let
+	  // CONTEXT determine whether they may remain abstract or not.
 	}
       else if (tleft->complex_type() != NULL)
 	subcontext.type = tleft;
@@ -5989,22 +7379,26 @@ Binary_expression::do_determine_type(const Type_context* context)
 	subcontext.type = tright;
       else
 	subcontext.type = tleft;
-
-      if (subcontext.type != NULL && !context->may_be_abstract)
-	subcontext.type = subcontext.type->make_non_abstract_type();
     }
 
-  this->left_->determine_type(&subcontext);
+  if (left_is_untyped)
+    {
+      this->left_->determine_type(gogo, &subcontext);
+      tleft = this->left_->type();
+    }
 
   if (is_shift_op)
     {
       // We may have inherited an unusable type for the shift operand.
       // Give a useful error if that happened.
-      if (tleft->is_abstract()
+      if (left_is_untyped
+	  && !is_constant_expr
 	  && subcontext.type != NULL
 	  && !subcontext.may_be_abstract
 	  && subcontext.type->interface_type() == NULL
-	  && subcontext.type->integer_type() == NULL)
+	  && subcontext.type->integer_type() == NULL
+	  && !tleft->is_error()
+	  && !tright->is_error())
 	this->report_error(("invalid context-determined non-integer type "
 			    "for left operand of shift"));
 
@@ -6014,16 +7408,76 @@ Binary_expression::do_determine_type(const Type_context* context)
       subcontext.may_be_abstract = false;
     }
 
-  this->right_->determine_type(&subcontext);
+  if (right_is_untyped)
+    {
+      this->right_->determine_type(gogo, &subcontext);
+      tright = this->right_->type();
+    }
+
+  if (this->left_->is_error_expression()
+      || tleft->is_error()
+      || this->right_->is_error_expression()
+      || tright->is_error())
+    {
+      this->set_is_error();
+      return;
+    }
 
   if (is_comparison)
     {
-      if (this->type_ != NULL && !this->type_->is_abstract())
-	;
-      else if (context->type != NULL && context->type->is_boolean_type())
+      if (context->type != NULL && context->type->is_boolean_type())
 	this->type_ = context->type;
       else if (!context->may_be_abstract)
 	this->type_ = Type::lookup_bool_type();
+      else
+	this->type_ = Type::make_boolean_type();
+    }
+  else
+    {
+      if (is_shift_op)
+	{
+	  // Shifts only work with integers, so force an abstract
+	  // floating-point type (such as 1.0 << 1) into an integer.
+	  if (tleft->is_abstract()
+	      && tleft->integer_type() == NULL
+	      && context->type == NULL)
+	    {
+	      this->type_ = Type::make_abstract_integer_type();
+	      if (!context->may_be_abstract)
+		this->type_ = this->type_->make_non_abstract_type();
+	    }
+	  else
+	    this->type_ = tleft;
+	}
+      else
+	{
+	  if (!Binary_expression::operation_type(this->op_, tleft, tright,
+						 &this->type_))
+	    {
+	      this->report_error("incompatible types in binary expression");
+	      this->type_ = Type::make_error_type();
+	      return;
+	    }
+	}
+
+      // If this is an untyped expression in a typed context, use the
+      // context type.  If this doesn't work we'll report an error
+      // later.
+      if (this->type_->is_abstract()
+	  && !context->may_be_abstract
+	  && context->type != NULL)
+	{
+	  if (context->type->interface_type() == NULL
+	      && ((this->type_->is_numeric_type()
+		   && context->type->is_numeric_type())
+		  || (this->type_->is_string_type()
+		      && context->type->is_string_type())
+		  || (this->type_->is_boolean_type()
+		      && context->type->is_boolean_type())))
+	    this->type_ = context->type;
+	  else if (context->type->interface_type() != NULL)
+	    this->type_ = this->type_->make_non_abstract_type();
+	}
     }
 }
 
@@ -6197,15 +7651,16 @@ Binary_expression::do_check_types(Gogo*)
     }
   else
     {
-      if (left_type->integer_type() == NULL)
+      if (left_type->integer_type() == NULL
+	  && !left_type->is_abstract()
+	  && !this->is_constant())
 	this->report_error(_("shift of non-integer operand"));
 
       if (right_type->is_string_type())
-        this->report_error(_("shift count not unsigned integer"));
+        this->report_error(_("shift count not integer"));
       else if (!right_type->is_abstract()
-	  && (right_type->integer_type() == NULL
-	      || !right_type->integer_type()->is_unsigned()))
-	this->report_error(_("shift count not unsigned integer"));
+	       && right_type->integer_type() == NULL)
+	this->report_error(_("shift count not integer"));
       else
 	{
 	  Numeric_constant nc;
@@ -6213,7 +7668,7 @@ Binary_expression::do_check_types(Gogo*)
 	    {
 	      mpz_t val;
 	      if (!nc.to_int(&val))
-		this->report_error(_("shift count not unsigned integer"));
+		this->report_error(_("shift count not integer"));
 	      else
 		{
 		  if (mpz_sgn(val) < 0)
@@ -6287,27 +7742,6 @@ Binary_expression::do_get_backend(Translate_context* context)
   // been converted to a String_concat_expression in do_lower.
   go_assert(!left_type->is_string_type());
 
-  // For complex division Go might want slightly different results than the
-  // backend implementation provides, so we have our own runtime routine.
-  if (this->op_ == OPERATOR_DIV && this->left_->type()->complex_type() != NULL)
-    {
-      Runtime::Function complex_code;
-      switch (this->left_->type()->complex_type()->bits())
-	{
-	case 64:
-          complex_code = Runtime::COMPLEX64_DIV;
-	  break;
-	case 128:
-          complex_code = Runtime::COMPLEX128_DIV;
-	  break;
-	default:
-	  go_unreachable();
-	}
-      Expression* complex_div =
-          Runtime::make_call(complex_code, loc, 2, this->left_, this->right_);
-      return complex_div->get_backend(context);
-    }
-
   Bexpression* left = this->left_->get_backend(context);
   Bexpression* right = this->right_->get_backend(context);
 
@@ -6332,9 +7766,11 @@ Binary_expression::do_get_backend(Translate_context* context)
 
   // In Go, a shift larger than the size of the type is well-defined.
   // This is not true in C, so we need to insert a conditional.
+  // We also need to check for a negative shift count.
   if (is_shift_op)
     {
       go_assert(left_type->integer_type() != NULL);
+      go_assert(right_type->integer_type() != NULL);
 
       int bits = left_type->integer_type()->bits();
 
@@ -6376,6 +7812,24 @@ Binary_expression::do_get_backend(Translate_context* context)
 							ret, overflow, loc);
 	  mpz_clear(bitsval);
 	}
+
+      if (!right_type->integer_type()->is_unsigned()
+	  && (!this->right_->numeric_constant_value(&nc)
+	      || nc.to_unsigned_long(&ul) != Numeric_constant::NC_UL_VALID))
+	{
+	  Bexpression* zero_expr =
+	    gogo->backend()->integer_constant_expression(right_btype, zero);
+	  Bexpression* compare =
+	    gogo->backend()->binary_expression(OPERATOR_LT, right, zero_expr,
+					       loc);
+	  Expression* crash = Runtime::make_call(gogo, Runtime::PANIC_SHIFT,
+						 loc, 0);
+	  crash->determine_type_no_context(gogo);
+	  Bexpression* bcrash = crash->get_backend(context);
+	  Bfunction* bfn = context->function()->func_value()->get_decl();
+	  ret = gogo->backend()->conditional_expression(bfn, btype, compare,
+							bcrash, ret, loc);
+	}
     }
 
   // Add checks for division by zero and division overflow as needed.
@@ -6390,15 +7844,15 @@ Binary_expression::do_get_backend(Translate_context* context)
               gogo->backend()->binary_expression(OPERATOR_EQEQ,
                                                  right, zero_expr, loc);
 
-	  // __go_runtime_error(RUNTIME_ERROR_DIVISION_BY_ZERO)
-	  int errcode = RUNTIME_ERROR_DIVISION_BY_ZERO;
-	  Bexpression* crash = gogo->runtime_error(errcode,
-						   loc)->get_backend(context);
+	  Expression* crash = Runtime::make_call(gogo, Runtime::PANIC_DIVIDE,
+						 loc, 0);
+	  crash->determine_type_no_context(gogo);
+	  Bexpression* bcrash = crash->get_backend(context);
 
-	  // right == 0 ? (__go_runtime_error(...), 0) : ret
+	  // right == 0 ? (panicdivide(), 0) : ret
           Bfunction* bfn = context->function()->func_value()->get_decl();
           ret = gogo->backend()->conditional_expression(bfn, btype,
-                                                        check, crash,
+                                                        check, bcrash,
 							ret, loc);
 	}
 
@@ -6645,6 +8099,12 @@ Binary_expression::do_import(Import_expression* imp, Location loc)
       op = OPERATOR_BITCLEAR;
       imp->advance(4);
     }
+  else if (imp->match_c_string(")"))
+    {
+      // Not a binary operator after all.
+      imp->advance(1);
+      return left;
+    }
   else
     {
       go_error_at(imp->location(), "unrecognized binary operator");
@@ -6688,6 +8148,7 @@ Expression::comparison(Translate_context* context, Type* result_type,
 		       Operator op, Expression* left, Expression* right,
 		       Location location)
 {
+  Gogo* gogo = context->gogo();
   Type* left_type = left->type();
   Type* right_type = right->type();
 
@@ -6695,15 +8156,48 @@ Expression::comparison(Translate_context* context, Type* result_type,
 
   if (left_type->is_string_type() && right_type->is_string_type())
     {
+      go_assert(left->is_multi_eval_safe());
+      go_assert(right->is_multi_eval_safe());
+
       if (op == OPERATOR_EQEQ || op == OPERATOR_NOTEQ)
 	{
-	  left = Runtime::make_call(Runtime::EQSTRING, location, 2,
-				    left, right);
+          // (l.len == r.len
+          //  ? (l.ptr == r.ptr ? true : memcmp(l.ptr, r.ptr, r.len) == 0)
+          //  : false)
+          Expression* llen = Expression::make_string_info(left,
+                                                          STRING_INFO_LENGTH,
+                                                          location);
+          Expression* rlen = Expression::make_string_info(right,
+                                                          STRING_INFO_LENGTH,
+                                                          location);
+          Expression* leneq = Expression::make_binary(OPERATOR_EQEQ, llen, rlen,
+                                                      location);
+          Expression* lptr = Expression::make_string_info(left->copy(),
+                                                          STRING_INFO_DATA,
+                                                          location);
+          Expression* rptr = Expression::make_string_info(right->copy(),
+                                                          STRING_INFO_DATA,
+                                                          location);
+          Expression* ptreq = Expression::make_binary(OPERATOR_EQEQ, lptr, rptr,
+                                                      location);
+          Expression* btrue = Expression::make_boolean(true, location);
+          Expression* call = Runtime::make_call(gogo, Runtime::MEMCMP,
+						location, 3,
+                                                lptr->copy(), rptr->copy(),
+                                                rlen->copy());
+          Type* int32_type = Type::lookup_integer_type("int32");
+          Expression* zero = Expression::make_integer_ul(0, int32_type, location);
+          Expression* cmp = Expression::make_binary(OPERATOR_EQEQ, call, zero,
+                                                    location);
+          Expression* cond = Expression::make_conditional(ptreq, btrue, cmp,
+                                                          location);
+          Expression* bfalse = Expression::make_boolean(false, location);
+          left = Expression::make_conditional(leneq, cond, bfalse, location);
 	  right = Expression::make_boolean(true, location);
 	}
       else
 	{
-	  left = Runtime::make_call(Runtime::CMPSTRING, location, 2,
+	  left = Runtime::make_call(gogo, Runtime::CMPSTRING, location, 2,
 				    left, right);
 	  right = zexpr;
 	}
@@ -6723,10 +8217,10 @@ Expression::comparison(Translate_context* context, Type* result_type,
 	}
 
       // The right operand is not an interface.  We need to take its
-      // address if it is not a pointer.
+      // address if it is not a direct interface type.
       Expression* pointer_arg = NULL;
-      if (right_type->points_to() != NULL)
-        pointer_arg = right;
+      if (right_type->is_direct_iface_type())
+        pointer_arg = Expression::unpack_direct_iface(right, location);
       else
 	{
           go_assert(right->is_addressable());
@@ -6736,12 +8230,12 @@ Expression::comparison(Translate_context* context, Type* result_type,
 
       Expression* descriptor =
           Expression::make_type_descriptor(right_type, location);
-      left =
-          Runtime::make_call((left_type->interface_type()->is_empty()
-                              ? Runtime::EFACEVALEQ
-                              : Runtime::IFACEVALEQ),
-                             location, 3, left, descriptor,
-                             pointer_arg);
+      left = Runtime::make_call(gogo,
+				(left_type->interface_type()->is_empty()
+				 ? Runtime::EFACEVALEQ
+				 : Runtime::IFACEVALEQ),
+				location, 3, left, descriptor,
+				pointer_arg);
       go_assert(op == OPERATOR_EQEQ || op == OPERATOR_NOTEQ);
       right = Expression::make_boolean(true, location);
     }
@@ -6767,7 +8261,8 @@ Expression::comparison(Translate_context* context, Type* result_type,
 	  compare_function = Runtime::IFACEEFACEEQ;
 	}
 
-      left = Runtime::make_call(compare_function, location, 2, left, right);
+      left = Runtime::make_call(gogo, compare_function, location, 2,
+				left, right);
       go_assert(op == OPERATOR_EQEQ || op == OPERATOR_NOTEQ);
       right = Expression::make_boolean(true, location);
     }
@@ -6786,8 +8281,7 @@ Expression::comparison(Translate_context* context, Type* result_type,
 	  && left_type->array_type()->length() == NULL)
 	{
 	  Array_type* at = left_type->array_type();
-          bool is_lvalue = false;
-          left = at->get_value_pointer(context->gogo(), left, is_lvalue);
+          left = at->get_value_pointer(context->gogo(), left);
 	}
       else if (left_type->interface_type() != NULL)
 	{
@@ -6796,10 +8290,12 @@ Expression::comparison(Translate_context* context, Type* result_type,
 	}
     }
 
+  left->determine_type_no_context(gogo);
+  right->determine_type_no_context(gogo);
+
   Bexpression* left_bexpr = left->get_backend(context);
   Bexpression* right_bexpr = right->get_backend(context);
 
-  Gogo* gogo = context->gogo();
   Bexpression* ret = gogo->backend()->binary_expression(op, left_bexpr,
                                                         right_bexpr, location);
   if (result_type != NULL)
@@ -6818,6 +8314,34 @@ String_concat_expression::do_is_constant() const
        ++pe)
     {
       if (!(*pe)->is_constant())
+	return false;
+    }
+  return true;
+}
+
+bool
+String_concat_expression::do_is_untyped(Type** ptype) const
+{
+  for (Expression_list::iterator pe = this->exprs_->begin();
+       pe != this->exprs_->end();
+       ++pe)
+    {
+      if (!(*pe)->is_untyped(ptype))
+	return false;
+    }
+
+  *ptype = Type::make_string_type();
+  return true;
+}
+
+bool
+String_concat_expression::do_is_zero_value() const
+{
+  for (Expression_list::const_iterator pe = this->exprs_->begin();
+       pe != this->exprs_->end();
+       ++pe)
+    {
+      if (!(*pe)->is_zero_value())
 	return false;
     }
   return true;
@@ -6855,7 +8379,8 @@ String_concat_expression::do_type()
 }
 
 void
-String_concat_expression::do_determine_type(const Type_context* context)
+String_concat_expression::do_determine_type(Gogo* gogo,
+					    const Type_context* context)
 {
   Type_context subcontext(*context);
   for (Expression_list::iterator pe = this->exprs_->begin();
@@ -6874,7 +8399,7 @@ String_concat_expression::do_determine_type(const Type_context* context)
   for (Expression_list::iterator pe = this->exprs_->begin();
        pe != this->exprs_->end();
        ++pe)
-    (*pe)->determine_type(&subcontext);
+    (*pe)->determine_type(gogo, &subcontext);
 }
 
 void
@@ -6908,65 +8433,83 @@ String_concat_expression::do_check_types(Gogo*)
 }
 
 Expression*
-String_concat_expression::do_flatten(Gogo*, Named_object*,
-				     Statement_inserter*)
+String_concat_expression::do_flatten(Gogo* gogo, Named_object*,
+				     Statement_inserter* inserter)
 {
   if (this->is_error_expression())
     return this;
   Location loc = this->location();
   Type* type = this->type();
-  Expression* nil_arg = Expression::make_nil(loc);
-  Expression* call;
-  switch (this->exprs_->size())
+
+  // Mark string([]byte) operands to reuse the backing store.
+  // runtime.concatstrings does not keep the reference.
+  //
+  // Note: in the gc runtime, if all but one inputs are empty,
+  // concatstrings returns the only nonempty input without copy.
+  // So it is not safe to reuse the backing store if it is a
+  // string([]byte) conversion. So the gc compiler does the
+  // no-copy optimization only when there is at least one
+  // constant nonempty input. Currently the gccgo runtime
+  // doesn't do this, so we don't do the check.
+  for (Expression_list::iterator p = this->exprs_->begin();
+       p != this->exprs_->end();
+       ++p)
     {
-    case 0: case 1:
-      go_unreachable();
-
-    case 2: case 3: case 4: case 5:
-      {
-	Expression* len = Expression::make_integer_ul(this->exprs_->size(),
-						      NULL, loc);
-	Array_type* arg_type = Type::make_array_type(type, len);
-	arg_type->set_is_array_incomparable();
-	Expression* arg =
-	  Expression::make_array_composite_literal(arg_type, this->exprs_,
-						   loc);
-	Runtime::Function code;
-	switch (this->exprs_->size())
-	  {
-	  default:
-	    go_unreachable();
-	  case 2:
-	    code = Runtime::CONCATSTRING2;
-	    break;
-	  case 3:
-	    code = Runtime::CONCATSTRING3;
-	    break;
-	  case 4:
-	    code = Runtime::CONCATSTRING4;
-	    break;
-	  case 5:
-	    code = Runtime::CONCATSTRING5;
-	    break;
-	  }
-	call = Runtime::make_call(code, loc, 2, nil_arg, arg);
-      }
-      break;
-
-    default:
-      {
-	Type* arg_type = Type::make_array_type(type, NULL);
-	Slice_construction_expression* sce =
-	  Expression::make_slice_composite_literal(arg_type, this->exprs_,
-						   loc);
-	sce->set_storage_does_not_escape();
-	call = Runtime::make_call(Runtime::CONCATSTRINGS, loc, 2, nil_arg,
-				  sce);
-      }
-      break;
+      Type_conversion_expression* tce = (*p)->conversion_expression();
+      if (tce != NULL)
+        tce->set_no_copy(true);
     }
 
-  return Expression::make_cast(type, call, loc);
+  Expression* buf = NULL;
+  Node* n = Node::make_node(this);
+  if ((n->encoding() & ESCAPE_MASK) == Node::ESCAPE_NONE)
+    {
+      size_t size = 0;
+      for (Expression_list::iterator p = this->exprs_->begin();
+           p != this->exprs_->end();
+           ++p)
+        {
+          std::string s;
+          if ((*p)->string_constant_value(&s))
+            size += s.length();
+        }
+      // Make a buffer on stack if the result does not escape.
+      // But don't do this if we know it won't fit.
+      if (size < (size_t)tmp_string_buf_size)
+        {
+          Type* byte_type = Type::lookup_integer_type("uint8");
+          Expression* buflen =
+            Expression::make_integer_ul(tmp_string_buf_size, NULL, loc);
+          Expression::make_integer_ul(tmp_string_buf_size, NULL, loc);
+          Type* array_type = Type::make_array_type(byte_type, buflen);
+          buf = Expression::make_allocation(array_type, loc);
+          buf->allocation_expression()->set_allocate_on_stack();
+          buf->allocation_expression()->set_no_zero();
+        }
+    }
+  if (buf == NULL)
+    buf = Expression::make_nil(loc);
+  go_assert(this->exprs_->size() > 1);
+  Expression* len =
+    Expression::make_integer_ul(this->exprs_->size(), NULL, loc);
+  Array_type* array_type = Type::make_array_type(type, len);
+  array_type->set_is_array_incomparable();
+  Expression* array =
+    Expression::make_array_composite_literal(array_type, this->exprs_,
+                                             loc);
+  Temporary_statement* ts =
+    Statement::make_temporary(array_type, array, loc);
+  ts->determine_types(gogo);
+  inserter->insert(ts);
+  Expression* ref = Expression::make_temporary_reference(ts, loc);
+  ref = Expression::make_unary(OPERATOR_AND, ref, loc);
+  Expression* call =
+    Runtime::make_call(gogo, Runtime::CONCATSTRINGS, loc, 3, buf,
+                       ref, len->copy());
+  Expression* ret = Expression::make_cast(type, call, loc);
+  Type_context context(type, false);
+  ret->determine_type(gogo, &context);
+  return ret;
 }
 
 void
@@ -7014,7 +8557,7 @@ Bound_method_expression::do_type()
 // Determine the types of a method expression.
 
 void
-Bound_method_expression::do_determine_type(const Type_context*)
+Bound_method_expression::do_determine_type(Gogo* gogo, const Type_context*)
 {
   Named_object* fn = this->method_->named_object();
   Function_type* fntype;
@@ -7025,11 +8568,11 @@ Bound_method_expression::do_determine_type(const Type_context*)
   else
     fntype = NULL;
   if (fntype == NULL || !fntype->is_method())
-    this->expr_->determine_type_no_context();
+    this->expr_->determine_type_no_context(gogo);
   else
     {
       Type_context subcontext(fntype->receiver()->type(), false);
-      this->expr_->determine_type(&subcontext);
+      this->expr_->determine_type(gogo, &subcontext);
     }
 }
 
@@ -7038,7 +8581,7 @@ Bound_method_expression::do_determine_type(const Type_context*)
 void
 Bound_method_expression::do_check_types(Gogo*)
 {
-  Named_object* fn = this->method_->named_object();
+  Named_object* fn = this->function();
   if (!fn->is_function() && !fn->is_function_declaration())
     {
       this->report_error(_("object is not a method"));
@@ -7075,7 +8618,7 @@ Bound_method_expression::do_check_types(Gogo*)
 Bound_method_expression::Method_value_thunks
   Bound_method_expression::method_value_thunks;
 
-// Find or create the thunk for METHOD.
+// Find or create the thunk for FN.
 
 Named_object*
 Bound_method_expression::create_thunk(Gogo* gogo, const Method* method,
@@ -7168,16 +8711,31 @@ Bound_method_expression::create_thunk(Gogo* gogo, const Method* method,
 						loc);
   call->set_varargs_are_lowered();
 
-  Statement* s = Statement::make_return_from_call(call, loc);
+  Statement* s = Statement::make_return_from_call(new_no, call, loc);
+  s->determine_types(gogo);
   gogo->add_statement(s);
   Block* b = gogo->finish_block(loc);
   gogo->add_block(b, loc);
+
+  // This is called after lowering.
   gogo->lower_block(new_no, b);
-  gogo->flatten_block(new_no, b);
+
   gogo->finish_function(loc);
 
   ins.first->second = new_no;
   return new_no;
+}
+
+// Look up a thunk for FN.
+
+Named_object*
+Bound_method_expression::lookup_thunk(Named_object* fn)
+{
+  Method_value_thunks::const_iterator p =
+    Bound_method_expression::method_value_thunks.find(fn);
+  if (p == Bound_method_expression::method_value_thunks.end())
+    return NULL;
+  return p->second;
 }
 
 // Return an expression to check *REF for nil while dereferencing
@@ -7223,10 +8781,11 @@ Bound_method_expression::do_flatten(Gogo* gogo, Named_object*,
 {
   Location loc = this->location();
 
-  Named_object* thunk = Bound_method_expression::create_thunk(gogo,
-							      this->method_,
-							      this->function_);
-  if (thunk->is_erroneous())
+  Named_object* thunk = Bound_method_expression::lookup_thunk(this->function_);
+
+  // The thunk should have been created during the
+  // create_function_descriptors pass.
+  if (thunk == NULL || thunk->is_erroneous())
     {
       go_assert(saw_errors());
       return Expression::make_error(loc);
@@ -7236,7 +8795,7 @@ Bound_method_expression::do_flatten(Gogo* gogo, Named_object*,
   // we are going to do nil checks below, but it's easy enough to
   // always do it.
   Expression* expr = this->expr_;
-  if (!expr->is_variable())
+  if (!expr->is_multi_eval_safe())
     {
       Temporary_statement* etemp = Statement::make_temporary(NULL, expr, loc);
       inserter->insert(etemp);
@@ -7282,12 +8841,14 @@ Bound_method_expression::do_flatten(Gogo* gogo, Named_object*,
   Expression* ret = Expression::make_struct_composite_literal(st, vals, loc);
   ret = Expression::make_heap_expression(ret, loc);
 
-  Node* n = Node::make_node(this);
-  if ((n->encoding() & ESCAPE_MASK) == Node::ESCAPE_NONE)
+  Node* node = Node::make_node(this);
+  if ((node->encoding() & ESCAPE_MASK) == Node::ESCAPE_NONE)
     ret->heap_expression()->set_allocate_on_stack();
-  else if (gogo->compiling_runtime() && gogo->package_name() == "runtime")
+  else if (gogo->compiling_runtime()
+	   && gogo->package_name() == "runtime"
+	   && !saw_errors())
     go_error_at(loc, "%s escapes to heap, not allowed in runtime",
-                n->ast_format(gogo).c_str());
+                node->ast_format(gogo).c_str());
 
   // If necessary, check whether the expression or any embedded
   // pointers are nil.
@@ -7313,16 +8874,18 @@ Bound_method_expression::do_flatten(Gogo* gogo, Named_object*,
 
   if (nil_check != NULL)
     {
-      Expression* crash = gogo->runtime_error(RUNTIME_ERROR_NIL_DEREFERENCE,
-					      loc);
+      Expression* crash = Runtime::make_call(gogo, Runtime::PANIC_MEM, loc, 0);
       // Fix the type of the conditional expression by pretending to
       // evaluate to RET either way through the conditional.
+      crash->determine_type_no_context(gogo);
       crash = Expression::make_compound(crash, ret, loc);
       ret = Expression::make_conditional(nil_check, crash, ret, loc);
     }
 
   // RET is a pointer to a struct, but we want a function type.
   ret = Expression::make_unsafe_cast(this->type(), ret, loc);
+
+  ret->determine_type_no_context(gogo);
 
   return ret;
 }
@@ -7355,6 +8918,349 @@ Expression::make_bound_method(Expression* expr, const Method* method,
   return new Bound_method_expression(expr, method, function, location);
 }
 
+// A general selector.  This is a Parser_expression for LEFT.NAME.  It
+// is lowered after we know the type of the left hand side.
+
+class Selector_expression : public Parser_expression
+{
+ public:
+  Selector_expression(Expression* left, const std::string& name,
+		      Location location)
+    : Parser_expression(EXPRESSION_SELECTOR, location),
+      left_(left), name_(name), resolved_(NULL)
+  { }
+
+  // Return the resolved selector.  This will typically be a
+  // Field_reference_expression or a Bound_method_expression or an
+  // Interface_field_reference_expression.
+  Expression*
+  resolved()
+  { return this->resolved_; }
+
+ protected:
+  int
+  do_traverse(Traverse* traverse)
+  { return Expression::traverse(&this->left_, traverse); }
+
+  Type*
+  do_type();
+
+  void
+  do_determine_type(Gogo*, const Type_context*);
+
+  bool
+  do_is_addressable() const;
+
+  void
+  do_issue_nil_check();
+
+  Expression*
+  do_lower(Gogo*, Named_object*, Statement_inserter*);
+
+  Expression*
+  do_copy()
+  {
+    return new Selector_expression(this->left_->copy(), this->name_,
+				   this->location());
+  }
+
+  void
+  do_dump_expression(Ast_dump_context* ast_dump_context) const;
+
+ private:
+  Expression*
+  lower_method_expression(Gogo*);
+
+  // The expression on the left hand side.
+  Expression* left_;
+  // The name on the right hand side.
+  std::string name_;
+  // The resolved expression.
+  Expression* resolved_;
+};
+
+void
+Selector_expression::do_determine_type(Gogo* gogo, const Type_context* context)
+{
+  if (this->is_error_expression() || this->resolved_ != NULL)
+    return;
+  Expression* left = this->left_;
+  left->determine_type_no_context(gogo);
+  if (left->is_error_expression())
+    this->set_is_error();
+  else
+    {
+      if (left->is_type_expression())
+	this->resolved_ = this->lower_method_expression(gogo);
+      else
+	this->resolved_ = Type::bind_field_or_method(gogo, left->type(), left,
+						     this->name_,
+						     this->location());
+      this->resolved_->determine_type(gogo, context);
+    }
+}
+
+Type*
+Selector_expression::do_type()
+{
+  if (this->is_error_expression())
+    return Type::make_error_type();
+  go_assert(this->resolved_ != NULL);
+  return this->resolved_->type();
+}
+
+bool
+Selector_expression::do_is_addressable() const
+{
+  if (this->is_error_expression())
+    return true;
+  go_assert(this->resolved_ != NULL);
+  return this->resolved_->is_addressable();
+}
+
+void
+Selector_expression::do_issue_nil_check()
+{
+  if (this->is_error_expression())
+    return;
+  go_assert(this->resolved_ != NULL);
+  this->resolved_->issue_nil_check();
+}
+
+// Lower a selector expression to the resolved value.
+
+Expression*
+Selector_expression::do_lower(Gogo*, Named_object*, Statement_inserter*)
+{
+  if (this->is_error_expression() || this->resolved_ == NULL)
+    return Expression::make_error(this->location());
+  return this->resolved_;
+}
+
+// Lower a method expression T.M or (*T).M.  We turn this into a
+// function literal.
+
+Expression*
+Selector_expression::lower_method_expression(Gogo* gogo)
+{
+  Location location = this->location();
+  Type* left_type = this->left_->type();
+  Type* type = left_type;
+  const std::string& name(this->name_);
+
+  bool is_pointer;
+  if (type->points_to() == NULL)
+    is_pointer = false;
+  else
+    {
+      is_pointer = true;
+      type = type->points_to();
+    }
+
+  Named_type* nt = type->named_type();
+  Struct_type* st = type->struct_type();
+  bool is_ambiguous = false;
+  Method* method = NULL;
+  if (nt != NULL)
+    method = nt->method_function(name, &is_ambiguous);
+  else if (st != NULL)
+    method = st->method_function(name, &is_ambiguous);
+  const Typed_identifier* imethod = NULL;
+  if (method == NULL && !is_pointer)
+    {
+      Interface_type* it = type->interface_type();
+      if (it != NULL)
+	imethod = it->find_method(name);
+    }
+
+  if ((method == NULL && imethod == NULL)
+      || (left_type->named_type() != NULL && left_type->points_to() != NULL))
+    {
+      if (nt != NULL)
+	{
+	  if (!is_ambiguous)
+	    go_error_at(location, "type %<%s%s%> has no method %qs",
+			is_pointer ? "*" : "",
+			nt->message_name().c_str(),
+			Gogo::message_name(name).c_str());
+	  else
+	    go_error_at(location, "method %<%s%s%> is ambiguous in type %qs",
+			Gogo::message_name(name).c_str(),
+			is_pointer ? "*" : "",
+			nt->message_name().c_str());
+	}
+      else
+	{
+	  if (!is_ambiguous)
+	    go_error_at(location, "type has no method %qs",
+			Gogo::message_name(name).c_str());
+	  else
+	    go_error_at(location, "method %qs is ambiguous",
+			Gogo::message_name(name).c_str());
+	}
+      return Expression::make_error(location);
+    }
+
+  if (method != NULL && !is_pointer && !method->is_value_method())
+    {
+      go_error_at(location, "method requires pointer (use %<(*%s).%s%>)",
+                  nt->message_name().c_str(),
+                  Gogo::message_name(name).c_str());
+      return Expression::make_error(location);
+    }
+
+  // Build a new function type in which the receiver becomes the first
+  // argument.
+  Function_type* method_type;
+  if (method != NULL)
+    {
+      method_type = method->type();
+      go_assert(method_type->is_method());
+    }
+  else
+    {
+      method_type = imethod->type()->function_type();
+      go_assert(method_type != NULL && !method_type->is_method());
+    }
+
+  const char* const receiver_name = "$this";
+  Typed_identifier_list* parameters = new Typed_identifier_list();
+  parameters->push_back(Typed_identifier(receiver_name, this->left_->type(),
+					 location));
+
+  const Typed_identifier_list* method_parameters = method_type->parameters();
+  if (method_parameters != NULL)
+    {
+      int i = 0;
+      for (Typed_identifier_list::const_iterator p = method_parameters->begin();
+	   p != method_parameters->end();
+	   ++p, ++i)
+	{
+	  if (!p->name().empty() && !Gogo::is_sink_name(p->name()))
+	    parameters->push_back(*p);
+	  else
+	    {
+	      char buf[20];
+	      snprintf(buf, sizeof buf, "$param%d", i);
+	      parameters->push_back(Typed_identifier(buf, p->type(),
+						     p->location()));
+	    }
+	}
+    }
+
+  const Typed_identifier_list* method_results = method_type->results();
+  Typed_identifier_list* results;
+  if (method_results == NULL)
+    results = NULL;
+  else
+    {
+      results = new Typed_identifier_list();
+      for (Typed_identifier_list::const_iterator p = method_results->begin();
+	   p != method_results->end();
+	   ++p)
+	results->push_back(*p);
+    }
+
+  Function_type* fntype = Type::make_function_type(NULL, parameters, results,
+						   location);
+  if (method_type->is_varargs())
+    fntype->set_is_varargs();
+
+  // We generate methods which always takes a pointer to the receiver
+  // as their first argument.  If this is for a pointer type, we can
+  // simply reuse the existing function.  We use an internal hack to
+  // get the right type.
+  // FIXME: This optimization is disabled because it doesn't yet work
+  // with function descriptors when the method expression is not
+  // directly called.
+  if (method != NULL && is_pointer && false)
+    {
+      Named_object* mno = (method->needs_stub_method()
+			   ? method->stub_object()
+			   : method->named_object());
+      Expression* f = Expression::make_func_reference(mno, NULL, location);
+      f = Expression::make_cast(fntype, f, location);
+      Type_conversion_expression* tce =
+	static_cast<Type_conversion_expression*>(f);
+      tce->set_may_convert_function_types();
+      return f;
+    }
+
+  Named_object* no = gogo->start_function(gogo->thunk_name(), fntype, false,
+					  location);
+
+  Named_object* vno = gogo->lookup(receiver_name, NULL);
+  go_assert(vno != NULL);
+  Expression* ve = Expression::make_var_reference(vno, location);
+  Expression* bm;
+  if (method != NULL)
+    bm = Type::bind_field_or_method(gogo, type, ve, name, location);
+  else
+    bm = Expression::make_interface_field_reference(ve, name, location);
+
+  // Even though we found the method above, if it has an error type we
+  // may see an error here.
+  if (bm->is_error_expression())
+    {
+      gogo->finish_function(location);
+      return bm;
+    }
+
+  Expression_list* args;
+  if (parameters->size() <= 1)
+    args = NULL;
+  else
+    {
+      args = new Expression_list();
+      Typed_identifier_list::const_iterator p = parameters->begin();
+      ++p;
+      for (; p != parameters->end(); ++p)
+	{
+	  vno = gogo->lookup(p->name(), NULL);
+	  go_assert(vno != NULL);
+	  args->push_back(Expression::make_var_reference(vno, location));
+	}
+    }
+
+  gogo->start_block(location);
+
+  Call_expression* call = Expression::make_call(bm, args,
+						method_type->is_varargs(),
+						location);
+
+  Statement* s = Statement::make_return_from_call(no, call, location);
+  s->determine_types(gogo);
+  gogo->add_statement(s);
+
+  Block* b = gogo->finish_block(location);
+
+  gogo->add_block(b, location);
+
+  gogo->finish_function(location);
+
+  return Expression::make_func_reference(no, NULL, location);
+}
+
+// Dump the ast for a selector expression.
+
+void
+Selector_expression::do_dump_expression(Ast_dump_context* ast_dump_context)
+    const
+{
+  ast_dump_context->dump_expression(this->left_);
+  ast_dump_context->ostream() << ".";
+  ast_dump_context->ostream() << this->name_;
+}
+
+// Make a selector expression.
+
+Expression*
+Expression::make_selector(Expression* left, const std::string& name,
+			  Location location)
+{
+  return new Selector_expression(left, name, location);
+}
+
 // Class Builtin_call_expression.  This is used for a call to a
 // builtin function.
 
@@ -7367,13 +9273,20 @@ Builtin_call_expression::Builtin_call_expression(Gogo* gogo,
     gogo_(gogo), code_(BUILTIN_INVALID), seen_(false),
     recover_arg_is_set_(false)
 {
-  Func_expression* fnexp = this->fn()->func_expression();
-  if (fnexp == NULL)
+  const Named_object* no;
+  if (fn->is_error_expression())
     {
       this->code_ = BUILTIN_INVALID;
       return;
     }
-  const std::string& name(fnexp->named_object()->name());
+  else if (fn->func_expression() != NULL)
+    no = fn->func_expression()->named_object();
+  else if (fn->unknown_expression() != NULL)
+    no = fn->unknown_expression()->named_object();
+  else
+    go_unreachable();
+
+  const std::string& name(no->name());
   if (name == "append")
     this->code_ = BUILTIN_APPEND;
   else if (name == "cap")
@@ -7404,12 +9317,16 @@ Builtin_call_expression::Builtin_call_expression(Gogo* gogo,
     this->code_ = BUILTIN_REAL;
   else if (name == "recover")
     this->code_ = BUILTIN_RECOVER;
+  else if (name == "Add")
+    this->code_ = BUILTIN_ADD;
   else if (name == "Alignof")
     this->code_ = BUILTIN_ALIGNOF;
   else if (name == "Offsetof")
     this->code_ = BUILTIN_OFFSETOF;
   else if (name == "Sizeof")
     this->code_ = BUILTIN_SIZEOF;
+  else if (name == "Slice")
+    this->code_ = BUILTIN_SLICE;
   else
     go_unreachable();
 }
@@ -7442,32 +9359,17 @@ Builtin_call_expression::do_set_recover_arg(Expression* arg)
 // specific expressions.  We also convert to a constant if we can.
 
 Expression*
-Builtin_call_expression::do_lower(Gogo*, Named_object* function,
-				  Statement_inserter* inserter, int)
+Builtin_call_expression::do_lower(Gogo* gogo, Named_object* function,
+				  Statement_inserter* inserter)
 {
   if (this->is_error_expression())
     return this;
 
   Location loc = this->location();
 
-  if (this->is_varargs() && this->code_ != BUILTIN_APPEND)
-    {
-      this->report_error(_("invalid use of %<...%> with builtin function"));
-      return Expression::make_error(loc);
-    }
-
   if (this->code_ == BUILTIN_OFFSETOF)
     {
       Expression* arg = this->one_arg();
-
-      if (arg->bound_method_expression() != NULL
-	  || arg->interface_field_reference_expression() != NULL)
-	{
-	  this->report_error(_("invalid use of method value as argument "
-			       "of Offsetof"));
-	  return this;
-	}
-
       Field_reference_expression* farg = arg->field_reference_expression();
       while (farg != NULL)
 	{
@@ -7490,7 +9392,15 @@ Builtin_call_expression::do_lower(Gogo*, Named_object* function,
     {
       Numeric_constant nc;
       if (this->numeric_constant_value(&nc))
-	return nc.expression(loc);
+	{
+	  Expression* ret = nc.expression(loc);
+	  Type_context subcontext;
+	  if (this->type() != NULL)
+	    subcontext = Type_context(this->type(),
+				      this->type()->is_abstract());
+	  ret->determine_type(gogo, &subcontext);
+	  return ret;
+	}
     }
 
   switch (this->code_)
@@ -7499,28 +9409,10 @@ Builtin_call_expression::do_lower(Gogo*, Named_object* function,
       break;
 
     case BUILTIN_NEW:
-      {
-	const Expression_list* args = this->args();
-	if (args == NULL || args->size() < 1)
-	  this->report_error(_("not enough arguments"));
-	else if (args->size() > 1)
-	  this->report_error(_("too many arguments"));
-	else
-	  {
-	    Expression* arg = args->front();
-	    if (!arg->is_type_expression())
-	      {
-		go_error_at(arg->location(), "expected type");
-		this->set_is_error();
-	      }
-	    else
-	      return Expression::make_allocation(arg->type(), loc);
-	  }
-      }
-      break;
+      return Expression::make_allocation(this->one_arg()->type(), loc);
 
     case BUILTIN_MAKE:
-      return this->lower_make(inserter);
+      return this->lower_make(gogo, inserter);
 
     case BUILTIN_RECOVER:
       if (function != NULL)
@@ -7536,63 +9428,14 @@ Builtin_call_expression::do_lower(Gogo*, Named_object* function,
 
     case BUILTIN_DELETE:
       {
-	// Lower to a runtime function call.
-	const Expression_list* args = this->args();
-	if (args == NULL || args->size() < 2)
-	  this->report_error(_("not enough arguments"));
-	else if (args->size() > 2)
-	  this->report_error(_("too many arguments"));
-	else if (args->front()->type()->map_type() == NULL)
-	  this->report_error(_("argument 1 must be a map"));
-	else
-	  {
-	    // Since this function returns no value it must appear in
-	    // a statement by itself, so we don't have to worry about
-	    // order of evaluation of values around it.  Evaluate the
-	    // map first to get order of evaluation right.
-	    Map_type* mt = args->front()->type()->map_type();
-	    Temporary_statement* map_temp =
-	      Statement::make_temporary(mt, args->front(), loc);
-	    inserter->insert(map_temp);
-
-	    Temporary_statement* key_temp =
-	      Statement::make_temporary(mt->key_type(), args->back(), loc);
-	    inserter->insert(key_temp);
-
-	    Expression* e1 = Expression::make_type_descriptor(mt, loc);
-	    Expression* e2 = Expression::make_temporary_reference(map_temp,
-								  loc);
-	    Expression* e3 = Expression::make_temporary_reference(key_temp,
-								  loc);
-
-	    // If the call to delete is deferred, and is in a loop,
-	    // then the loop will only have a single instance of the
-	    // temporary variable.  Passing the address of the
-	    // temporary variable here means that the deferred call
-	    // will see the last value in the loop, not the current
-	    // value.  So for this unusual case copy the value into
-	    // the heap.
-	    if (!this->is_deferred())
-	      e3 = Expression::make_unary(OPERATOR_AND, e3, loc);
-	    else
-	      {
-		Expression* a = Expression::make_allocation(mt->key_type(),
-							    loc);
-		Temporary_statement* atemp =
-		  Statement::make_temporary(NULL, a, loc);
-		inserter->insert(atemp);
-
-		a = Expression::make_temporary_reference(atemp, loc);
-		a = Expression::make_dereference(a, NIL_CHECK_NOT_NEEDED, loc);
-		Statement* s = Statement::make_assignment(a, e3, loc);
-		inserter->insert(s);
-
-		e3 = Expression::make_temporary_reference(atemp, loc);
-	      }
-
-	    return Runtime::make_call(Runtime::MAPDELETE, this->location(),
-				      3, e1, e2, e3);
-	  }
+        const Expression_list* args = this->args();
+	Type* key_type =
+	  args->front()->type()->map_type()->key_type();
+	Expression_list::iterator pa = this->args()->begin();
+	pa++;
+	Type* arg_type = (*pa)->type();
+	if (!Type::are_identical(key_type, arg_type, 0, NULL))
+	  *pa = Expression::make_cast(key_type, *pa, loc);
       }
       break;
 
@@ -7606,7 +9449,7 @@ Builtin_call_expression::do_lower(Gogo*, Named_object* function,
 	   pa != this->args()->end();
 	   ++pa)
 	{
-	  if (!(*pa)->is_variable() && !(*pa)->is_constant())
+	  if (!(*pa)->is_multi_eval_safe())
 	    {
 	      Temporary_statement* temp =
 		Statement::make_temporary(NULL, *pa, loc);
@@ -7620,13 +9463,20 @@ Builtin_call_expression::do_lower(Gogo*, Named_object* function,
   return this;
 }
 
-// Flatten a builtin call expression.  This turns the arguments of copy and
-// append into temporary expressions.
+// Flatten a builtin call expression.  This turns the arguments of some
+// builtin calls into temporary expressions.  Also expand copy and append
+// to runtime calls.
 
 Expression*
 Builtin_call_expression::do_flatten(Gogo* gogo, Named_object* function,
                                     Statement_inserter* inserter)
 {
+  if (this->is_error_expression())
+    {
+      go_assert(saw_errors());
+      return this;
+    }
+
   Location loc = this->location();
 
   switch (this->code_)
@@ -7644,13 +9494,18 @@ Builtin_call_expression::do_flatten(Gogo* gogo, Named_object* function,
 	     pa != this->args()->end();
 	     ++pa)
 	  {
+	    if ((*pa)->is_error_expression())
+	      {
+		go_assert(saw_errors());
+		return Expression::make_error(loc);
+	      }
 	    if ((*pa)->is_nil_expression())
 	      {
 		Expression* nil = Expression::make_nil(loc);
 		Expression* zero = Expression::make_integer_ul(0, NULL, loc);
 		*pa = Expression::make_slice_value(at, nil, zero, zero, loc);
 	      }
-	    if (!(*pa)->is_variable())
+	    if (!(*pa)->is_multi_eval_safe())
 	      {
 		Temporary_statement* temp =
                   Statement::make_temporary(NULL, *pa, loc);
@@ -7658,6 +9513,99 @@ Builtin_call_expression::do_flatten(Gogo* gogo, Named_object* function,
 		*pa = Expression::make_temporary_reference(temp, loc);
 	      }
 	  }
+
+        // Lower to runtime call.
+        const Expression_list* args = this->args();
+        go_assert(args != NULL && args->size() == 2);
+        Expression* arg1 = args->front();
+        Expression* arg2 = args->back();
+	go_assert(arg1->is_multi_eval_safe());
+	go_assert(arg2->is_multi_eval_safe());
+        bool arg2_is_string = arg2->type()->is_string_type();
+
+        Expression* ret;
+        Type* et = at->array_type()->element_type();
+        if (et->has_pointer())
+          {
+            Expression* td = Expression::make_type_descriptor(et, loc);
+	    Expression* pd =
+	      Expression::make_slice_info(arg1, SLICE_INFO_VALUE_POINTER, loc);
+	    Expression* ld =
+	      Expression::make_slice_info(arg1, SLICE_INFO_LENGTH, loc);
+	    Expression* ps =
+	      Expression::make_slice_info(arg2, SLICE_INFO_VALUE_POINTER, loc);
+	    Expression* ls =
+	      Expression::make_slice_info(arg2, SLICE_INFO_LENGTH, loc);
+            ret = Runtime::make_call(gogo, Runtime::TYPEDSLICECOPY, loc,
+                                     5, td, pd, ld, ps, ls);
+          }
+        else
+          {
+            Type* int_type = Type::lookup_integer_type("int");
+            Type* uintptr_type = Type::lookup_integer_type("uintptr");
+
+            // l1 = len(arg1)
+            Named_object* lenfn = gogo->lookup_global("len");
+            Expression* lenref = Expression::make_func_reference(lenfn, NULL, loc);
+            Expression_list* len_args = new Expression_list();
+            len_args->push_back(arg1->copy());
+            Expression* len1 = Expression::make_call(lenref, len_args, false, loc);
+            gogo->lower_expression(function, inserter, &len1);
+            gogo->flatten_expression(function, inserter, &len1);
+            Temporary_statement* l1tmp = Statement::make_temporary(int_type, len1, loc);
+	    l1tmp->determine_types(gogo);
+            inserter->insert(l1tmp);
+
+            // l2 = len(arg2)
+            len_args = new Expression_list();
+            len_args->push_back(arg2->copy());
+            Expression* len2 = Expression::make_call(lenref, len_args, false, loc);
+            gogo->lower_expression(function, inserter, &len2);
+            gogo->flatten_expression(function, inserter, &len2);
+            Temporary_statement* l2tmp = Statement::make_temporary(int_type, len2, loc);
+	    l2tmp->determine_types(gogo);
+            inserter->insert(l2tmp);
+
+            // n = (l1 < l2 ? l1 : l2)
+            Expression* l1ref = Expression::make_temporary_reference(l1tmp, loc);
+            Expression* l2ref = Expression::make_temporary_reference(l2tmp, loc);
+            Expression* cond = Expression::make_binary(OPERATOR_LT, l1ref, l2ref, loc);
+            Expression* n = Expression::make_conditional(cond,
+                                                         l1ref->copy(),
+                                                         l2ref->copy(),
+                                                         loc);
+            Temporary_statement* ntmp = Statement::make_temporary(NULL, n, loc);
+	    ntmp->determine_types(gogo);
+            inserter->insert(ntmp);
+
+            // sz = n * sizeof(elem_type)
+            Expression* nref = Expression::make_temporary_reference(ntmp, loc);
+            nref = Expression::make_cast(uintptr_type, nref, loc);
+            Expression* sz = Expression::make_type_info(et, TYPE_INFO_SIZE);
+            sz = Expression::make_binary(OPERATOR_MULT, sz, nref, loc);
+
+            // memmove(arg1.ptr, arg2.ptr, sz)
+            Expression* p1 = Expression::make_slice_info(arg1,
+                                                         SLICE_INFO_VALUE_POINTER,
+                                                         loc);
+            Expression* p2 = (arg2_is_string
+                              ? Expression::make_string_info(arg2,
+                                                             STRING_INFO_DATA,
+                                                             loc)
+                              : Expression::make_slice_info(arg2,
+                                                            SLICE_INFO_VALUE_POINTER,
+                                                            loc));
+            Expression* call = Runtime::make_call(gogo,
+						  Runtime::BUILTIN_MEMMOVE,
+						  loc, 3,
+                                                  p1, p2, sz);
+
+            // n is the return value of copy
+            nref = Expression::make_temporary_reference(ntmp, loc);
+            ret = Expression::make_compound(call, nref, loc);
+          }
+	ret->determine_type_no_context(gogo);
+        return ret;
       }
       break;
 
@@ -7666,7 +9614,8 @@ Builtin_call_expression::do_flatten(Gogo* gogo, Named_object* function,
 	   pa != this->args()->end();
 	   ++pa)
 	{
-	  if (!(*pa)->is_variable() && (*pa)->type()->interface_type() != NULL)
+	  if (!(*pa)->is_multi_eval_safe()
+	      && (*pa)->type()->interface_type() != NULL)
 	    {
 	      Temporary_statement* temp =
 		Statement::make_temporary(NULL, *pa, loc);
@@ -7680,7 +9629,7 @@ Builtin_call_expression::do_flatten(Gogo* gogo, Named_object* function,
     case BUILTIN_CAP:
       {
 	Expression_list::iterator pa = this->args()->begin();
-	if (!(*pa)->is_variable()
+	if (!(*pa)->is_multi_eval_safe()
 	    && ((*pa)->type()->map_type() != NULL
 		|| (*pa)->type()->channel_type() != NULL))
 	  {
@@ -7691,6 +9640,218 @@ Builtin_call_expression::do_flatten(Gogo* gogo, Named_object* function,
 	  }
       }
       break;
+
+    case BUILTIN_DELETE:
+      {
+        // Lower to a runtime function call.
+        const Expression_list* args = this->args();
+
+        // Since this function returns no value it must appear in
+        // a statement by itself, so we don't have to worry about
+        // order of evaluation of values around it.  Evaluate the
+        // map first to get order of evaluation right.
+        Map_type* mt = args->front()->type()->map_type();
+        Temporary_statement* map_temp =
+          Statement::make_temporary(mt, args->front(), loc);
+        inserter->insert(map_temp);
+
+        Temporary_statement* key_temp =
+          Statement::make_temporary(mt->key_type(), args->back(), loc);
+        inserter->insert(key_temp);
+
+        Expression* e1 = Expression::make_type_descriptor(mt, loc);
+        Expression* e2 = Expression::make_temporary_reference(map_temp,
+                                                              loc);
+        Expression* e3 = Expression::make_temporary_reference(key_temp,
+                                                              loc);
+
+        Runtime::Function code;
+        switch (mt->algorithm(gogo))
+          {
+            case Map_type::MAP_ALG_FAST32:
+            case Map_type::MAP_ALG_FAST32PTR:
+              {
+                code = Runtime::MAPDELETE_FAST32;
+                Type* uint32_type = Type::lookup_integer_type("uint32");
+                Type* uint32_ptr_type = Type::make_pointer_type(uint32_type);
+                e3 = Expression::make_unary(OPERATOR_AND, e3, loc);
+                e3 = Expression::make_unsafe_cast(uint32_ptr_type, e3,
+                                                  loc);
+                e3 = Expression::make_dereference(e3,
+                                                  Expression::NIL_CHECK_NOT_NEEDED,
+                                                  loc);
+                break;
+              }
+            case Map_type::MAP_ALG_FAST64:
+            case Map_type::MAP_ALG_FAST64PTR:
+              {
+                code = Runtime::MAPDELETE_FAST64;
+                Type* uint64_type = Type::lookup_integer_type("uint64");
+                Type* uint64_ptr_type = Type::make_pointer_type(uint64_type);
+                e3 = Expression::make_unary(OPERATOR_AND, e3, loc);
+                e3 = Expression::make_unsafe_cast(uint64_ptr_type, e3,
+                                                  loc);
+                e3 = Expression::make_dereference(e3,
+                                                  Expression::NIL_CHECK_NOT_NEEDED,
+                                                  loc);
+                break;
+              }
+            case Map_type::MAP_ALG_FASTSTR:
+              code = Runtime::MAPDELETE_FASTSTR;
+              break;
+            default:
+              code = Runtime::MAPDELETE;
+
+              // If the call to delete is deferred, and is in a loop,
+              // then the loop will only have a single instance of the
+              // temporary variable.  Passing the address of the
+              // temporary variable here means that the deferred call
+              // will see the last value in the loop, not the current
+              // value.  So for this unusual case copy the value into
+              // the heap.
+              if (!this->is_deferred())
+                e3 = Expression::make_unary(OPERATOR_AND, e3, loc);
+              else
+                {
+                  Expression* a = Expression::make_allocation(mt->key_type(),
+                                                              loc);
+                  Temporary_statement* atemp =
+                    Statement::make_temporary(NULL, a, loc);
+		  atemp->determine_types(gogo);
+                  inserter->insert(atemp);
+
+                  a = Expression::make_temporary_reference(atemp, loc);
+                  a = Expression::make_dereference(a, NIL_CHECK_NOT_NEEDED, loc);
+                  Statement* s = Statement::make_assignment(a, e3, loc);
+		  s->determine_types(gogo);
+                  inserter->insert(s);
+
+                  e3 = Expression::make_temporary_reference(atemp, loc);
+                }
+          }
+
+        Expression* ret = Runtime::make_call(gogo, code, loc, 3, e1, e2, e3);
+	ret->determine_type_no_context(gogo);
+	return ret;
+      }
+
+    case BUILTIN_ADD:
+      {
+	Expression* ptr = this->args()->front();
+	Type* uintptr_type = Type::lookup_integer_type("uintptr");
+	ptr = Expression::make_cast(uintptr_type, ptr, loc);
+	Expression* len = this->args()->back();
+	len = Expression::make_cast(uintptr_type, len, loc);
+	Expression* add = Expression::make_binary(OPERATOR_PLUS, ptr, len,
+						  loc);
+	Expression* ret = Expression::make_cast(this->args()->front()->type(),
+						add, loc);
+	ret->determine_type_no_context(gogo);
+	return ret;
+      }
+
+    case BUILTIN_SLICE:
+      {
+	Expression* ptr = this->args()->front();
+	Temporary_statement* ptr_temp = NULL;
+	if (!ptr->is_multi_eval_safe())
+	  {
+	    ptr_temp = Statement::make_temporary(NULL, ptr, loc);
+	    inserter->insert(ptr_temp);
+	    ptr = Expression::make_temporary_reference(ptr_temp, loc);
+	  }
+
+	Expression* len = this->args()->back();
+	Temporary_statement* len_temp = NULL;
+	if (!len->is_multi_eval_safe())
+	  {
+	    len_temp = Statement::make_temporary(NULL, len, loc);
+	    inserter->insert(len_temp);
+	    len = Expression::make_temporary_reference(len_temp, loc);
+	  }
+
+	bool fits_in_int;
+	Numeric_constant nc;
+	if (this->args()->back()->numeric_constant_value(&nc))
+	  {
+	    // We gave an error for constants that don't fit in int in
+	    // check_types.
+	    fits_in_int = true;
+	  }
+	else
+	  {
+	    Integer_type* itype = this->args()->back()->type()->integer_type();
+	    go_assert(itype != NULL);
+	    int ebits = itype->bits();
+	    int intbits =
+	      Type::lookup_integer_type("int")->integer_type()->bits();
+
+	    // We can treat ebits == intbits as small even for an
+	    // unsigned integer type, because we will convert the
+	    // value to int and then reject it in the runtime if it is
+	    // negative.
+
+	    fits_in_int = ebits <= intbits;
+	  }
+
+	Runtime::Function code = (fits_in_int
+				  ? Runtime::UNSAFESLICE
+				  : Runtime::UNSAFESLICE64);
+	Expression* td =
+	  Expression::make_type_descriptor(ptr->type()->points_to(), loc);
+	Expression* check = Runtime::make_call(gogo, code, loc, 3,
+					       td, ptr, len);
+
+	if (ptr_temp == NULL)
+	  ptr = ptr->copy();
+	else
+	  ptr = Expression::make_temporary_reference(ptr_temp, loc);
+	Expression* nil = Expression::make_nil(loc);
+	nil = Expression::make_cast(ptr->type(), nil, loc);
+	Expression* is_nil = Expression::make_binary(OPERATOR_EQEQ, ptr, nil,
+						     loc);
+
+	if (len_temp == NULL)
+	  len = len->copy();
+	else
+	  len = Expression::make_temporary_reference(len_temp, loc);
+	Expression* zero = Expression::make_integer_ul(0, len->type(), loc);
+	Expression* is_zero = Expression::make_binary(OPERATOR_EQEQ, len, zero,
+						      loc);
+
+	Expression* cond = Expression::make_binary(OPERATOR_ANDAND, is_nil,
+						   is_zero, loc);
+
+	Type* slice_type = Type::make_array_type(ptr->type()->points_to(),
+						 NULL);
+	nil = Expression::make_nil(loc);
+	Expression* nil_slice = Expression::make_cast(slice_type, nil, loc);
+
+	if (ptr_temp == NULL)
+	  ptr = ptr->copy();
+	else
+	  ptr = Expression::make_temporary_reference(ptr_temp, loc);
+
+	if (len_temp == NULL)
+	  len = len->copy();
+	else
+	  len = Expression::make_temporary_reference(len_temp, loc);
+
+	Expression* cap;
+	if (len_temp == NULL)
+	  cap = len->copy();
+	else
+	  cap = Expression::make_temporary_reference(len_temp, loc);
+
+	Expression* slice = Expression::make_slice_value(slice_type, ptr,
+							 len, cap, loc);
+
+	slice = Expression::make_conditional(cond, nil_slice, slice, loc);
+
+	Expression* ret = Expression::make_compound(check, slice, loc);
+	ret->determine_type_no_context(gogo);
+	return ret;
+      }
     }
 
   return this;
@@ -7699,31 +9860,17 @@ Builtin_call_expression::do_flatten(Gogo* gogo, Named_object* function,
 // Lower a make expression.
 
 Expression*
-Builtin_call_expression::lower_make(Statement_inserter* inserter)
+Builtin_call_expression::lower_make(Gogo* gogo, Statement_inserter* inserter)
 {
   Location loc = this->location();
 
   const Expression_list* args = this->args();
-  if (args == NULL || args->size() < 1)
-    {
-      this->report_error(_("not enough arguments"));
-      return Expression::make_error(this->location());
-    }
 
   Expression_list::const_iterator parg = args->begin();
 
   Expression* first_arg = *parg;
-  if (!first_arg->is_type_expression())
-    {
-      go_error_at(first_arg->location(), "expected type");
-      this->set_is_error();
-      return Expression::make_error(this->location());
-    }
+  go_assert(first_arg->is_type_expression());
   Type* type = first_arg->type();
-
-  if (!type->in_heap())
-    go_error_at(first_arg->location(),
-		"can't make slice of go:notinheap type");
 
   bool is_slice = false;
   bool is_map = false;
@@ -7735,35 +9882,20 @@ Builtin_call_expression::lower_make(Statement_inserter* inserter)
   else if (type->channel_type() != NULL)
     is_chan = true;
   else
-    {
-      this->report_error(_("invalid type for make function"));
-      return Expression::make_error(this->location());
-    }
-
-  Type_context int_context(Type::lookup_integer_type("int"), false);
+    go_unreachable();
 
   ++parg;
   Expression* len_arg;
   bool len_small = false;
   if (parg == args->end())
     {
-      if (is_slice)
-	{
-	  this->report_error(_("length required when allocating a slice"));
-	  return Expression::make_error(this->location());
-	}
+      go_assert(!is_slice);
       len_arg = Expression::make_integer_ul(0, NULL, loc);
       len_small = true;
     }
   else
     {
       len_arg = *parg;
-      len_arg->determine_type(&int_context);
-      if (len_arg->type()->integer_type() == NULL)
-	{
-	  go_error_at(len_arg->location(), "non-integer len argument in make");
-	  return Expression::make_error(this->location());
-	}
       if (!this->check_int_value(len_arg, true, &len_small))
 	return Expression::make_error(this->location());
       ++parg;
@@ -7778,12 +9910,6 @@ Builtin_call_expression::lower_make(Statement_inserter* inserter)
   if (is_slice && parg != args->end())
     {
       cap_arg = *parg;
-      cap_arg->determine_type(&int_context);
-      if (cap_arg->type()->integer_type() == NULL)
-	{
-	  go_error_at(cap_arg->location(), "non-integer cap argument in make");
-	  return Expression::make_error(this->location());
-	}
       if (!this->check_int_value(cap_arg, false, &cap_small))
 	return Expression::make_error(this->location());
 
@@ -7800,11 +9926,7 @@ Builtin_call_expression::lower_make(Statement_inserter* inserter)
       ++parg;
     }
 
-  if (parg != args->end())
-    {
-      this->report_error(_("too many arguments to make"));
-      return Expression::make_error(this->location());
-    }
+  go_assert(parg == args->end());
 
   Location type_loc = first_arg->location();
 
@@ -7841,8 +9963,8 @@ Builtin_call_expression::lower_make(Statement_inserter* inserter)
       Runtime::Function code = Runtime::MAKESLICE;
       if (!len_small || !cap_small)
 	code = Runtime::MAKESLICE64;
-      Expression* mem = Runtime::make_call(code, loc, 3, type_arg, len_arg,
-					   cap_arg);
+      Expression* mem = Runtime::make_call(gogo, code, loc, 3,
+					   type_arg, len_arg, cap_arg);
       mem = Expression::make_unsafe_cast(Type::make_pointer_type(et), mem,
 					 loc);
       Type* int_type = Type::lookup_integer_type("int");
@@ -7854,19 +9976,17 @@ Builtin_call_expression::lower_make(Statement_inserter* inserter)
     {
       Expression* type_arg = Expression::make_type_descriptor(type, type_loc);
       if (!len_small)
-	call = Runtime::make_call(Runtime::MAKEMAP64, loc, 3, type_arg,
+	call = Runtime::make_call(gogo, Runtime::MAKEMAP64, loc, 3, type_arg,
 				  len_arg,
 				  Expression::make_nil(loc));
       else
 	{
-	  Numeric_constant nclen;
-	  unsigned long vlen;
 	  if (len_arg->numeric_constant_value(&nclen)
 	      && nclen.to_unsigned_long(&vlen) == Numeric_constant::NC_UL_VALID
 	      && vlen <= Map_type::bucket_size)
-	    call = Runtime::make_call(Runtime::MAKEMAP_SMALL, loc, 0);
+	    call = Runtime::make_call(gogo, Runtime::MAKEMAP_SMALL, loc, 0);
 	  else
-	    call = Runtime::make_call(Runtime::MAKEMAP, loc, 3, type_arg,
+	    call = Runtime::make_call(gogo, Runtime::MAKEMAP, loc, 3, type_arg,
 				      len_arg,
 				      Expression::make_nil(loc));
 	}
@@ -7877,12 +9997,14 @@ Builtin_call_expression::lower_make(Statement_inserter* inserter)
       Runtime::Function code = Runtime::MAKECHAN;
       if (!len_small)
 	code = Runtime::MAKECHAN64;
-      call = Runtime::make_call(code, loc, 2, type_arg, len_arg);
+      call = Runtime::make_call(gogo, code, loc, 2, type_arg, len_arg);
     }
   else
     go_unreachable();
 
-  return Expression::make_unsafe_cast(type, call, loc);
+  Expression* ret = Expression::make_unsafe_cast(type, call, loc);
+  ret->determine_type_no_context(gogo);
+  return ret;
 }
 
 // Flatten a call to the predeclared append function.  We do this in
@@ -7921,6 +10043,7 @@ Builtin_call_expression::flatten_append(Gogo* gogo, Named_object* function,
     }
 
   Type* int_type = Type::lookup_integer_type("int");
+  Type_context int_context(int_type, false);
   Type* uint_type = Type::lookup_integer_type("uint");
 
   // Implementing
@@ -7939,6 +10062,7 @@ Builtin_call_expression::flatten_append(Gogo* gogo, Named_object* function,
   Expression_list* call_args = new Expression_list();
   call_args->push_back(Expression::make_temporary_reference(s1tmp, loc));
   Expression* len = Expression::make_call(lenref, call_args, false, loc);
+  len->determine_type(gogo, &int_context);
   gogo->lower_expression(function, inserter, &len);
   gogo->flatten_expression(function, inserter, &len);
   Temporary_statement* l1tmp = Statement::make_temporary(int_type, len, loc);
@@ -7948,23 +10072,79 @@ Builtin_call_expression::flatten_append(Gogo* gogo, Named_object* function,
   Temporary_statement* l2tmp = NULL;
   Expression_list* add = NULL;
   Expression* len2;
+  Call_expression* makecall = NULL;
   if (this->is_varargs())
     {
       go_assert(args->size() == 2);
 
-      // s2tmp := s2
-      s2tmp = Statement::make_temporary(NULL, args->back(), loc);
-      inserter->insert(s2tmp);
+      std::pair<Call_expression*, Temporary_statement*> p =
+        Expression::find_makeslice_call(args->back());
+      makecall = p.first;
+      if (makecall != NULL)
+        {
+          // We are handling
+          // 	append(s, make([]T, len[, cap])...))
+          // which has already been lowered to
+          // 	append(s, runtime.makeslice(T, len, cap)).
+          // We will optimize this to directly zeroing the tail,
+          // instead of allocating a new slice then copy.
 
-      // l2tmp := len(s2tmp)
-      lenref = Expression::make_func_reference(lenfn, NULL, loc);
-      call_args = new Expression_list();
-      call_args->push_back(Expression::make_temporary_reference(s2tmp, loc));
-      len = Expression::make_call(lenref, call_args, false, loc);
-      gogo->lower_expression(function, inserter, &len);
-      gogo->flatten_expression(function, inserter, &len);
-      l2tmp = Statement::make_temporary(int_type, len, loc);
-      inserter->insert(l2tmp);
+          // Retrieve the length and capacity. Cannot reference s2 as
+          // we will remove the makeslice call.
+          Expression* len_arg = makecall->args()->at(1);
+          len_arg = Expression::make_cast(int_type, len_arg, loc);
+          l2tmp = Statement::make_temporary(int_type, len_arg, loc);
+	  l2tmp->determine_types(gogo);
+          inserter->insert(l2tmp);
+
+          Expression* cap_arg = makecall->args()->at(2);
+          cap_arg = Expression::make_cast(int_type, cap_arg, loc);
+          Temporary_statement* c2tmp =
+            Statement::make_temporary(int_type, cap_arg, loc);
+	  c2tmp->determine_types(gogo);
+          inserter->insert(c2tmp);
+
+          // Check bad len/cap here.
+	  // checkmakeslice(type, len, cap)
+	  // (Note that if len and cap are constants, we won't see a
+	  // makeslice call here, as it will be rewritten to a stack
+	  // allocated array by Mark_address_taken::expression.)
+	  Expression* elem = Expression::make_type_descriptor(element_type,
+							      loc);
+          len2 = Expression::make_temporary_reference(l2tmp, loc);
+          Expression* cap2 = Expression::make_temporary_reference(c2tmp, loc);
+	  Expression* check = Runtime::make_call(gogo,
+						 Runtime::CHECK_MAKE_SLICE,
+						 loc, 3, elem, len2, cap2);
+	  check->determine_type_no_context(gogo);
+          gogo->lower_expression(function, inserter, &check);
+          gogo->flatten_expression(function, inserter, &check);
+          Statement* s = Statement::make_statement(check, false);
+          inserter->insert(s);
+
+          // Remove the original makeslice call.
+          Temporary_statement* ts = p.second;
+          if (ts != NULL && ts->uses() == 1)
+            ts->set_init(Expression::make_nil(loc));
+        }
+      else
+        {
+          // s2tmp := s2
+          s2tmp = Statement::make_temporary(NULL, args->back(), loc);
+          inserter->insert(s2tmp);
+
+          // l2tmp := len(s2tmp)
+          lenref = Expression::make_func_reference(lenfn, NULL, loc);
+          call_args = new Expression_list();
+          call_args->push_back(Expression::make_temporary_reference(s2tmp, loc));
+          len = Expression::make_call(lenref, call_args, false, loc);
+	  len->determine_type(gogo, &int_context);
+          gogo->lower_expression(function, inserter, &len);
+          gogo->flatten_expression(function, inserter, &len);
+          l2tmp = Statement::make_temporary(int_type, len, loc);
+	  l2tmp->determine_types(gogo);
+          inserter->insert(l2tmp);
+        }
 
       // len2 = l2tmp
       len2 = Expression::make_temporary_reference(l2tmp, loc);
@@ -7979,7 +10159,7 @@ Builtin_call_expression::flatten_append(Gogo* gogo, Named_object* function,
       Expression_list::const_iterator pa = args->begin();
       for (++pa; pa != args->end(); ++pa)
 	{
-	  if ((*pa)->is_variable())
+	  if ((*pa)->is_multi_eval_safe())
 	    add->push_back(*pa);
 	  else
 	    {
@@ -7997,9 +10177,11 @@ Builtin_call_expression::flatten_append(Gogo* gogo, Named_object* function,
   // ntmp := l1tmp + len2
   Expression* ref = Expression::make_temporary_reference(l1tmp, loc);
   Expression* sum = Expression::make_binary(OPERATOR_PLUS, ref, len2, loc);
+  sum->determine_type(gogo, &int_context);
   gogo->lower_expression(function, inserter, &sum);
   gogo->flatten_expression(function, inserter, &sum);
   Temporary_statement* ntmp = Statement::make_temporary(int_type, sum, loc);
+  ntmp->determine_types(gogo);
   inserter->insert(ntmp);
 
   // s1tmp = uint(ntmp) > uint(cap(s1tmp)) ?
@@ -8013,9 +10195,11 @@ Builtin_call_expression::flatten_append(Gogo* gogo, Named_object* function,
   call_args = new Expression_list();
   call_args->push_back(Expression::make_temporary_reference(s1tmp, loc));
   Expression* cap = Expression::make_call(capref, call_args, false, loc);
+  cap->determine_type(gogo, &int_context);
   gogo->lower_expression(function, inserter, &cap);
   gogo->flatten_expression(function, inserter, &cap);
   Temporary_statement* c1tmp = Statement::make_temporary(int_type, cap, loc);
+  c1tmp->determine_types(gogo);
   inserter->insert(c1tmp);
 
   Expression* left = Expression::make_temporary_reference(ntmp, loc);
@@ -8028,12 +10212,12 @@ Builtin_call_expression::flatten_append(Gogo* gogo, Named_object* function,
   Type* unsafe_ptr_type = Type::make_pointer_type(Type::make_void_type());
   Expression* a1 = Expression::make_type_descriptor(element_type, loc);
   Expression* a2 = Expression::make_temporary_reference(s1tmp, loc);
-  a2 = slice_type->array_type()->get_value_pointer(gogo, a2, false);
+  a2 = slice_type->array_type()->get_value_pointer(gogo, a2);
   a2 = Expression::make_cast(unsafe_ptr_type, a2, loc);
   Expression* a3 = Expression::make_temporary_reference(l1tmp, loc);
   Expression* a4 = Expression::make_temporary_reference(c1tmp, loc);
   Expression* a5 = Expression::make_temporary_reference(ntmp, loc);
-  Expression* call = Runtime::make_call(Runtime::GROWSLICE, loc, 5,
+  Expression* call = Runtime::make_call(gogo, Runtime::GROWSLICE, loc, 5,
 					a1, a2, a3, a4, a5);
   call = Expression::make_unsafe_cast(slice_type, call, loc);
 
@@ -8047,25 +10231,31 @@ Builtin_call_expression::flatten_append(Gogo* gogo, Named_object* function,
     {
       Expression* rhs = Expression::make_conditional(cond, call, ref, loc);
 
+      rhs->determine_type_no_context(gogo);
       gogo->lower_expression(function, inserter, &rhs);
       gogo->flatten_expression(function, inserter, &rhs);
 
       ref = Expression::make_temporary_reference(s1tmp, loc);
       Statement* assign = Statement::make_assignment(ref, rhs, loc);
+      assign->determine_types(gogo);
       inserter->insert(assign);
     }
   else
     {
+      cond->determine_type_no_context(gogo);
       gogo->lower_expression(function, inserter, &cond);
       gogo->flatten_expression(function, inserter, &cond);
+      call->determine_type_no_context(gogo);
       gogo->lower_expression(function, inserter, &call);
       gogo->flatten_expression(function, inserter, &call);
+      ref->determine_type_no_context(gogo);
       gogo->lower_expression(function, inserter, &ref);
       gogo->flatten_expression(function, inserter, &ref);
 
       Block* then_block = new Block(enclosing, loc);
       Assignment_statement* assign =
 	Statement::make_assignment(assign_lhs, call, loc);
+      assign->determine_types(gogo);
       then_block->add_statement(assign);
 
       Block* else_block = new Block(enclosing, loc);
@@ -8073,34 +10263,111 @@ Builtin_call_expression::flatten_append(Gogo* gogo, Named_object* function,
       // This assignment will not change the pointer value, so it does
       // not need a write barrier.
       assign->set_omit_write_barrier();
+      assign->determine_types(gogo);
       else_block->add_statement(assign);
 
       Statement* s = Statement::make_if_statement(cond, then_block,
 						  else_block, loc);
+      s->determine_types(gogo);
       inserter->insert(s);
 
       ref = Expression::make_temporary_reference(s1tmp, loc);
       assign = Statement::make_assignment(ref, assign_lhs->copy(), loc);
+      assign->determine_types(gogo);
       inserter->insert(assign);
     }
 
+  Type* uintptr_type = Type::lookup_integer_type("uintptr");
+
   if (this->is_varargs())
     {
-      // copy(s1tmp[l1tmp:], s2tmp)
-      a1 = Expression::make_temporary_reference(s1tmp, loc);
-      ref = Expression::make_temporary_reference(l1tmp, loc);
-      Expression* nil = Expression::make_nil(loc);
-      a1 = Expression::make_array_index(a1, ref, nil, NULL, loc);
-      a1->array_index_expression()->set_needs_bounds_check(false);
+      if (makecall != NULL)
+        {
+          // memclr(&s1tmp[l1tmp], l2tmp*sizeof(elem))
+          a1 = Expression::make_temporary_reference(s1tmp, loc);
+          ref = Expression::make_temporary_reference(l1tmp, loc);
+          a1 = Expression::make_array_index(a1, ref, NULL, NULL, loc);
+          a1->array_index_expression()->set_needs_bounds_check(false);
+          a1 = Expression::make_unary(OPERATOR_AND, a1, loc);
 
-      a2 = Expression::make_temporary_reference(s2tmp, loc);
+          ref = Expression::make_temporary_reference(l2tmp, loc);
+          ref = Expression::make_cast(uintptr_type, ref, loc);
+          a2 = Expression::make_type_info(element_type, TYPE_INFO_SIZE);
+          a2 = Expression::make_binary(OPERATOR_MULT, a2, ref, loc);
 
-      Named_object* copyfn = gogo->lookup_global("copy");
-      Expression* copyref = Expression::make_func_reference(copyfn, NULL, loc);
-      call_args = new Expression_list();
-      call_args->push_back(a1);
-      call_args->push_back(a2);
-      call = Expression::make_call(copyref, call_args, false, loc);
+          if (element_type->has_pointer())
+            call = Runtime::make_call(gogo, Runtime::MEMCLRHASPTR, loc, 2,
+				      a1, a2);
+          else
+            {
+              Type* int32_type = Type::lookup_integer_type("int32");
+              zero = Expression::make_integer_ul(0, int32_type, loc);
+              call = Runtime::make_call(gogo, Runtime::BUILTIN_MEMSET, loc, 3,
+					a1, zero, a2);
+            }
+
+          if (element_type->has_pointer())
+            {
+              // For a slice containing pointers, growslice already zeroed
+              // the memory. We only need to zero in non-growing case.
+              // Note: growslice does not zero the memory in non-pointer case.
+              ref = Expression::make_temporary_reference(ntmp, loc);
+              ref = Expression::make_cast(uint_type, ref, loc);
+              ref2 = Expression::make_temporary_reference(c1tmp, loc);
+              ref2 = Expression::make_cast(uint_type, ref2, loc);
+              cond = Expression::make_binary(OPERATOR_GT, ref, ref2, loc);
+              zero = Expression::make_integer_ul(0, int_type, loc);
+              call = Expression::make_conditional(cond, zero, call, loc);
+            }
+        }
+      else
+        {
+          if (element_type->has_pointer())
+            {
+              // copy(s1tmp[l1tmp:], s2tmp)
+              a1 = Expression::make_temporary_reference(s1tmp, loc);
+              ref = Expression::make_temporary_reference(l1tmp, loc);
+              Expression* nil = Expression::make_nil(loc);
+              a1 = Expression::make_array_index(a1, ref, nil, NULL, loc);
+              a1->array_index_expression()->set_needs_bounds_check(false);
+
+              a2 = Expression::make_temporary_reference(s2tmp, loc);
+
+              Named_object* copyfn = gogo->lookup_global("copy");
+              Expression* copyref = Expression::make_func_reference(copyfn, NULL, loc);
+              call_args = new Expression_list();
+              call_args->push_back(a1);
+              call_args->push_back(a2);
+              call = Expression::make_call(copyref, call_args, false, loc);
+            }
+          else
+            {
+              // memmove(&s1tmp[l1tmp], s2tmp.ptr, l2tmp*sizeof(elem))
+              a1 = Expression::make_temporary_reference(s1tmp, loc);
+              ref = Expression::make_temporary_reference(l1tmp, loc);
+              a1 = Expression::make_array_index(a1, ref, NULL, NULL, loc);
+              a1->array_index_expression()->set_needs_bounds_check(false);
+              a1 = Expression::make_unary(OPERATOR_AND, a1, loc);
+
+              a2 = Expression::make_temporary_reference(s2tmp, loc);
+              a2 = (a2->type()->is_string_type()
+                    ? Expression::make_string_info(a2,
+                                                   STRING_INFO_DATA,
+                                                   loc)
+                    : Expression::make_slice_info(a2,
+                                                  SLICE_INFO_VALUE_POINTER,
+                                                  loc));
+
+              ref = Expression::make_temporary_reference(l2tmp, loc);
+              ref = Expression::make_cast(uintptr_type, ref, loc);
+              a3 = Expression::make_type_info(element_type, TYPE_INFO_SIZE);
+              a3 = Expression::make_binary(OPERATOR_MULT, a3, ref, loc);
+
+              call = Runtime::make_call(gogo, Runtime::BUILTIN_MEMMOVE, loc, 3,
+                                        a1, a2, a3);
+            }
+        }
+      call->determine_type_no_context(gogo);
       gogo->lower_expression(function, inserter, &call);
       gogo->flatten_expression(function, inserter, &call);
       inserter->insert(Statement::make_statement(call, false));
@@ -8121,22 +10388,28 @@ Builtin_call_expression::flatten_append(Gogo* gogo, Named_object* function,
 	  Expression* lhs = Expression::make_array_index(ref, ref2, NULL,
                                                          NULL, loc);
           lhs->array_index_expression()->set_needs_bounds_check(false);
+	  lhs->determine_type_no_context(gogo);
 	  gogo->lower_expression(function, inserter, &lhs);
 	  gogo->flatten_expression(function, inserter, &lhs);
+      Expression* elem = *pa;
+      if (!Type::are_identical(element_type, elem->type(), 0, NULL)
+          && element_type->interface_type() != NULL)
+        elem = Expression::make_cast(element_type, elem, loc);
 	  // The flatten pass runs after the write barrier pass, so we
 	  // need to insert a write barrier here if necessary.
 	  // However, if ASSIGN_LHS is not NULL, we have been called
 	  // directly before the write barrier pass.
 	  Statement* assign;
 	  if (assign_lhs != NULL
-	      || !gogo->assign_needs_write_barrier(lhs))
-	    assign = Statement::make_assignment(lhs, *pa, loc);
+	      || !gogo->assign_needs_write_barrier(lhs, NULL))
+	    assign = Statement::make_assignment(lhs, elem, loc);
 	  else
 	    {
 	      Function* f = function == NULL ? NULL : function->func_value();
 	      assign = gogo->assign_with_write_barrier(f, NULL, inserter,
-						       lhs, *pa, loc);
+						       lhs, elem, loc);
 	    }
+	  assign->determine_types(gogo);
 	  inserter->insert(assign);
 	}
     }
@@ -8342,7 +10615,13 @@ Builtin_call_expression::do_is_constant() const
 	Expression* arg = this->one_arg();
 	if (arg == NULL)
 	  return false;
+
+	// We may be called before the determine_types pass.
+	arg->determine_type_no_context(this->gogo_);
+
 	Type* arg_type = arg->type();
+	if (arg_type->is_error())
+	  return true;
 
 	if (arg_type->points_to() != NULL
 	    && arg_type->points_to()->array_type() != NULL
@@ -8377,7 +10656,8 @@ Builtin_call_expression::do_is_constant() const
 	Expression* arg = this->one_arg();
 	if (arg == NULL)
 	  return false;
-	return arg->field_reference_expression() != NULL;
+	return (arg->field_reference_expression() != NULL
+		|| arg->classification() == Expression::EXPRESSION_SELECTOR);
       }
 
     case BUILTIN_COMPLEX:
@@ -8402,10 +10682,51 @@ Builtin_call_expression::do_is_constant() const
   return false;
 }
 
+// Return whether a builtin call is untyped.  Most builtin functions
+// have a known type, but complex, real, and imag can be untyped.
+
+bool
+Builtin_call_expression::do_is_untyped(Type** ptype) const
+{
+  if (this->is_error_expression())
+    return false;
+
+  switch (this->code_)
+    {
+    default:
+      return false;
+
+    case BUILTIN_COMPLEX:
+      {
+	const Expression_list* args = this->args();
+	if (args == NULL || args->size() != 2)
+	  return false;
+	Type* dummy;
+	if (!args->front()->is_untyped(&dummy)
+	    || !args->back()->is_untyped(&dummy))
+	  return false;
+	*ptype = Type::make_abstract_complex_type();
+	return true;
+      }
+
+    case BUILTIN_REAL:
+    case BUILTIN_IMAG:
+      {
+	Expression* arg = this->one_arg();
+	if (arg == NULL)
+	  return false;
+	if (!arg->is_untyped(ptype))
+	  return false;
+	*ptype = Type::make_abstract_float_type();
+	return true;
+      }
+    }
+}
+
 // Return a numeric constant if possible.
 
 bool
-Builtin_call_expression::do_numeric_constant_value(Numeric_constant* nc) const
+Builtin_call_expression::do_numeric_constant_value(Numeric_constant* nc)
 {
   if (this->code_ == BUILTIN_LEN
       || this->code_ == BUILTIN_CAP)
@@ -8413,7 +10734,13 @@ Builtin_call_expression::do_numeric_constant_value(Numeric_constant* nc) const
       Expression* arg = this->one_arg();
       if (arg == NULL)
 	return false;
+
+      // We may be called before the determine_types pass.
+      arg->determine_type_no_context(this->gogo_);
+
       Type* arg_type = arg->type();
+      if (arg_type->is_error())
+	return false;
 
       if (this->code_ == BUILTIN_LEN && arg_type->is_string_type())
 	{
@@ -8436,17 +10763,21 @@ Builtin_call_expression::do_numeric_constant_value(Numeric_constant* nc) const
 	{
 	  if (this->seen_)
 	    return false;
-	  Expression* e = arg_type->array_type()->length();
-	  this->seen_ = true;
-	  bool r = e->numeric_constant_value(nc);
-	  this->seen_ = false;
-	  if (r)
+
+	  if (!arg_type->is_error())
 	    {
-	      if (!nc->set_type(Type::lookup_integer_type("int"), false,
-				this->location()))
-		r = false;
+	      Expression* e = arg_type->array_type()->length();
+	      this->seen_ = true;
+	      bool r = e->numeric_constant_value(nc);
+	      this->seen_ = false;
+	      if (r)
+		{
+		  if (!nc->set_type(Type::lookup_integer_type("int"), false,
+				    this->location()))
+		    r = false;
+		}
+	      return r;
 	    }
-	  return r;
 	}
     }
   else if (this->code_ == BUILTIN_SIZEOF
@@ -8455,6 +10786,10 @@ Builtin_call_expression::do_numeric_constant_value(Numeric_constant* nc) const
       Expression* arg = this->one_arg();
       if (arg == NULL)
 	return false;
+
+      // We may be called before the determine_types pass.
+      arg->determine_type_no_context(this->gogo_);
+
       Type* arg_type = arg->type();
       if (arg_type->is_error())
 	return false;
@@ -8502,6 +10837,10 @@ Builtin_call_expression::do_numeric_constant_value(Numeric_constant* nc) const
       Expression* arg = this->one_arg();
       if (arg == NULL)
 	return false;
+
+      // We may be called before the determine_types pass.
+      arg->determine_type_no_context(this->gogo_);
+
       Field_reference_expression* farg = arg->field_reference_expression();
       if (farg == NULL)
 	return false;
@@ -8642,9 +10981,11 @@ Builtin_call_expression::do_discarding_value()
     case BUILTIN_MAKE:
     case BUILTIN_NEW:
     case BUILTIN_REAL:
+    case BUILTIN_ADD:
     case BUILTIN_ALIGNOF:
     case BUILTIN_OFFSETOF:
     case BUILTIN_SIZEOF:
+    case BUILTIN_SLICE:
       this->unused_value_error();
       return false;
 
@@ -8666,6 +11007,11 @@ Builtin_call_expression::do_type()
 {
   if (this->is_error_expression())
     return Type::make_error_type();
+
+  Type* type = this->type();
+  if (type != NULL)
+    return type;
+
   switch (this->code_)
     {
     case BUILTIN_INVALID:
@@ -8751,18 +11097,33 @@ Builtin_call_expression::do_type()
 	  t = Type::make_error_type();
 	return t;
       }
+
+    case BUILTIN_ADD:
+      return Type::make_pointer_type(Type::make_void_type());
+
+    case BUILTIN_SLICE:
+      const Expression_list* args = this->args();
+      if (args == NULL || args->size() != 2)
+	return Type::make_error_type();
+      Type* pt = args->front()->type()->points_to();
+      if (pt == NULL)
+	return Type::make_error_type();
+      return Type::make_array_type(pt, NULL);
     }
 }
 
 // Determine the type.
 
 void
-Builtin_call_expression::do_determine_type(const Type_context* context)
+Builtin_call_expression::do_determine_type(Gogo* gogo,
+					   const Type_context* context)
 {
   if (!this->determining_types())
     return;
 
-  this->fn()->determine_type_no_context();
+  this->fn()->determine_type_no_context(gogo);
+
+  this->simplify_multiple_results(gogo);
 
   const Expression_list* args = this->args();
 
@@ -8771,6 +11132,17 @@ Builtin_call_expression::do_determine_type(const Type_context* context)
   Type* trailing_arg_types = NULL;
   switch (this->code_)
     {
+    case BUILTIN_MAKE:
+      trailing_arg_types = Type::lookup_integer_type("int");
+      is_print = false;
+      break;
+
+    case BUILTIN_PANIC:
+      arg_type =
+	Type::make_empty_interface_type(Linemap::predeclared_location());
+      is_print = false;
+      break;
+
     case BUILTIN_PRINT:
     case BUILTIN_PRINTLN:
       // Do not force a large integer constant to "int".
@@ -8779,28 +11151,105 @@ Builtin_call_expression::do_determine_type(const Type_context* context)
 
     case BUILTIN_REAL:
     case BUILTIN_IMAG:
-      arg_type = Builtin_call_expression::complex_type(context->type);
-      if (arg_type == NULL)
-	arg_type = Type::lookup_complex_type("complex128");
-      is_print = false;
+      {
+	// We need the argument to determine the type, so check it now
+	// before any call to the do_type method.
+	const Expression_list* args = this->args();
+	if (args == NULL || args->size() < 1)
+	  {
+	    this->report_error(_("not enough arguments"));
+	    return;
+	  }
+	else if (args->size() > 1)
+	  {
+	    this->report_error(_("too many arguments"));
+	    return;
+	  }
+
+	Type* dummy;
+	if (context->type != NULL
+	    && context->type->is_numeric_type()
+	    && this->is_untyped(&dummy))
+	  {
+	    Type* type = context->type;
+	    if (type->is_abstract() && !context->may_be_abstract)
+	      type = type->make_non_abstract_type();
+	    this->set_type(type);
+	  }
+	else if (context->may_be_abstract && this->is_constant())
+	  this->set_type(Type::make_abstract_float_type());
+
+	arg_type = Builtin_call_expression::complex_type(context->type);
+	if (arg_type == NULL)
+	  {
+	    if (context->may_be_abstract)
+	      arg_type = Type::make_abstract_complex_type();
+	    else
+	      arg_type = Type::lookup_complex_type("complex128");
+	  }
+
+	if (!args->front()->is_untyped(&dummy))
+	  {
+	    Type_context subcontext(arg_type, context->may_be_abstract);
+	    args->front()->determine_type(gogo, &subcontext);
+	  }
+
+	is_print = false;
+      }
       break;
 
     case BUILTIN_COMPLEX:
       {
+	// We need the arguments to determine the type, so check them
+	// now before any call to the do_type method.
+	const Expression_list* args = this->args();
+	if (args == NULL || args->size() < 2)
+	  {
+	    this->report_error(_("not enough arguments"));
+	    return;
+	  }
+	else if (args->size() > 2)
+	  {
+	    this->report_error(_("too many arguments"));
+	    return;
+	  }
+
+	Type* dummy;
+	if (context->type != NULL
+	    && context->type->is_numeric_type()
+	    && this->is_untyped(&dummy))
+	  {
+	    Type* type = context->type;
+	    if (type->is_abstract() && !context->may_be_abstract)
+	      type = type->make_non_abstract_type();
+	    this->set_type(type);
+	  }
+	else if (context->may_be_abstract && this->is_constant())
+	  this->set_type(Type::make_abstract_complex_type());
+
 	// For the complex function the type of one operand can
 	// determine the type of the other, as in a binary expression.
 	arg_type = Builtin_call_expression::real_imag_type(context->type);
 	if (arg_type == NULL)
-	  arg_type = Type::lookup_float_type("float64");
-	if (args != NULL && args->size() == 2)
 	  {
-	    Type* t1 = args->front()->type();
-	    Type* t2 = args->back()->type();
-	    if (!t1->is_abstract())
-	      arg_type = t1;
-	    else if (!t2->is_abstract())
-	      arg_type = t2;
+	    if (context->may_be_abstract)
+	      arg_type = Type::make_abstract_float_type();
+	    else
+	      arg_type = Type::lookup_float_type("float64");
 	  }
+
+	Type_context subcontext(arg_type, context->may_be_abstract);
+	if (!args->front()->is_untyped(&dummy))
+	  {
+	    args->front()->determine_type(gogo, &subcontext);
+	    arg_type = args->front()->type();
+	  }
+	else if (!args->back()->is_untyped(&dummy))
+	  {
+	    args->back()->determine_type(gogo, &subcontext);
+	    arg_type = args->back()->type();
+	  }
+
 	is_print = false;
       }
       break;
@@ -8808,10 +11257,46 @@ Builtin_call_expression::do_determine_type(const Type_context* context)
     case BUILTIN_APPEND:
       if (!this->is_varargs()
 	  && args != NULL
-	  && !args->empty()
-	  && args->front()->type()->is_slice_type())
-	trailing_arg_types =
-	  args->front()->type()->array_type()->element_type();
+	  && !args->empty())
+	{
+	  args->front()->determine_type_no_context(gogo);
+	  if (args->front()->type()->is_slice_type())
+	    trailing_arg_types =
+	      args->front()->type()->array_type()->element_type();
+	}
+      is_print = false;
+      break;
+
+    case BUILTIN_ADD:
+    case BUILTIN_SLICE:
+      // Both unsafe.Add and unsafe.Slice take two arguments, and the
+      // second arguments defaults to "int".
+      if (args != NULL && args->size() == 2)
+	{
+	  if (this->code_ == BUILTIN_SLICE)
+	    args->front()->determine_type_no_context(gogo);
+	  else
+	    {
+	      Type* pointer = Type::make_pointer_type(Type::make_void_type());
+	      Type_context subcontext(pointer, false);
+	      args->front()->determine_type(gogo, &subcontext);
+	    }
+	  Type* int_type = Type::lookup_integer_type("int");
+	  Type_context subcontext(int_type, false);
+	  args->back()->determine_type(gogo, &subcontext);
+	  return;
+	}
+      is_print = false;
+      break;
+
+    case BUILTIN_DELETE:
+      if (args != NULL && args->size() == 2)
+	{
+	  args->front()->determine_type_no_context(gogo);
+	  Map_type* mt = args->front()->type()->map_type();
+	  if (mt != NULL)
+	    trailing_arg_types = mt->key_type();
+	}
       is_print = false;
       break;
 
@@ -8829,17 +11314,17 @@ Builtin_call_expression::do_determine_type(const Type_context* context)
 	  Type_context subcontext;
 	  subcontext.type = arg_type;
 
-	  if (is_print)
+	  if (is_print && (*pa)->is_constant())
 	    {
 	      // We want to print large constants, we so can't just
 	      // use the appropriate nonabstract type.  Use uint64 for
 	      // an integer if we know it is nonnegative, otherwise
 	      // use int64 for a integer, otherwise use float64 for a
 	      // float or complex128 for a complex.
-	      Type* want_type = NULL;
-	      Type* atype = (*pa)->type();
-	      if (atype->is_abstract())
+	      Type* atype;
+	      if ((*pa)->is_untyped(&atype))
 		{
+		  Type* want_type = NULL;
 		  if (atype->integer_type() != NULL)
 		    {
 		      Numeric_constant nc;
@@ -8870,7 +11355,7 @@ Builtin_call_expression::do_determine_type(const Type_context* context)
 		}
 	    }
 
-	  (*pa)->determine_type(&subcontext);
+	  (*pa)->determine_type(gogo, &subcontext);
 
 	  if (trailing_arg_types != NULL)
 	    {
@@ -8910,17 +11395,139 @@ Builtin_call_expression::check_one_arg()
 // Check argument types for a builtin function.
 
 void
-Builtin_call_expression::do_check_types(Gogo*)
+Builtin_call_expression::do_check_types(Gogo* gogo)
 {
   if (this->is_error_expression())
     return;
+
+  if (this->is_varargs() && this->code_ != BUILTIN_APPEND)
+    {
+      go_error_at(this->location(),
+		  "invalid use of %<...%> with built-in function");
+      this->set_is_error();
+      return;
+    }
+
   switch (this->code_)
     {
     case BUILTIN_INVALID:
-    case BUILTIN_NEW:
-    case BUILTIN_MAKE:
-    case BUILTIN_DELETE:
       return;
+
+    case BUILTIN_NEW:
+      if (this->check_one_arg())
+	{
+	  Expression* arg = this->one_arg();
+	  if (!arg->is_type_expression())
+	    {
+	      go_error_at(arg->location(), "expected type");
+	      this->set_is_error();
+	    }
+	}
+      break;
+
+    case BUILTIN_MAKE:
+      {
+	const Expression_list* args = this->args();
+	if (args == NULL || args->size() < 1)
+	  {
+	    this->report_error(_("not enough arguments"));
+	    return;
+	  }
+
+	Expression* first_arg = args->front();
+	if (!first_arg->is_type_expression())
+	  {
+	    go_error_at(first_arg->location(), "expected type");
+	    this->set_is_error();
+	    return;
+	  }
+
+	Type* type = first_arg->type();
+	if (!type->in_heap())
+	  go_error_at(first_arg->location(),
+		      "cannot make slice of go:notinheap type");
+
+	bool is_slice = type->is_slice_type();
+	if (!is_slice
+	    && type->map_type() == NULL
+	    && type->channel_type() == NULL)
+	  {
+	    this->report_error(_("invalid type for make function"));
+	    return;
+	  }
+
+	Expression_list::const_iterator parg = args->begin();
+	++parg;
+	if (parg == args->end())
+	  {
+	    if (is_slice)
+	      {
+		this->report_error(_("length required when "
+				     "allocating a slice"));
+		return;
+	      }
+	  }
+	else
+	  {
+	    if ((*parg)->type()->integer_type() == NULL)
+	      {
+		go_error_at((*parg)->location(),
+			    "non-integer len argument in make");
+		return;
+	      }
+	    ++parg;
+
+	    if (is_slice && parg != args->end())
+	      {
+		if ((*parg)->type()->integer_type() == NULL)
+		  {
+		    go_error_at((*parg)->location(),
+				"non-integer cap argument in make");
+		    return;
+		  }
+		++parg;
+	      }
+	  }
+
+	if (parg != args->end())
+	  {
+	    this->report_error(_("too many arguments to make"));
+	    return;
+	  }
+      }
+      break;
+
+    case BUILTIN_DELETE:
+      {
+	const Expression_list* args = this->args();
+	if (args == NULL || args->size() < 2)
+	  this->report_error(_("not enough arguments"));
+	else if (args->size() > 2)
+	  this->report_error(_("too many arguments"));
+	else if (args->front()->type()->map_type() == NULL)
+	  this->report_error(_("argument 1 must be a map"));
+	else
+	  {
+            Type* key_type =
+              args->front()->type()->map_type()->key_type();
+            Expression_list::iterator pa = this->args()->begin();
+            pa++;
+            Type* arg_type = (*pa)->type();
+            std::string reason;
+            if (!Type::are_assignable(key_type, arg_type, &reason))
+              {
+                if (reason.empty())
+                  go_error_at(this->location(),
+			      "argument 2 has incompatible type");
+                else
+                  go_error_at(this->location(),
+			      "argument 2 has incompatible type (%s)",
+                              reason.c_str());
+                this->set_is_error();
+              }
+	  }
+      }
+      break;
 
     case BUILTIN_LEN:
     case BUILTIN_CAP:
@@ -8960,16 +11567,7 @@ Builtin_call_expression::do_check_types(Gogo*)
     case BUILTIN_PRINTLN:
       {
 	const Expression_list* args = this->args();
-	if (args == NULL)
-	  {
-	    if (this->code_ == BUILTIN_PRINT)
-	      go_warning_at(this->location(), 0,
-			 "no arguments for builtin function %<%s%>",
-			 (this->code_ == BUILTIN_PRINT
-			  ? "print"
-			  : "println"));
-	  }
-	else
+	if (args != NULL)
 	  {
 	    for (Expression_list::const_iterator p = args->begin();
 		 p != args->end();
@@ -8995,8 +11593,13 @@ Builtin_call_expression::do_check_types(Gogo*)
 		    // an error anyhow, so we don't need one here.
 		  }
 		else
-		  this->report_error(_("unsupported argument type to "
-				       "builtin function"));
+		  {
+		    // Report errors in the expression first.
+		    (*p)->check_types(gogo);
+		    if (!(*p)->is_error_expression())
+		      this->report_error(_("unsupported argument type to "
+					   "builtin function"));
+		  }
 	      }
 	  }
       }
@@ -9015,7 +11618,12 @@ Builtin_call_expression::do_check_types(Gogo*)
     case BUILTIN_PANIC:
     case BUILTIN_SIZEOF:
     case BUILTIN_ALIGNOF:
-      this->check_one_arg();
+      if (this->check_one_arg())
+        {
+	  Expression* arg = this->one_arg();
+	  if (arg->type()->is_void_type())
+	    this->report_error(_("argument to builtin has void type"));
+        }
       break;
 
     case BUILTIN_RECOVER:
@@ -9029,7 +11637,20 @@ Builtin_call_expression::do_check_types(Gogo*)
       if (this->check_one_arg())
 	{
 	  Expression* arg = this->one_arg();
-	  if (arg->field_reference_expression() == NULL)
+	  if (arg->classification() == Expression::EXPRESSION_SELECTOR)
+	    {
+	      Selector_expression* se = static_cast<Selector_expression*>(arg);
+	      Expression* resolved = se->resolved();
+	      if (resolved != NULL)
+		arg = resolved;
+	    }
+	  if (arg->is_error_expression())
+	    ;
+	  else if (arg->bound_method_expression() != NULL
+		   || arg->interface_field_reference_expression() != NULL)
+	    this->report_error(_("invalid use of method value as "
+				 "argument of Offsetof"));
+	  else if (arg->field_reference_expression() == NULL)
 	    this->report_error(_("argument must be a field reference"));
 	}
       break;
@@ -9106,7 +11727,7 @@ Builtin_call_expression::do_check_types(Gogo*)
 	Type* element_type = slice_type->array_type()->element_type();
 	if (!element_type->in_heap())
 	  go_error_at(args->front()->location(),
-		      "can't append to slice of go:notinheap type");
+		      "cannot append to slice of go:notinheap type");
 	if (this->is_varargs())
 	  {
 	    if (!args->back()->type()->is_slice_type()
@@ -9195,6 +11816,28 @@ Builtin_call_expression::do_check_types(Gogo*)
     case BUILTIN_COMPLEX:
       {
 	const Expression_list* args = this->args();
+	go_assert(args != NULL && args->size() == 2);
+	if (args->front()->is_error_expression()
+	    || args->front()->type()->is_error()
+	    || args->back()->is_error_expression()
+	    || args->back()->type()->is_error())
+	  this->set_is_error();
+	else if (!Type::are_identical(args->front()->type(),
+				      args->back()->type(),
+				      Type::COMPARE_TAGS, NULL))
+	  this->report_error(_("complex arguments must have identical types"));
+	else if (args->front()->type()->float_type() == NULL)
+	  this->report_error(_("complex arguments must have "
+			       "floating-point type"));
+      }
+      break;
+
+    case BUILTIN_ADD:
+    case BUILTIN_SLICE:
+      {
+	Numeric_constant nc;
+	unsigned long v;
+	const Expression_list* args = this->args();
 	if (args == NULL || args->size() < 2)
 	  this->report_error(_("not enough arguments"));
 	else if (args->size() > 2)
@@ -9204,13 +11847,60 @@ Builtin_call_expression::do_check_types(Gogo*)
 		 || args->back()->is_error_expression()
 		 || args->back()->type()->is_error())
 	  this->set_is_error();
-	else if (!Type::are_identical(args->front()->type(),
-				      args->back()->type(),
-				      Type::COMPARE_TAGS, NULL))
-	  this->report_error(_("complex arguments must have identical types"));
-	else if (args->front()->type()->float_type() == NULL)
-	  this->report_error(_("complex arguments must have "
-			       "floating-point type"));
+	else if (args->back()->type()->integer_type() == NULL
+		 && (!args->back()->type()->is_abstract()
+		     || !args->back()->numeric_constant_value(&nc)
+		     || (nc.to_unsigned_long(&v)
+			 == Numeric_constant::NC_UL_NOTINT)))
+	  {
+	    if (this->code_ == BUILTIN_ADD)
+	      go_error_at(args->back()->location(), "non-integer offset");
+	    else
+	      go_error_at(args->back()->location(), "non-integer size");
+	  }
+	else if (this->code_ == BUILTIN_ADD)
+	  {
+	    Type* pointer_type =
+	      Type::make_pointer_type(Type::make_void_type());
+	    std::string reason;
+	    if (!Type::are_assignable(pointer_type, args->front()->type(),
+				      &reason))
+	      {
+		if (reason.empty())
+		  go_error_at(args->front()->location(),
+			      "argument 1 has incompatible type");
+		else
+		  go_error_at(args->front()->location(),
+			      "argument 1 has incompatible type (%s)",
+			      reason.c_str());
+		this->set_is_error();
+	      }
+	  }
+	else
+	  {
+	    if (args->front()->type()->points_to() == NULL)
+	      {
+		go_error_at(args->front()->location(),
+			    "argument 1 must be a pointer");
+		this->set_is_error();
+	      }
+
+	    unsigned int int_bits =
+	      Type::lookup_integer_type("int")->integer_type()->bits();
+
+	    mpz_t ival;
+	    if (args->back()->numeric_constant_value(&nc) && nc.to_int(&ival))
+	      {
+		if (mpz_sgn(ival) < 0
+		    || mpz_sizeinbase(ival, 2) >= int_bits)
+		  {
+		    go_error_at(args->back()->location(),
+				"slice length out of range");
+		    this->set_is_error();
+		  }
+		mpz_clear(ival);
+	      }
+	  }
       }
       break;
 
@@ -9258,6 +11948,8 @@ Builtin_call_expression::do_get_backend(Translate_context* context)
     case BUILTIN_INVALID:
     case BUILTIN_NEW:
     case BUILTIN_MAKE:
+    case BUILTIN_ADD:
+    case BUILTIN_SLICE:
       go_unreachable();
 
     case BUILTIN_LEN:
@@ -9367,8 +12059,9 @@ Builtin_call_expression::do_get_backend(Translate_context* context)
 	      go_unreachable();
 	  }
 
-	return Expression::make_cast(int_type, val,
-				     location)->get_backend(context);
+	Expression* e = Expression::make_cast(int_type, val, location);
+	e->determine_type_no_context(gogo);
+	return e->get_backend(context);
       }
 
     case BUILTIN_PRINT:
@@ -9376,7 +12069,7 @@ Builtin_call_expression::do_get_backend(Translate_context* context)
       {
 	const bool is_ln = this->code_ == BUILTIN_PRINTLN;
 
-	Expression* print_stmts = Runtime::make_call(Runtime::PRINTLOCK,
+	Expression* print_stmts = Runtime::make_call(gogo, Runtime::PRINTLOCK,
 						     location, 0);
 
 	const Expression_list* call_args = this->args();
@@ -9389,7 +12082,7 @@ Builtin_call_expression::do_get_backend(Translate_context* context)
 		if (is_ln && p != call_args->begin())
 		  {
                     Expression* print_space =
-		      Runtime::make_call(Runtime::PRINTSP, location, 0);
+		      Runtime::make_call(gogo, Runtime::PRINTSP, location, 0);
 
                     print_stmts =
                         Expression::make_compound(print_stmts, print_space,
@@ -9406,7 +12099,13 @@ Builtin_call_expression::do_get_backend(Translate_context* context)
 		  {
 		    Type* itype = Type::lookup_integer_type("uint64");
 		    arg = Expression::make_cast(itype, arg, location);
-                    code = Runtime::PRINTUINT;
+                    if (gogo->compiling_runtime()
+                        && type->named_type() != NULL
+                        && gogo->unpack_hidden_name(type->named_type()->name())
+                           == "hex")
+                      code = Runtime::PRINTHEX;
+                    else
+                      code = Runtime::PRINTUINT;
 		  }
 		else if (type->integer_type() != NULL)
 		  {
@@ -9451,7 +12150,8 @@ Builtin_call_expression::do_get_backend(Translate_context* context)
 		    return context->backend()->error_expression();
 		  }
 
-                Expression* call = Runtime::make_call(code, location, 1, arg);
+                Expression* call = Runtime::make_call(gogo, code, location, 1,
+						      arg);
 		print_stmts = Expression::make_compound(print_stmts, call,
 							location);
 	      }
@@ -9460,14 +12160,16 @@ Builtin_call_expression::do_get_backend(Translate_context* context)
 	if (is_ln)
 	  {
             Expression* print_nl =
-                Runtime::make_call(Runtime::PRINTNL, location, 0);
+	      Runtime::make_call(gogo, Runtime::PRINTNL, location, 0);
 	    print_stmts = Expression::make_compound(print_stmts, print_nl,
 						    location);
 	  }
 
-	Expression* unlock = Runtime::make_call(Runtime::PRINTUNLOCK,
+	Expression* unlock = Runtime::make_call(gogo, Runtime::PRINTUNLOCK,
 						location, 0);
 	print_stmts = Expression::make_compound(print_stmts, unlock, location);
+
+	print_stmts->determine_type_no_context(gogo);
 
         return print_stmts->get_backend(context);
       }
@@ -9482,7 +12184,8 @@ Builtin_call_expression::do_get_backend(Translate_context* context)
         arg = Expression::convert_for_assignment(gogo, empty, arg, location);
 
         Expression* panic =
-            Runtime::make_call(Runtime::GOPANIC, location, 1, arg);
+	  Runtime::make_call(gogo, Runtime::GOPANIC, location, 1, arg);
+	panic->determine_type_no_context(gogo);
         return panic->get_backend(context);
       }
 
@@ -9497,17 +12200,19 @@ Builtin_call_expression::do_get_backend(Translate_context* context)
 	  Type::make_empty_interface_type(Linemap::predeclared_location());
 
 	Expression* nil = Expression::make_nil(location);
-	nil = Expression::convert_for_assignment(gogo, empty, nil, location);
+        nil = Expression::make_interface_value(empty, nil, nil, location);
 
 	// We need to handle a deferred call to recover specially,
 	// because it changes whether it can recover a panic or not.
 	// See test7 in test/recover1.go.
-        Expression* recover = Runtime::make_call((this->is_deferred()
+        Expression* recover = Runtime::make_call(gogo,
+						 (this->is_deferred()
                                                   ? Runtime::DEFERREDRECOVER
                                                   : Runtime::GORECOVER),
                                                  location, 0);
         Expression* cond =
             Expression::make_conditional(arg, recover, nil, location);
+	cond->determine_type_no_context(gogo);
         return cond->get_backend(context);
       }
 
@@ -9516,8 +12221,9 @@ Builtin_call_expression::do_get_backend(Translate_context* context)
 	const Expression_list* args = this->args();
 	go_assert(args != NULL && args->size() == 1);
 	Expression* arg = args->front();
-        Expression* close = Runtime::make_call(Runtime::CLOSE, location,
+        Expression* close = Runtime::make_call(gogo, Runtime::CLOSE, location,
 					       1, arg);
+	close->determine_type_no_context(gogo);
         return close->get_backend(context);
       }
 
@@ -9543,44 +12249,8 @@ Builtin_call_expression::do_get_backend(Translate_context* context)
       }
 
     case BUILTIN_COPY:
-      {
-	const Expression_list* args = this->args();
-	go_assert(args != NULL && args->size() == 2);
-	Expression* arg1 = args->front();
-	Expression* arg2 = args->back();
-
-	Type* arg1_type = arg1->type();
-	Array_type* at = arg1_type->array_type();
-	go_assert(arg1->is_variable());
-
-	Expression* call;
-
-	Type* arg2_type = arg2->type();
-        go_assert(arg2->is_variable());
-	if (arg2_type->is_string_type())
-	  call = Runtime::make_call(Runtime::SLICESTRINGCOPY, location,
-				    2, arg1, arg2);
-	else
-	  {
-	    Type* et = at->element_type();
-	    if (et->has_pointer())
-	      {
-		Expression* td = Expression::make_type_descriptor(et,
-								  location);
-		call = Runtime::make_call(Runtime::TYPEDSLICECOPY, location,
-					  3, td, arg1, arg2);
-	      }
-	    else
-	      {
-		Expression* sz = Expression::make_type_info(et,
-							    TYPE_INFO_SIZE);
-		call = Runtime::make_call(Runtime::SLICECOPY, location, 3,
-					  arg1, arg2, sz);
-	      }
-	  }
-
-	return call->get_backend(context);
-      }
+      // Handled in Builtin_call_expression::do_flatten.
+      go_unreachable();
 
     case BUILTIN_APPEND:
       // Handled in Builtin_call_expression::flatten_append.
@@ -9621,39 +12291,64 @@ Builtin_call_expression::do_get_backend(Translate_context* context)
 void
 Builtin_call_expression::do_export(Export_function_body* efb) const
 {
-  Numeric_constant nc;
-  if (!this->numeric_constant_value(&nc))
+  if (this->code_ == BUILTIN_ADD || this->code_ == BUILTIN_SLICE)
     {
-      go_error_at(this->location(), "value is not constant");
-      return;
-    }
-
-  if (nc.is_int())
-    {
-      mpz_t val;
-      nc.get_int(&val);
-      Integer_expression::export_integer(efb, val);
-      mpz_clear(val);
-    }
-  else if (nc.is_float())
-    {
-      mpfr_t fval;
-      nc.get_float(&fval);
-      Float_expression::export_float(efb, fval);
-      mpfr_clear(fval);
-    }
-  else if (nc.is_complex())
-    {
-      mpc_t cval;
-      nc.get_complex(&cval);
-      Complex_expression::export_complex(efb, cval);
-      mpc_clear(cval);
+      char buf[50];
+      snprintf(buf, sizeof buf, "<p%d>%s", efb->unsafe_package_index(),
+	       (this->code_ == BUILTIN_ADD ? "Add" : "Slice"));
+      efb->write_c_string(buf);
+      this->export_arguments(efb);
     }
   else
-    go_unreachable();
-
-  // A trailing space lets us reliably identify the end of the number.
-  efb->write_c_string(" ");
+    {
+      const char *s = NULL;
+      switch (this->code_)
+	{
+	default:
+	  go_unreachable();
+	case BUILTIN_APPEND:
+	  s = "append";
+	  break;
+	case BUILTIN_COPY:
+	  s = "copy";
+	  break;
+	case BUILTIN_LEN:
+	  s = "len";
+	  break;
+	case BUILTIN_CAP:
+	  s = "cap";
+	  break;
+	case BUILTIN_DELETE:
+	  s = "delete";
+	  break;
+	case BUILTIN_PRINT:
+	  s = "print";
+	  break;
+	case BUILTIN_PRINTLN:
+	  s = "println";
+	  break;
+	case BUILTIN_PANIC:
+	  s = "panic";
+	  break;
+	case BUILTIN_RECOVER:
+	  s = "recover";
+	  break;
+	case BUILTIN_CLOSE:
+	  s = "close";
+	  break;
+	case BUILTIN_REAL:
+	  s = "real";
+	  break;
+	case BUILTIN_IMAG:
+	  s = "imag";
+	  break;
+	case BUILTIN_COMPLEX:
+	  s = "complex";
+	  break;
+	}
+      efb->write_c_string(s);
+      this->export_arguments(efb);
+    }
 }
 
 // Class Call_expression.
@@ -9731,6 +12426,9 @@ Builtin_call_expression::do_export(Export_function_body* efb) const
 int
 Call_expression::do_traverse(Traverse* traverse)
 {
+  if (this->lowered_ != NULL)
+    return Expression::traverse(&this->lowered_, traverse);
+
   // If we are calling a function in a different package that returns
   // an unnamed type, this may be the only chance we get to traverse
   // that type.  We don't traverse this->type_ because it may be a
@@ -9751,92 +12449,151 @@ Call_expression::do_traverse(Traverse* traverse)
   return TRAVERSE_CONTINUE;
 }
 
-// Lower a call statement.
+// Lower a Call_expression to a Builtin_call_expression.  This happens
+// early on, before determine_types.
 
 Expression*
-Call_expression::do_lower(Gogo* gogo, Named_object* function,
-			  Statement_inserter* inserter, int)
+Call_expression::lower_builtin(Gogo* gogo)
 {
-  Location loc = this->location();
+  // This is called before determine_types, so we can't call
+  // this->fn_->type().  Fortunately builtin calls require a direct
+  // reference to the builtin.
+  Expression* fn = this->fn_;
+  Named_object* no;
+  if (fn->func_expression() != NULL)
+    no = fn->func_expression()->named_object();
+  else if (fn->unknown_expression() != NULL)
+    {
+      no = fn->unknown_expression()->named_object();
+      if (no->is_unknown())
+	{
+	  no = no->unknown_value()->real_named_object();
+	  if (no == NULL)
+	    return this;
+	}
+    }
+  else
+    return this;
 
-  // A type cast can look like a function call.
+  if (!no->is_function_declaration())
+    return this;
+  if (!no->func_declaration_value()->type()->is_builtin())
+    return this;
+
+  if (fn->unknown_expression() != NULL)
+    fn = Expression::make_func_reference(no, NULL, fn->location());
+
+  Builtin_call_expression* bce = new Builtin_call_expression(gogo, fn,
+							     this->args_,
+							     this->is_varargs_,
+							     this->location());
+  if (this->is_deferred_)
+    bce->set_is_deferred();
+  if (this->is_concurrent_)
+    bce->set_is_concurrent();
+  return bce;
+}
+
+// A type conversion can be a constant.
+
+bool
+Call_expression::do_is_constant() const
+{
+  if (this->lowered_ != NULL)
+    return this->lowered_->is_constant();
   if (this->fn_->is_type_expression()
       && this->args_ != NULL
       && this->args_->size() == 1)
-    return Expression::make_cast(this->fn_->type(), this->args_->front(),
-				 loc);
+    return this->args_->front()->is_constant();
+  return false;
+}
 
-  // Because do_type will return an error type and thus prevent future
-  // errors, check for that case now to ensure that the error gets
-  // reported.
-  Function_type* fntype = this->get_function_type();
-  if (fntype == NULL)
-    {
-      if (!this->fn_->type()->is_error())
-	this->report_error(_("expected function"));
-      this->set_is_error();
-      return this;
-    }
+bool
+Call_expression::do_is_untyped(Type** ptype) const
+{
+  if (this->lowered_ != NULL)
+    return this->lowered_->is_untyped(ptype);
+  return false;
+}
 
-  // Handle an argument which is a call to a function which returns
-  // multiple results.
-  if (this->args_ != NULL
-      && this->args_->size() == 1
-      && this->args_->front()->call_expression() != NULL)
+bool
+Call_expression::do_numeric_constant_value(Numeric_constant* nc)
+{
+  if (this->lowered_ != NULL)
+    return this->lowered_->numeric_constant_value(nc);
+  if (this->fn_->is_type_expression()
+      && this->args_ != NULL
+      && this->args_->size() == 1)
     {
-      size_t rc = this->args_->front()->call_expression()->result_count();
-      if (rc > 1
-	  && ((fntype->parameters() != NULL
-               && (fntype->parameters()->size() == rc
-                   || (fntype->is_varargs()
-                       && fntype->parameters()->size() - 1 <= rc)))
-              || fntype->is_builtin()))
+      // If we get here, it's before the determine_types pass, so we
+      // have to pull apart the type carefully.  This is a hack that
+      // is needed because the finalize_methods needs to be able to
+      // determine whether the length of an array is 1.
+
+      Type* type;
+      if (this->fn_->classification() == EXPRESSION_TYPE)
+	type = this->fn_->type();
+      else if (this->fn_->unknown_expression() != NULL)
 	{
-	  Call_expression* call = this->args_->front()->call_expression();
-	  call->set_is_multi_value_arg();
-	  if (this->is_varargs_)
+	  Named_object* no = this->fn_->unknown_expression()->named_object();
+	  if (no->is_unknown())
 	    {
-	      // It is not clear which result of a multiple result call
-	      // the ellipsis operator should be applied to.  If we unpack the
-	      // the call into its individual results here, the ellipsis will be
-	      // applied to the last result.
-	      go_error_at(call->location(),
-			  _("multiple-value argument in single-value context"));
-	      return Expression::make_error(call->location());
+	      no = no->unknown_value()->real_named_object();
+	      go_assert(no != NULL);
 	    }
-
-	  Expression_list* args = new Expression_list;
-	  for (size_t i = 0; i < rc; ++i)
-	    args->push_back(Expression::make_call_result(call, i));
-	  // We can't return a new call expression here, because this
-	  // one may be referenced by Call_result expressions.  We
-	  // also can't delete the old arguments, because we may still
-	  // traverse them somewhere up the call stack.  FIXME.
-	  this->args_ = args;
+	  type = no->type_value();
 	}
-    }
+      else
+	return false;
 
-  // Recognize a call to a builtin function.
-  if (fntype->is_builtin())
-    {
-      Builtin_call_expression* bce =
-	new Builtin_call_expression(gogo, this->fn_, this->args_,
-				    this->is_varargs_, loc);
-      if (this->is_deferred_)
-	bce->set_is_deferred();
-      if (this->is_concurrent_)
-	bce->set_is_concurrent();
-      return bce;
+      if (!type->is_numeric_type())
+	return false;
+      if (!this->args_->front()->numeric_constant_value(nc))
+	return false;
+      return nc->set_type(type, false, this->location());
     }
+  return false;
+}
+
+bool
+Call_expression::do_discarding_value()
+{
+  if (this->fn_->is_type_expression())
+    {
+      this->unused_value_error();
+      return false;
+    }
+  return true;
+}
+
+// Lower a call statement.
+
+Expression*
+Call_expression::do_lower(Gogo* gogo, Named_object*,
+			  Statement_inserter* inserter)
+{
+  if (this->lowered_ != NULL)
+    return this->lowered_;
+
+  Location loc = this->location();
+
+  if (this->is_error_expression())
+    return Expression::make_error(loc);
+
+  // Although we've already lowered calls to builtin functions, we may
+  // still see calls generated to builtins elsewhere in the lowering
+  // pass.  It's simpler to handle them here.
+  Expression* builtin = this->lower_builtin(gogo);
+  if (builtin != this)
+    return builtin;
 
   // If this call returns multiple results, create a temporary
   // variable to hold them.
   if (this->result_count() > 1 && this->call_temp_ == NULL)
     {
       Struct_field_list* sfl = new Struct_field_list();
-      Function_type* fntype = this->get_function_type();
-      const Typed_identifier_list* results = fntype->results();
-      Location loc = this->location();
+      const Typed_identifier_list* results =
+	this->get_function_type()->results();
 
       int i = 0;
       char buf[20];
@@ -9850,32 +12607,27 @@ Call_expression::do_lower(Gogo* gogo, Named_object* function,
 
       Struct_type* st = Type::make_struct_type(sfl, loc);
       st->set_is_struct_incomparable();
+      st->set_is_results_struct();
       this->call_temp_ = Statement::make_temporary(st, NULL, loc);
       inserter->insert(this->call_temp_);
-    }
-
-  // Handle a call to a varargs function by packaging up the extra
-  // parameters.
-  if (fntype->is_varargs())
-    {
-      const Typed_identifier_list* parameters = fntype->parameters();
-      go_assert(parameters != NULL && !parameters->empty());
-      Type* varargs_type = parameters->back().type();
-      this->lower_varargs(gogo, function, inserter, varargs_type,
-			  parameters->size(), SLICE_STORAGE_MAY_ESCAPE);
     }
 
   // If this is call to a method, call the method directly passing the
   // object as the first parameter.
   Bound_method_expression* bme = this->fn_->bound_method_expression();
-  if (bme != NULL)
+  if (bme != NULL && !this->is_deferred_ && !this->is_concurrent_)
     {
       Named_object* methodfn = bme->function();
+      Function_type* mft = (methodfn->is_function()
+                            ? methodfn->func_value()->type()
+                            : methodfn->func_declaration_value()->type());
       Expression* first_arg = bme->first_argument();
 
-      // We always pass a pointer when calling a method.
-      if (first_arg->type()->points_to() == NULL
-	  && !first_arg->type()->is_error())
+      // We always pass a pointer when calling a method, except for
+      // direct interface types when calling a value method.
+      if (!first_arg->type()->is_error()
+          && first_arg->type()->points_to() == NULL
+          && !first_arg->type()->is_direct_iface_type())
 	{
 	  first_arg = Expression::make_unary(OPERATOR_AND, first_arg, loc);
 	  // We may need to create a temporary variable so that we can
@@ -9884,6 +12636,12 @@ Call_expression::do_lower(Gogo* gogo, Named_object* function,
 	  Unary_expression* ue = static_cast<Unary_expression*>(first_arg);
 	  ue->set_create_temp();
 	}
+      else if (mft->receiver()->type()->points_to() == NULL
+               && first_arg->type()->points_to() != NULL
+               && first_arg->type()->points_to()->is_direct_iface_type())
+        first_arg = Expression::make_dereference(first_arg,
+                                                 Expression::NIL_CHECK_DEFAULT,
+                                                 loc);
 
       // If we are calling a method which was inherited from an
       // embedded struct, and the method did not get a stub, then the
@@ -9895,6 +12653,9 @@ Call_expression::do_lower(Gogo* gogo, Named_object* function,
 	    fatype = Type::make_pointer_type(fatype);
 	  first_arg = Expression::make_unsafe_cast(fatype, first_arg, loc);
 	}
+
+      first_arg->determine_type_no_context(gogo);
+      first_arg->check_types(gogo);
 
       Expression_list* new_args = new Expression_list();
       new_args->push_back(first_arg);
@@ -9915,42 +12676,6 @@ Call_expression::do_lower(Gogo* gogo, Named_object* function,
 						  bme->location());
     }
 
-  // Handle a couple of special runtime functions.  In the runtime
-  // package, getcallerpc returns the PC of the caller, and
-  // getcallersp returns the frame pointer of the caller.  Implement
-  // these by turning them into calls to GCC builtin functions.  We
-  // could implement them in normal code, but then we would have to
-  // explicitly unwind the stack.  These functions are intended to be
-  // efficient.  Note that this technique obviously only works for
-  // direct calls, but that is the only way they are used.
-  if (gogo->compiling_runtime() && gogo->package_name() == "runtime")
-    {
-      Func_expression* fe = this->fn_->func_expression();
-      if (fe != NULL
-	  && fe->named_object()->is_function_declaration()
-	  && fe->named_object()->package() == NULL)
-	{
-	  std::string n = Gogo::unpack_hidden_name(fe->named_object()->name());
-	  if ((this->args_ == NULL || this->args_->size() == 0)
-	      && n == "getcallerpc")
-	    {
-	      static Named_object* builtin_return_address;
-              int arg = 0;
-	      return this->lower_to_builtin(&builtin_return_address,
-					    "__builtin_return_address",
-					    &arg);
-	    }
-	  else if ((this->args_ == NULL || this->args_->size() == 0)
-		   && n == "getcallersp")
-	    {
-	      static Named_object* builtin_dwarf_cfa;
-	      return this->lower_to_builtin(&builtin_dwarf_cfa,
-					    "__builtin_dwarf_cfa",
-					    NULL);
-	    }
-	}
-    }
-
   // If this is a call to an imported function for which we have an
   // inlinable function body, add it to the list of functions to give
   // to the backend as inlining opportunities.
@@ -9961,132 +12686,6 @@ Call_expression::do_lower(Gogo* gogo, Named_object* function,
     gogo->add_imported_inlinable_function(fe->named_object());
 
   return this;
-}
-
-// Lower a call to a varargs function.  FUNCTION is the function in
-// which the call occurs--it's not the function we are calling.
-// VARARGS_TYPE is the type of the varargs parameter, a slice type.
-// PARAM_COUNT is the number of parameters of the function we are
-// calling; the last of these parameters will be the varargs
-// parameter.
-
-void
-Call_expression::lower_varargs(Gogo* gogo, Named_object* function,
-			       Statement_inserter* inserter,
-			       Type* varargs_type, size_t param_count,
-                               Slice_storage_escape_disp escape_disp)
-{
-  if (this->varargs_are_lowered_)
-    return;
-
-  Location loc = this->location();
-
-  go_assert(param_count > 0);
-  go_assert(varargs_type->is_slice_type());
-
-  size_t arg_count = this->args_ == NULL ? 0 : this->args_->size();
-  if (arg_count < param_count - 1)
-    {
-      // Not enough arguments; will be caught in check_types.
-      return;
-    }
-
-  Expression_list* old_args = this->args_;
-  Expression_list* new_args = new Expression_list();
-  bool push_empty_arg = false;
-  if (old_args == NULL || old_args->empty())
-    {
-      go_assert(param_count == 1);
-      push_empty_arg = true;
-    }
-  else
-    {
-      Expression_list::const_iterator pa;
-      int i = 1;
-      for (pa = old_args->begin(); pa != old_args->end(); ++pa, ++i)
-	{
-	  if (static_cast<size_t>(i) == param_count)
-	    break;
-	  new_args->push_back(*pa);
-	}
-
-      // We have reached the varargs parameter.
-
-      bool issued_error = false;
-      if (pa == old_args->end())
-	push_empty_arg = true;
-      else if (pa + 1 == old_args->end() && this->is_varargs_)
-	new_args->push_back(*pa);
-      else if (this->is_varargs_)
-	{
-	  if ((*pa)->type()->is_slice_type())
-	    this->report_error(_("too many arguments"));
-	  else
-	    {
-	      go_error_at(this->location(),
-			  _("invalid use of %<...%> with non-slice"));
-	      this->set_is_error();
-	    }
-	  return;
-	}
-      else
-	{
-	  Type* element_type = varargs_type->array_type()->element_type();
-	  Expression_list* vals = new Expression_list;
-	  for (; pa != old_args->end(); ++pa, ++i)
-	    {
-	      // Check types here so that we get a better message.
-	      Type* patype = (*pa)->type();
-	      Location paloc = (*pa)->location();
-	      if (!this->check_argument_type(i, element_type, patype,
-					     paloc, issued_error))
-		continue;
-	      vals->push_back(*pa);
-	    }
-	  Slice_construction_expression* sce =
-	    Expression::make_slice_composite_literal(varargs_type, vals, loc);
-	  if (escape_disp == SLICE_STORAGE_DOES_NOT_ESCAPE)
-	      sce->set_storage_does_not_escape();
-          Expression* val = sce;
-	  gogo->lower_expression(function, inserter, &val);
-	  new_args->push_back(val);
-	}
-    }
-
-  if (push_empty_arg)
-    new_args->push_back(Expression::make_nil(loc));
-
-  // We can't return a new call expression here, because this one may
-  // be referenced by Call_result expressions.  FIXME.  We can't
-  // delete OLD_ARGS because we may have both a Call_expression and a
-  // Builtin_call_expression which refer to them.  FIXME.
-  this->args_ = new_args;
-  this->varargs_are_lowered_ = true;
-}
-
-// Return a call to __builtin_return_address or __builtin_dwarf_cfa.
-
-Expression*
-Call_expression::lower_to_builtin(Named_object** pno, const char* name,
-				  int* arg)
-{
-  if (*pno == NULL)
-    *pno = Gogo::declare_builtin_rf_address(name, arg != NULL);
-
-  Location loc = this->location();
-
-  Expression* fn = Expression::make_func_reference(*pno, NULL, loc);
-  Expression_list *args = new Expression_list();
-  if (arg != NULL)
-    {
-      Expression* a = Expression::make_integer_ul(*arg, NULL, loc);
-      args->push_back(a);
-    }
-  Expression* call = Expression::make_call(fn, args, false, loc);
-
-  // The builtin functions return void*, but the Go functions return uintptr.
-  Type* uintptr_type = Type::lookup_integer_type("uintptr");
-  return Expression::make_cast(uintptr_type, call, loc);
 }
 
 // Flatten a call with multiple results into a temporary.
@@ -10138,7 +12737,7 @@ Call_expression::do_flatten(Gogo* gogo, Named_object*,
 	    {
 	      Location loc = (*pa)->location();
 	      Expression* arg = *pa;
-	      if (!arg->is_variable())
+	      if (!arg->is_multi_eval_safe())
 		{
 		  Temporary_statement *temp =
 		    Statement::make_temporary(NULL, arg, loc);
@@ -10154,7 +12753,862 @@ Call_expression::do_flatten(Gogo* gogo, Named_object*,
       this->args_ = args;
     }
 
+  // Lower to compiler intrinsic if possible.
+  Func_expression* fe = this->fn_->func_expression();
+  if (!this->is_concurrent_ && !this->is_deferred_
+      && fe != NULL
+      && (fe->named_object()->is_function_declaration()
+          || fe->named_object()->is_function()))
+    {
+      Expression* ret = this->intrinsify(gogo, inserter);
+      if (ret != NULL)
+	{
+	  ret->determine_type_no_context(gogo);
+	  return ret;
+	}
+    }
+
+  // Add an implicit conversion to a boolean type, if needed.  See the
+  // comment in Binary_expression::lower_array_comparison.
+  if (this->is_equal_function_
+      && this->type_ != NULL
+      && this->type_ != Type::lookup_bool_type())
+    return Expression::make_cast(this->type_, this, this->location());
+
   return this;
+}
+
+// Lower a call to a compiler intrinsic if possible.
+// Returns NULL if it is not an intrinsic.
+
+Expression*
+Call_expression::intrinsify(Gogo* gogo,
+                            Statement_inserter* inserter)
+{
+  Func_expression* fe = this->fn_->func_expression();
+  Named_object* no = fe->named_object();
+  std::string name = Gogo::unpack_hidden_name(no->name());
+  std::string package = (no->package() != NULL
+                         ? no->package()->pkgpath()
+                         : gogo->pkgpath());
+  bool is_method = ((no->is_function() && no->func_value()->is_method())
+		    || (no->is_function_declaration()
+			&& no->func_declaration_value()->is_method()));
+  Location loc = this->location();
+
+  Type* int_type = Type::lookup_integer_type("int");
+  Type* int32_type = Type::lookup_integer_type("int32");
+  Type* int64_type = Type::lookup_integer_type("int64");
+  Type* uint_type = Type::lookup_integer_type("uint");
+  Type* uint8_type = Type::lookup_integer_type("uint8");
+  Type* uint32_type = Type::lookup_integer_type("uint32");
+  Type* uint64_type = Type::lookup_integer_type("uint64");
+  Type* uintptr_type = Type::lookup_integer_type("uintptr");
+  Type* pointer_type = Type::make_pointer_type(Type::make_void_type());
+
+  int int_size = int_type->named_type()->real_type()->integer_type()->bits() / 8;
+  int ptr_size = uintptr_type->named_type()->real_type()->integer_type()->bits() / 8;
+
+  if (package == "sync/atomic")
+    {
+      if (is_method)
+	return NULL;
+
+      // sync/atomic functions and runtime/internal/atomic functions
+      // are very similar. In order not to duplicate code, we just
+      // redirect to the latter and let the code below to handle them.
+      // Note: no StorePointer, SwapPointer, and CompareAndSwapPointer,
+      // as they need write barriers.
+      if (name == "LoadInt32")
+        name = "Loadint32";
+      else if (name == "LoadInt64")
+        name = "Loadint64";
+      else if (name == "LoadUint32")
+        name = "Load";
+      else if (name == "LoadUint64")
+        name = "Load64";
+      else if (name == "LoadUintptr")
+        name = "Loaduintptr";
+      else if (name == "LoadPointer")
+        name = "Loadp";
+      else if (name == "StoreInt32")
+        name = "Storeint32";
+      else if (name == "StoreInt64")
+        name = "Storeint64";
+      else if (name == "StoreUint32")
+        name = "Store";
+      else if (name == "StoreUint64")
+        name = "Store64";
+      else if (name == "StoreUintptr")
+        name = "Storeuintptr";
+      else if (name == "AddInt32")
+        name = "Xaddint32";
+      else if (name == "AddInt64")
+        name = "Xaddint64";
+      else if (name == "AddUint32")
+        name = "Xadd";
+      else if (name == "AddUint64")
+        name = "Xadd64";
+      else if (name == "AddUintptr")
+        name = "Xadduintptr";
+      else if (name == "SwapInt32")
+        name = "Xchgint32";
+      else if (name == "SwapInt64")
+        name = "Xchgint64";
+      else if (name == "SwapUint32")
+        name = "Xchg";
+      else if (name == "SwapUint64")
+        name = "Xchg64";
+      else if (name == "SwapUintptr")
+        name = "Xchguintptr";
+      else if (name == "CompareAndSwapInt32")
+        name = "Casint32";
+      else if (name == "CompareAndSwapInt64")
+        name = "Casint64";
+      else if (name == "CompareAndSwapUint32")
+        name = "Cas";
+      else if (name == "CompareAndSwapUint64")
+        name = "Cas64";
+      else if (name == "CompareAndSwapUintptr")
+        name = "Casuintptr";
+      else
+        return NULL;
+
+      package = "runtime/internal/atomic";
+    }
+
+  if (package == "runtime/internal/sys")
+    {
+      if (is_method)
+	return NULL;
+
+      // runtime/internal/sys functions and math/bits functions
+      // are very similar. In order not to duplicate code, we just
+      // redirect to the latter and let the code below to handle them.
+      if (name == "Bswap32")
+        name = "ReverseBytes32";
+      else if (name == "Bswap64")
+        name = "ReverseBytes64";
+      else if (name == "Ctz32")
+        name = "TrailingZeros32";
+      else if (name == "Ctz64")
+        name = "TrailingZeros64";
+      else
+        return NULL;
+
+      package = "math/bits";
+    }
+
+  if (package == "runtime")
+    {
+      if (is_method)
+	return NULL;
+
+      // Handle a couple of special runtime functions.  In the runtime
+      // package, getcallerpc returns the PC of the caller, and
+      // getcallersp returns the frame pointer of the caller.  Implement
+      // these by turning them into calls to GCC builtin functions.  We
+      // could implement them in normal code, but then we would have to
+      // explicitly unwind the stack.  These functions are intended to be
+      // efficient.  Note that this technique obviously only works for
+      // direct calls, but that is the only way they are used.
+      if (name == "getcallerpc"
+          && (this->args_ == NULL || this->args_->size() == 0))
+        {
+          Expression* arg = Expression::make_integer_ul(0, uint32_type, loc);
+          Expression* call =
+            Runtime::make_call(gogo, Runtime::BUILTIN_RETURN_ADDRESS, loc,
+                               1, arg);
+          // The builtin functions return void*, but the Go functions return uintptr.
+          return Expression::make_cast(uintptr_type, call, loc);
+        }
+      else if (name == "getcallersp"
+               && (this->args_ == NULL || this->args_->size() == 0))
+
+        {
+          Expression* call =
+            Runtime::make_call(gogo, Runtime::BUILTIN_DWARF_CFA, loc, 0);
+          // The builtin functions return void*, but the Go functions return uintptr.
+          return Expression::make_cast(uintptr_type, call, loc);
+        }
+    }
+  else if (package == "math/bits")
+    {
+      if (is_method)
+	return NULL;
+
+      if ((name == "ReverseBytes16" || name == "ReverseBytes32"
+           || name == "ReverseBytes64" || name == "ReverseBytes")
+          && this->args_ != NULL && this->args_->size() == 1)
+        {
+          Runtime::Function code;
+          if (name == "ReverseBytes16")
+            code = Runtime::BUILTIN_BSWAP16;
+          else if (name == "ReverseBytes32")
+            code = Runtime::BUILTIN_BSWAP32;
+          else if (name == "ReverseBytes64")
+            code = Runtime::BUILTIN_BSWAP64;
+          else if (name == "ReverseBytes")
+            code = (int_size == 8 ? Runtime::BUILTIN_BSWAP64 : Runtime::BUILTIN_BSWAP32);
+          else
+            go_unreachable();
+          Expression* arg = this->args_->front();
+          Expression* call = Runtime::make_call(gogo, code, loc, 1, arg);
+          if (name == "ReverseBytes")
+            return Expression::make_cast(uint_type, call, loc);
+          return call;
+        }
+      else if ((name == "TrailingZeros8" || name == "TrailingZeros16")
+               && this->args_ != NULL && this->args_->size() == 1)
+        {
+          // GCC does not have a ctz8 or ctz16 intrinsic. We do
+          // ctz32(0x100 | arg) or ctz32(0x10000 | arg).
+          Expression* arg = this->args_->front();
+          arg = Expression::make_cast(uint32_type, arg, loc);
+          unsigned long mask = (name == "TrailingZeros8" ? 0x100 : 0x10000);
+          Expression* c = Expression::make_integer_ul(mask, uint32_type, loc);
+          arg = Expression::make_binary(OPERATOR_OR, arg, c, loc);
+          Expression* call = Runtime::make_call(gogo, Runtime::BUILTIN_CTZ,
+						loc, 1, arg);
+          return Expression::make_cast(int_type, call, loc);
+        }
+      else if ((name == "TrailingZeros32"
+                || (name == "TrailingZeros" && int_size == 4))
+               && this->args_ != NULL && this->args_->size() == 1)
+        {
+          Expression* arg = this->args_->front();
+          if (!arg->is_multi_eval_safe())
+            {
+              Temporary_statement* ts = Statement::make_temporary(uint32_type, arg, loc);
+              inserter->insert(ts);
+              arg = Expression::make_temporary_reference(ts, loc);
+            }
+          // arg == 0 ? 32 : __builtin_ctz(arg)
+          Expression* zero = Expression::make_integer_ul(0, uint32_type, loc);
+          Expression* cmp = Expression::make_binary(OPERATOR_EQEQ, arg, zero, loc);
+          Expression* c32 = Expression::make_integer_ul(32, int_type, loc);
+          Expression* call = Runtime::make_call(gogo, Runtime::BUILTIN_CTZ,
+						loc, 1, arg->copy());
+          call = Expression::make_cast(int_type, call, loc);
+          return Expression::make_conditional(cmp, c32, call, loc);
+        }
+      else if ((name == "TrailingZeros64"
+                || (name == "TrailingZeros" && int_size == 8))
+               && this->args_ != NULL && this->args_->size() == 1)
+        {
+          Expression* arg = this->args_->front();
+          if (!arg->is_multi_eval_safe())
+            {
+              Temporary_statement* ts = Statement::make_temporary(uint64_type, arg, loc);
+              inserter->insert(ts);
+              arg = Expression::make_temporary_reference(ts, loc);
+            }
+          // arg == 0 ? 64 : __builtin_ctzll(arg)
+          Expression* zero = Expression::make_integer_ul(0, uint64_type, loc);
+          Expression* cmp = Expression::make_binary(OPERATOR_EQEQ, arg, zero, loc);
+          Expression* c64 = Expression::make_integer_ul(64, int_type, loc);
+          Expression* call = Runtime::make_call(gogo, Runtime::BUILTIN_CTZLL,
+						loc, 1, arg->copy());
+          call = Expression::make_cast(int_type, call, loc);
+          return Expression::make_conditional(cmp, c64, call, loc);
+        }
+      else if ((name == "LeadingZeros8" || name == "LeadingZeros16"
+                || name == "Len8" || name == "Len16")
+               && this->args_ != NULL && this->args_->size() == 1)
+        {
+          // GCC does not have a clz8 ir clz16 intrinsic. We do
+          // clz32(arg<<24 | 0xffffff) or clz32(arg<<16 | 0xffff).
+          Expression* arg = this->args_->front();
+          arg = Expression::make_cast(uint32_type, arg, loc);
+          unsigned long shift =
+            ((name == "LeadingZeros8" || name == "Len8") ? 24 : 16);
+          Expression* c = Expression::make_integer_ul(shift, uint32_type, loc);
+          arg = Expression::make_binary(OPERATOR_LSHIFT, arg, c, loc);
+          unsigned long mask =
+            ((name == "LeadingZeros8" || name == "Len8") ? 0xffffff : 0xffff);
+          c = Expression::make_integer_ul(mask, uint32_type, loc);
+          arg = Expression::make_binary(OPERATOR_OR, arg, c, loc);
+          Expression* call = Runtime::make_call(gogo, Runtime::BUILTIN_CLZ,
+						loc, 1, arg);
+          call = Expression::make_cast(int_type, call, loc);
+          // len = width - clz
+          if (name == "Len8")
+            {
+              c = Expression::make_integer_ul(8, int_type, loc);
+              return Expression::make_binary(OPERATOR_MINUS, c, call, loc);
+            }
+          else if (name == "Len16")
+            {
+              c = Expression::make_integer_ul(16, int_type, loc);
+              return Expression::make_binary(OPERATOR_MINUS, c, call, loc);
+            }
+          return call;
+        }
+      else if ((name == "LeadingZeros32" || name == "Len32"
+                || ((name == "LeadingZeros" || name == "Len") && int_size == 4))
+               && this->args_ != NULL && this->args_->size() == 1)
+        {
+          Expression* arg = this->args_->front();
+          if (!arg->is_multi_eval_safe())
+            {
+              Temporary_statement* ts = Statement::make_temporary(uint32_type, arg, loc);
+              inserter->insert(ts);
+              arg = Expression::make_temporary_reference(ts, loc);
+            }
+          // arg == 0 ? 32 : __builtin_clz(arg)
+          Expression* zero = Expression::make_integer_ul(0, uint32_type, loc);
+          Expression* cmp = Expression::make_binary(OPERATOR_EQEQ, arg, zero, loc);
+          Expression* c32 = Expression::make_integer_ul(32, int_type, loc);
+          Expression* call = Runtime::make_call(gogo, Runtime::BUILTIN_CLZ,
+						loc, 1, arg->copy());
+          call = Expression::make_cast(int_type, call, loc);
+          Expression* cond = Expression::make_conditional(cmp, c32, call, loc);
+          // len = 32 - clz
+          if (name == "Len32" || name == "Len")
+            return Expression::make_binary(OPERATOR_MINUS, c32->copy(), cond, loc);
+          return cond;
+        }
+      else if ((name == "LeadingZeros64" || name == "Len64"
+                || ((name == "LeadingZeros" || name == "Len") && int_size == 8))
+               && this->args_ != NULL && this->args_->size() == 1)
+        {
+          Expression* arg = this->args_->front();
+          if (!arg->is_multi_eval_safe())
+            {
+              Temporary_statement* ts = Statement::make_temporary(uint64_type, arg, loc);
+              inserter->insert(ts);
+              arg = Expression::make_temporary_reference(ts, loc);
+            }
+          // arg == 0 ? 64 : __builtin_clzll(arg)
+          Expression* zero = Expression::make_integer_ul(0, uint64_type, loc);
+          Expression* cmp = Expression::make_binary(OPERATOR_EQEQ, arg, zero, loc);
+          Expression* c64 = Expression::make_integer_ul(64, int_type, loc);
+          Expression* call = Runtime::make_call(gogo, Runtime::BUILTIN_CLZLL,
+						loc, 1, arg->copy());
+          call = Expression::make_cast(int_type, call, loc);
+          Expression* cond = Expression::make_conditional(cmp, c64, call, loc);
+          // len = 64 - clz
+          if (name == "Len64" || name == "Len")
+            return Expression::make_binary(OPERATOR_MINUS, c64->copy(), cond, loc);
+          return cond;
+        }
+      else if ((name == "OnesCount8" || name == "OnesCount16"
+           || name == "OnesCount32" || name == "OnesCount64"
+           || name == "OnesCount")
+          && this->args_ != NULL && this->args_->size() == 1)
+        {
+          Runtime::Function code;
+          if (name == "OnesCount64")
+            code = Runtime::BUILTIN_POPCOUNTLL;
+          else if (name == "OnesCount")
+            code = (int_size == 8 ? Runtime::BUILTIN_POPCOUNTLL : Runtime::BUILTIN_POPCOUNT);
+          else
+            code = Runtime::BUILTIN_POPCOUNT;
+          Expression* arg = this->args_->front();
+          Expression* call = Runtime::make_call(gogo, code, loc, 1, arg);
+          return Expression::make_cast(int_type, call, loc);
+        }
+    }
+  else if (package == "runtime/internal/atomic")
+    {
+      int memorder = __ATOMIC_SEQ_CST;
+
+      if (is_method)
+	{
+	  Function_type* ftype = (no->is_function()
+				  ? no->func_value()->type()
+				  : no->func_declaration_value()->type());
+	  Type* rtype = ftype->receiver()->type()->deref();
+	  go_assert(rtype->named_type() != NULL);
+	  const std::string& rname(rtype->named_type()->name());
+	  if (rname == "Int32")
+	    {
+	      if (name == "Load")
+		name = "LoadInt32";
+	      else if (name == "Store")
+		name = "Storeint32";
+	      else if (name == "CompareAndSwap")
+		name = "Casint32";
+	      else if (name == "Swap")
+		name = "Xchgint32";
+	      else if (name == "Add")
+		name = "Xaddint32";
+	      else
+		go_unreachable();
+	    }
+	  else if (rname == "Int64")
+	    {
+	      if (name == "Load")
+		name = "LoadInt64";
+	      else if (name == "Store")
+		name = "Storeint64";
+	      else if (name == "CompareAndSwap")
+		name = "Casint64";
+	      else if (name == "Swap")
+		name = "Xchgint64";
+	      else if (name == "Add")
+		name = "Xaddint64";
+	      else
+		go_unreachable();
+	    }
+	  else if (rname == "Uint8")
+	    {
+	      if (name == "Load")
+		name = "Load8";
+	      else if (name == "Store")
+		name = "Store8";
+	      else if (name == "And")
+		name = "And8";
+	      else if (name == "Or")
+		name = "Or8";
+	      else
+		go_unreachable();
+	    }
+	  else if (rname == "Uint32")
+	    {
+	      if (name == "Load")
+		name = "Load";
+	      else if (name == "LoadAcquire")
+		name = "LoadAcq";
+	      else if (name == "Store")
+		name = "Store";
+	      else if (name == "CompareAndSwap")
+		name = "Cas";
+	      else if (name == "CompareAndSwapRelease")
+		name = "CasRel";
+	      else if (name == "Swap")
+		name = "Xchg";
+	      else if (name == "And")
+		name = "And";
+	      else if (name == "Or")
+		name = "Or";
+	      else if (name == "Add")
+		name = "Xadd";
+	      else
+		go_unreachable();
+	    }
+	  else if (rname == "Uint64")
+	    {
+	      if (name == "Load")
+		name = "Load64";
+	      else if (name == "Store")
+		name = "Store64";
+	      else if (name == "CompareAndSwap")
+		name = "Cas64";
+	      else if (name == "Swap")
+		name = "Xchgt64";
+	      else if (name == "Add")
+		name = "Xadd64";
+	      else
+		go_unreachable();
+	    }
+	  else if (rname == "Uintptr")
+	    {
+	      if (name == "Load")
+		name = "Loaduintptr";
+	      else if (name == "LoadAcquire")
+		name = "Loadacquintptr";
+	      else if (name == "Store")
+		name = "Storeuintptr";
+	      else if (name == "StoreRelease")
+		name = "StoreReluintptr";
+	      else if (name == "CompareAndSwap")
+		name = "Casuintptr";
+	      else if (name == "Swap")
+		name = "Xchguintptr";
+	      else if (name == "Add")
+		name = "Xadduintptr";
+	      else
+		go_unreachable();
+	    }
+	  else if (rname == "Float64")
+	    {
+	      // Needs unsafe type conversion.  Don't intrinsify for now.
+	      return NULL;
+	    }
+	  else if (rname == "UnsafePointer")
+	    {
+	      if (name == "Load")
+		name = "Loadp";
+	      else if (name == "StoreNoWB")
+		name = "StorepoWB";
+	      else if (name == "CompareAndSwapNoWB")
+		name = "Casp1";
+	      else
+		go_unreachable();
+	    }
+	  else
+	    go_unreachable();
+	}
+
+      if ((name == "Load" || name == "Load64" || name == "Loadint64" || name == "Loadp"
+           || name == "Loaduint" || name == "Loaduintptr" || name == "LoadAcq"
+           || name == "Loadint32" || name == "Load8")
+          && this->args_ != NULL && this->args_->size() == 1)
+        {
+          if (int_size < 8 && (name == "Load64" || name == "Loadint64"))
+            // On 32-bit architectures we need to check alignment.
+            // Not intrinsify for now.
+            return NULL;
+
+          Runtime::Function code;
+          Type* res_type;
+          if (name == "Load")
+            {
+              code = Runtime::ATOMIC_LOAD_4;
+              res_type = uint32_type;
+            }
+          else if (name == "Load64")
+            {
+              code = Runtime::ATOMIC_LOAD_8;
+              res_type = uint64_type;
+            }
+          else if (name == "Loadint32")
+            {
+              code = Runtime::ATOMIC_LOAD_4;
+              res_type = int32_type;
+            }
+          else if (name == "Loadint64")
+            {
+              code = Runtime::ATOMIC_LOAD_8;
+              res_type = int64_type;
+            }
+          else if (name == "Loaduint")
+            {
+              code = (int_size == 8
+                      ? Runtime::ATOMIC_LOAD_8
+                      : Runtime::ATOMIC_LOAD_4);
+              res_type = uint_type;
+            }
+          else if (name == "Loaduintptr")
+            {
+              code = (ptr_size == 8
+                      ? Runtime::ATOMIC_LOAD_8
+                      : Runtime::ATOMIC_LOAD_4);
+              res_type = uintptr_type;
+            }
+          else if (name == "Loadp")
+            {
+              code = (ptr_size == 8
+                      ? Runtime::ATOMIC_LOAD_8
+                      : Runtime::ATOMIC_LOAD_4);
+              res_type = pointer_type;
+            }
+          else if (name == "LoadAcq")
+            {
+              code = Runtime::ATOMIC_LOAD_4;
+              res_type = uint32_type;
+              memorder = __ATOMIC_ACQUIRE;
+            }
+	  else if (name == "Load8")
+	    {
+	      code = Runtime::ATOMIC_LOAD_1;
+	      res_type = uint8_type;
+	    }
+          else
+            go_unreachable();
+          Expression* a1 = this->args_->front();
+          Expression* a2 = Expression::make_integer_ul(memorder, int32_type, loc);
+          Expression* call = Runtime::make_call(gogo, code, loc, 2, a1, a2);
+          return Expression::make_unsafe_cast(res_type, call, loc);
+        }
+
+      if ((name == "Store" || name == "Store64" || name == "StorepNoWB"
+           || name == "Storeuintptr" || name == "StoreRel"
+           || name == "Storeint32" || name == "Storeint64")
+          && this->args_ != NULL && this->args_->size() == 2)
+        {
+          if (int_size < 8 && (name == "Store64" || name == "Storeint64"))
+            return NULL;
+
+          Runtime::Function code;
+          Expression* a1 = this->args_->at(0);
+          Expression* a2 = this->args_->at(1);
+          if (name == "Store")
+            code = Runtime::ATOMIC_STORE_4;
+          else if (name == "Store64")
+            code = Runtime::ATOMIC_STORE_8;
+          else if (name == "Storeint32")
+            code = Runtime::ATOMIC_STORE_4;
+          else if (name == "Storeint64")
+            code = Runtime::ATOMIC_STORE_8;
+          else if (name == "Storeuintptr")
+            code = (ptr_size == 8 ? Runtime::ATOMIC_STORE_8 : Runtime::ATOMIC_STORE_4);
+          else if (name == "StorepNoWB")
+            {
+              code = (ptr_size == 8 ? Runtime::ATOMIC_STORE_8 : Runtime::ATOMIC_STORE_4);
+              a2 = Expression::make_unsafe_cast(uintptr_type, a2, loc);
+              a2 = Expression::make_cast(uint64_type, a2, loc);
+            }
+          else if (name == "StoreRel")
+            {
+              code = Runtime::ATOMIC_STORE_4;
+              memorder = __ATOMIC_RELEASE;
+            }
+	  else if (name == "Store8")
+	    code = Runtime::ATOMIC_STORE_1;
+          else
+            go_unreachable();
+          Expression* a3 = Expression::make_integer_ul(memorder, int32_type, loc);
+          return Runtime::make_call(gogo, code, loc, 3, a1, a2, a3);
+        }
+
+      if ((name == "Xchg" || name == "Xchg64" || name == "Xchguintptr"
+           || name == "Xchgint32" || name == "Xchgint64")
+          && this->args_ != NULL && this->args_->size() == 2)
+        {
+          if (int_size < 8 && (name == "Xchg64" || name == "Xchgint64"))
+            return NULL;
+
+          Runtime::Function code;
+          Type* res_type;
+          if (name == "Xchg")
+            {
+              code = Runtime::ATOMIC_EXCHANGE_4;
+              res_type = uint32_type;
+            }
+          else if (name == "Xchg64")
+            {
+              code = Runtime::ATOMIC_EXCHANGE_8;
+              res_type = uint64_type;
+            }
+          else if (name == "Xchgint32")
+            {
+              code = Runtime::ATOMIC_EXCHANGE_4;
+              res_type = int32_type;
+            }
+          else if (name == "Xchgint64")
+            {
+              code = Runtime::ATOMIC_EXCHANGE_8;
+              res_type = int64_type;
+            }
+          else if (name == "Xchguintptr")
+            {
+              code = (ptr_size == 8
+                      ? Runtime::ATOMIC_EXCHANGE_8
+                      : Runtime::ATOMIC_EXCHANGE_4);
+              res_type = uintptr_type;
+            }
+          else
+            go_unreachable();
+          Expression* a1 = this->args_->at(0);
+          Expression* a2 = this->args_->at(1);
+          Expression* a3 = Expression::make_integer_ul(memorder, int32_type, loc);
+          Expression* call = Runtime::make_call(gogo, code, loc, 3, a1, a2, a3);
+          return Expression::make_cast(res_type, call, loc);
+        }
+
+      if ((name == "Cas" || name == "Cas64" || name == "Casuintptr"
+           || name == "Casp1" || name == "CasRel"
+           || name == "Casint32" || name == "Casint64")
+          && this->args_ != NULL && this->args_->size() == 3)
+        {
+          if (int_size < 8 && (name == "Cas64" || name == "Casint64"))
+            return NULL;
+
+          Runtime::Function code;
+          Expression* a1 = this->args_->at(0);
+
+          // Builtin cas takes a pointer to the old value.
+          // Store it in a temporary and take the address.
+          Expression* a2 = this->args_->at(1);
+          Temporary_statement* ts = Statement::make_temporary(NULL, a2, loc);
+          inserter->insert(ts);
+          a2 = Expression::make_temporary_reference(ts, loc);
+          a2 = Expression::make_unary(OPERATOR_AND, a2, loc);
+
+          Expression* a3 = this->args_->at(2);
+          if (name == "Cas")
+            code = Runtime::ATOMIC_COMPARE_EXCHANGE_4;
+          else if (name == "Cas64")
+            code = Runtime::ATOMIC_COMPARE_EXCHANGE_8;
+          else if (name == "Casint32")
+            code = Runtime::ATOMIC_COMPARE_EXCHANGE_4;
+          else if (name == "Casint64")
+            code = Runtime::ATOMIC_COMPARE_EXCHANGE_8;
+          else if (name == "Casuintptr")
+            code = (ptr_size == 8
+                    ? Runtime::ATOMIC_COMPARE_EXCHANGE_8
+                    : Runtime::ATOMIC_COMPARE_EXCHANGE_4);
+          else if (name == "Casp1")
+            {
+              code = (ptr_size == 8
+                      ? Runtime::ATOMIC_COMPARE_EXCHANGE_8
+                      : Runtime::ATOMIC_COMPARE_EXCHANGE_4);
+              a3 = Expression::make_unsafe_cast(uintptr_type, a3, loc);
+              a3 = Expression::make_cast(uint64_type, a3, loc);
+            }
+          else if (name == "CasRel")
+            {
+              code = Runtime::ATOMIC_COMPARE_EXCHANGE_4;
+              memorder = __ATOMIC_RELEASE;
+            }
+          else
+            go_unreachable();
+          Expression* a4 = Expression::make_boolean(false, loc);
+          Expression* a5 = Expression::make_integer_ul(memorder, int32_type, loc);
+          Expression* a6 = Expression::make_integer_ul(__ATOMIC_RELAXED, int32_type, loc);
+          return Runtime::make_call(gogo, code, loc, 6, a1, a2, a3, a4, a5, a6);
+        }
+
+      if ((name == "Xadd" || name == "Xadd64" || name == "Xaddint64"
+           || name == "Xadduintptr" || name == "Xaddint32")
+          && this->args_ != NULL && this->args_->size() == 2)
+        {
+          if (int_size < 8 && (name == "Xadd64" || name == "Xaddint64"))
+            return NULL;
+
+          Runtime::Function code;
+          Type* res_type;
+          if (name == "Xadd")
+            {
+              code = Runtime::ATOMIC_ADD_FETCH_4;
+              res_type = uint32_type;
+            }
+          else if (name == "Xadd64")
+            {
+              code = Runtime::ATOMIC_ADD_FETCH_8;
+              res_type = uint64_type;
+            }
+          else if (name == "Xaddint32")
+            {
+              code = Runtime::ATOMIC_ADD_FETCH_4;
+              res_type = int32_type;
+            }
+          else if (name == "Xaddint64")
+            {
+              code = Runtime::ATOMIC_ADD_FETCH_8;
+              res_type = int64_type;
+            }
+          else if (name == "Xadduintptr")
+            {
+              code = (ptr_size == 8
+                      ? Runtime::ATOMIC_ADD_FETCH_8
+                      : Runtime::ATOMIC_ADD_FETCH_4);
+              res_type = uintptr_type;
+            }
+          else
+            go_unreachable();
+          Expression* a1 = this->args_->at(0);
+          Expression* a2 = this->args_->at(1);
+          Expression* a3 = Expression::make_integer_ul(memorder, int32_type, loc);
+          Expression* call = Runtime::make_call(gogo, code, loc, 3, a1, a2, a3);
+          return Expression::make_cast(res_type, call, loc);
+        }
+
+      if ((name == "And8" || name == "Or8")
+          && this->args_ != NULL && this->args_->size() == 2)
+        {
+          Runtime::Function code;
+          if (name == "And8")
+            code = Runtime::ATOMIC_AND_FETCH_1;
+          else if (name == "Or8")
+            code = Runtime::ATOMIC_OR_FETCH_1;
+          else
+            go_unreachable();
+          Expression* a1 = this->args_->at(0);
+          Expression* a2 = this->args_->at(1);
+          Expression* a3 = Expression::make_integer_ul(memorder, int32_type, loc);
+          return Runtime::make_call(gogo, code, loc, 3, a1, a2, a3);
+        }
+    }
+  else if (package == "internal/abi"
+	   || package == "bootstrap/internal/abi") // for bootstrapping gc
+    {
+      if (is_method)
+	return NULL;
+
+      if ((name == "FuncPCABI0" || name == "FuncPCABIInternal")
+	  && this->args_ != NULL
+	  && this->args_->size() == 1)
+	{
+	  // We expect to see a conversion from the expression to "any".
+	  Expression* expr = this->args_->front();
+	  Type_conversion_expression* tce = expr->conversion_expression();
+	  if (tce != NULL)
+	    expr = tce->expr();
+	  Func_expression* fe = expr->func_expression();
+	  Interface_field_reference_expression* interface_method =
+	    expr->interface_field_reference_expression();
+	  if (fe != NULL)
+	    {
+	      Named_object* no = fe->named_object();
+	      Expression* ref = Expression::make_func_code_reference(no, loc);
+	      Type* uintptr_type = Type::lookup_integer_type("uintptr");
+	      return Expression::make_cast(uintptr_type, ref, loc);
+	    }
+	  else if (interface_method != NULL)
+	    return interface_method->get_function();
+	  else
+	    {
+	      expr = this->args_->front();
+	      go_assert(expr->type()->interface_type() != NULL
+			&& expr->type()->interface_type()->is_empty());
+	      expr = Expression::make_interface_info(expr,
+						     INTERFACE_INFO_OBJECT,
+						     loc);
+	      // Trust that this is a function type, which means that
+	      // it is a direct iface type and we can use EXPR
+	      // directly.  The backend representation of this
+	      // function is a pointer to a struct whose first field
+	      // is the actual function to call.
+	      Type* pvoid = Type::make_pointer_type(Type::make_void_type());
+	      Type* pfntype = Type::make_pointer_type(pvoid);
+	      Expression* ref = make_unsafe_cast(pfntype, expr, loc);
+	      return Expression::make_dereference(ref, NIL_CHECK_NOT_NEEDED,
+						  loc);
+	    }
+	}
+    }
+
+  return NULL;
+}
+
+// Make implicit type conversions explicit.
+
+void
+Call_expression::do_add_conversions()
+{
+  // Skip call that requires a thunk. We generate conversions inside the thunk.
+  if (this->is_concurrent_ || this->is_deferred_)
+    return;
+
+  if (this->args_ == NULL || this->args_->empty())
+    return;
+
+  Function_type* fntype = this->get_function_type();
+  if (fntype == NULL)
+    {
+      go_assert(saw_errors());
+      return;
+    }
+  if (fntype->parameters() == NULL || fntype->parameters()->empty())
+    return;
+
+  Location loc = this->location();
+  Expression_list::iterator pa = this->args_->begin();
+  Typed_identifier_list::const_iterator pp = fntype->parameters()->begin();
+  bool is_interface_method =
+    this->fn_->interface_field_reference_expression() != NULL;
+  size_t argcount = this->args_->size();
+  if (!is_interface_method && fntype->is_method())
+    {
+      // Skip the receiver argument, which cannot be interface.
+      pa++;
+      argcount--;
+    }
+  if (argcount != fntype->parameters()->size())
+    {
+      go_assert(saw_errors());
+      return;
+    }
+  for (; pa != this->args_->end(); ++pa, ++pp)
+    {
+      Type* pt = pp->type();
+      if (!Type::are_identical(pt, (*pa)->type(), 0, NULL)
+          && pt->interface_type() != NULL)
+        *pa = Expression::make_cast(pt, *pa, loc);
+    }
 }
 
 // Get the function type.  This can return NULL in error cases.
@@ -10198,6 +13652,7 @@ void
 Call_expression::set_expected_result_count(size_t count)
 {
   go_assert(this->expected_result_count_ == 0);
+  go_assert(!this->types_are_determined_);
   this->expected_result_count_ = count;
 }
 
@@ -10272,77 +13727,178 @@ Call_expression::is_erroneous_call()
 Type*
 Call_expression::do_type()
 {
-  if (this->type_ != NULL)
-    return this->type_;
-
-  Type* ret;
-  Function_type* fntype = this->get_function_type();
-  if (fntype == NULL)
+  if (this->is_error_expression())
     return Type::make_error_type();
-
-  const Typed_identifier_list* results = fntype->results();
-  if (results == NULL)
-    ret = Type::make_void_type();
-  else if (results->size() == 1)
-    ret = results->begin()->type();
-  else
-    ret = Type::make_call_multiple_result_type(this);
-
-  this->type_ = ret;
-
+  if (this->lowered_ != NULL)
+    return this->lowered_->type();
+  go_assert(this->type_ != NULL);
   return this->type_;
 }
 
 // Determine types for a call expression.  We can use the function
-// parameter types to set the types of the arguments.
+// parameter types to set the types of the arguments.  We simplify
+// some of the call cases here, storing the result in the lowered_
+// field.
 
 void
-Call_expression::do_determine_type(const Type_context*)
+Call_expression::do_determine_type(Gogo* gogo, const Type_context* context)
 {
   if (!this->determining_types())
     return;
 
-  this->fn_->determine_type_no_context();
-  Function_type* fntype = this->get_function_type();
-  const Typed_identifier_list* parameters = NULL;
-  if (fntype != NULL)
-    parameters = fntype->parameters();
-  if (this->args_ != NULL)
+  if (this->lowered_== NULL)
     {
-      Typed_identifier_list::const_iterator pt;
-      if (parameters != NULL)
-	pt = parameters->begin();
-      bool first = true;
-      for (Expression_list::const_iterator pa = this->args_->begin();
-	   pa != this->args_->end();
-	   ++pa)
-	{
-	  if (first)
-	    {
-	      first = false;
-	      // If this is a method, the first argument is the
-	      // receiver.
-	      if (fntype != NULL && fntype->is_method())
-		{
-		  Type* rtype = fntype->receiver()->type();
-		  // The receiver is always passed as a pointer.
-		  if (rtype->points_to() == NULL)
-		    rtype = Type::make_pointer_type(rtype);
-		  Type_context subcontext(rtype, false);
-		  (*pa)->determine_type(&subcontext);
-		  continue;
-		}
-	    }
+      Expression* builtin = this->lower_builtin(gogo);
+      if (builtin != this)
+	this->lowered_ = builtin;
+    }
 
-	  if (parameters != NULL && pt != parameters->end())
-	    {
-	      Type_context subcontext(pt->type(), false);
-	      (*pa)->determine_type(&subcontext);
-	      ++pt;
-	    }
-	  else
-	    (*pa)->determine_type_no_context();
+  if (this->lowered_ != NULL)
+    {
+      this->lowered_->determine_type(gogo, context);
+      return;
+    }
+
+  this->fn_->determine_type_no_context(gogo);
+
+  // Simplify a type conversion.
+
+  if (this->fn_->is_type_expression()
+      && this->args_ != NULL
+      && this->args_->size() == 1
+      && (this->expected_result_count_ == 0
+	  || this->expected_result_count_ == 1))
+    {
+      this->lowered_ = Expression::make_cast(this->fn_->type(),
+					     this->args_->front(),
+					     this->location());
+      this->lowered_->determine_type(gogo, context);
+      return;
+    }
+
+  // Get the type of the function we are calling.
+
+  Function_type* fntype = this->get_function_type();
+  if (fntype == NULL)
+    {
+      // We report the error here so that we can reasonably return an
+      // error type in do_type.
+      if (!this->fn_->type()->is_error())
+	this->report_error(_("expected function"));
+      else
+	this->set_is_error();
+      if (this->args_ != NULL)
+	{
+	  for (Expression_list::iterator p = this->args_->begin();
+	       p != this->args_->end();
+	       ++p)
+	    (*p)->determine_type_no_context(gogo);
 	}
+      return;
+    }
+
+  // Simplify f(g()) where g() returns multiple results.
+
+  this->simplify_multiple_results(gogo);
+
+  // Set the type of this expression.
+
+  go_assert(this->type_ == NULL);
+  const Typed_identifier_list* results = fntype->results();
+  if (results == NULL || results->empty())
+    this->type_ = Type::make_void_type();
+  else if (results->size() == 1)
+    {
+      // If this is a call to a generated equality function, we
+      // determine the type based on the context.  See the comment in
+      // Binary_expression::lower_array_comparison.
+      if (this->is_equal_function_
+	  && !context->may_be_abstract
+	  && context->type != NULL
+	  && context->type->is_boolean_type())
+	this->type_ = context->type;
+      else
+	this->type_ = results->begin()->type();
+    }
+  else
+    this->type_ = Type::make_call_multiple_result_type();
+
+  // Determine the types of the arguments.
+
+  if (this->args_ == NULL)
+    {
+      if (fntype->is_varargs())
+	{
+	  if (!this->rewrite_varargs())
+	    this->set_is_error();
+	}
+      return;
+    }
+
+  const Typed_identifier_list* parameters = fntype->parameters();
+  Typed_identifier_list::const_iterator pt;
+  if (parameters != NULL)
+    pt = parameters->begin();
+  bool first = true;
+  for (Expression_list::const_iterator pa = this->args_->begin();
+       pa != this->args_->end();
+       ++pa)
+    {
+      if (first)
+	{
+	  first = false;
+	  // If this is a method, the first argument is the
+	  // receiver.
+	  if (fntype != NULL && fntype->is_method())
+	    {
+	      Type* rtype = fntype->receiver()->type();
+	      // The receiver is always passed as a pointer.
+	      if (rtype->points_to() == NULL)
+		rtype = Type::make_pointer_type(rtype);
+	      Type_context subcontext(rtype, false);
+	      (*pa)->determine_type(gogo, &subcontext);
+	      continue;
+	    }
+	}
+
+      if ((this->is_varargs_ || this->varargs_are_lowered_)
+	  && fntype->is_varargs()
+	  && pa + 1 == this->args_->end()
+	  && parameters != NULL
+	  && pt + 1 == parameters->end())
+	{
+	  Type_context subcontext(pt->type(), false);
+	  (*pa)->determine_type(gogo, &subcontext);
+	  continue;
+	}
+
+      if (!this->is_varargs_
+	  && fntype->is_varargs()
+	  && parameters != NULL
+	  && pt + 1 == parameters->end())
+	{
+	  go_assert(pt->type()->is_slice_type());
+	  Type_context subcontext(pt->type()->array_type()->element_type(),
+				  false);
+	  (*pa)->determine_type(gogo, &subcontext);
+	  continue;
+	}
+
+      if (parameters != NULL && pt != parameters->end())
+	{
+	  Type_context subcontext(pt->type(), false);
+	  (*pa)->determine_type(gogo, &subcontext);
+	  if (!fntype->is_varargs() || pt + 1 != parameters->end())
+	    ++pt;
+	}
+      else
+	(*pa)->determine_type_no_context(gogo);
+    }
+
+  if (fntype->is_varargs())
+    {
+      if (!this->rewrite_varargs())
+	this->set_is_error();
     }
 }
 
@@ -10361,26 +13917,164 @@ Call_expression::determining_types()
     }
 }
 
+// Simplify f(g()) where g() returns multiple results.  Called by
+// do_determine_types of both Call_expression and
+// Builtin_call_expression.
+
+void
+Call_expression::simplify_multiple_results(Gogo* gogo)
+{
+  if (this->args_ == NULL || this->args_->size() != 1)
+    return;
+
+  Call_expression* call = this->args_->front()->call_expression();
+  if (call == NULL || call->is_builtin())
+    return;
+
+  call->determine_type_no_context(gogo);
+  size_t rc = call->result_count();
+  Function_type* fntype = this->get_function_type();
+  if (rc > 1
+      && ((fntype->parameters() != NULL
+	   && (fntype->parameters()->size() == rc
+	       || (fntype->is_varargs()
+		   && fntype->parameters()->size() - 1 <= rc)))
+	  || fntype->is_builtin()))
+    {
+      if (this->is_varargs_)
+	{
+	  go_error_at(call->location(),
+		      "multiple-value argument in single-value context");
+	  this->set_is_error();
+	}
+
+      call->set_is_multi_value_arg();
+      Expression_list* args = new Expression_list;
+      for (size_t i = 0; i < rc; ++i)
+	args->push_back(Expression::make_call_result(call, i));
+      // We can't create a new Call_expression here because this
+      // one may be referred to by Call_result expressions.
+      this->args_ = args;
+    }
+}
+
+// Lower a call to a varargs function by rewriting the value(s) passed
+// to the varargs argument into a slice.  Called during the
+// determine_types pass.
+
+bool
+Call_expression::rewrite_varargs()
+{
+  if (this->varargs_are_lowered_)
+    return true;
+  this->varargs_are_lowered_ = true;
+
+  Function_type* fntype = this->get_function_type();
+
+  const Typed_identifier_list* parameters = fntype->parameters();
+  go_assert(parameters != NULL && !parameters->empty());
+  size_t param_count = parameters->size();
+
+  Type* varargs_type = parameters->back().type();
+  go_assert(varargs_type->is_slice_type());
+
+  size_t arg_count = this->args_ == NULL ? 0 : this->args_->size();
+  if (arg_count < param_count - 1)
+    {
+      if (!this->is_error_expression())
+	this->report_error(_("not enough arguments"));
+      return false;
+    }
+
+  bool ret = true;
+  Expression_list* old_args = this->args_;
+  Expression_list* new_args = new Expression_list();
+  bool push_empty_arg = false;
+  if (old_args == NULL || old_args->empty())
+    {
+      go_assert(param_count == 1);
+      push_empty_arg = true;
+    }
+  else
+    {
+      Expression_list::const_iterator pa;
+      size_t i = 1;
+      for (pa = old_args->begin(); pa != old_args->end(); ++pa, ++i)
+	{
+	  if (i == param_count)
+	    break;
+	  new_args->push_back(*pa);
+	}
+
+      // We have reached the varargs parameter.
+
+      if (pa == old_args->end())
+	push_empty_arg = true;
+      else if (pa + 1 == old_args->end() && this->is_varargs_)
+	new_args->push_back(*pa);
+      else if (this->is_varargs_)
+	{
+	  if (!this->is_error_expression())
+	    {
+	      if ((*pa)->type()->is_slice_type())
+		this->report_error(_("too many arguments"));
+	      else
+		{
+		  go_error_at(this->location(),
+			      "invalid use of %<...%> with non-slice");
+		  this->set_is_error();
+		}
+	    }
+	  return false;
+	}
+      else
+	{
+	  Type* element_type = varargs_type->array_type()->element_type();
+	  Expression_list* vals = new Expression_list;
+	  for (; pa != old_args->end(); ++pa, ++i)
+	    {
+	      Type* patype = (*pa)->type();
+	      Location paloc = (*pa)->location();
+	      if (!this->check_argument_type(i, element_type, patype, paloc))
+		{
+		  ret = false;
+		  continue;
+		}
+	      vals->push_back(*pa);
+	    }
+	  Expression* val =
+	    Expression::make_slice_composite_literal(varargs_type, vals,
+						     this->location());
+	  new_args->push_back(val);
+	}
+    }
+
+  if (push_empty_arg)
+    new_args->push_back(Expression::make_nil(this->location()));
+
+  // We can't create a new Call_expression here because this
+  // one may be referred to by Call_result expressions.
+  this->args_ = new_args;
+
+  return ret;
+}
+
 // Check types for parameter I.
 
 bool
 Call_expression::check_argument_type(int i, const Type* parameter_type,
 				     const Type* argument_type,
-				     Location argument_location,
-				     bool issued_error)
+				     Location argument_location)
 {
   std::string reason;
   if (!Type::are_assignable(parameter_type, argument_type, &reason))
     {
-      if (!issued_error)
-	{
-	  if (reason.empty())
-	    go_error_at(argument_location, "argument %d has incompatible type", i);
-	  else
-	    go_error_at(argument_location,
-			"argument %d has incompatible type (%s)",
-			i, reason.c_str());
-	}
+      if (reason.empty())
+	go_error_at(argument_location, "argument %d has incompatible type", i);
+      else
+	go_error_at(argument_location,
+		    "argument %d has incompatible type (%s)",
+		    i, reason.c_str());
       this->set_is_error();
       return false;
     }
@@ -10392,22 +14086,29 @@ Call_expression::check_argument_type(int i, const Type* parameter_type,
 void
 Call_expression::do_check_types(Gogo*)
 {
-  if (this->classification() == EXPRESSION_ERROR)
+  if (this->is_error_expression()
+      || this->fn_->is_error_expression()
+      || this->fn_->type()->is_error())
+    return;
+  if (this->lowered_ != NULL)
     return;
 
   Function_type* fntype = this->get_function_type();
-  if (fntype == NULL)
-    {
-      if (!this->fn_->type()->is_error())
-	this->report_error(_("expected function"));
-      return;
-    }
+  go_assert(fntype != NULL);
 
   if (this->expected_result_count_ != 0
       && this->expected_result_count_ != this->result_count())
     {
       if (this->issue_error())
 	this->report_error(_("function result count mismatch"));
+      this->set_is_error();
+      return;
+    }
+
+  if (this->is_varargs_ && !fntype->is_varargs())
+    {
+      go_error_at(this->location(),
+		  "invalid use of %<...%> calling non-variadic function");
       this->set_is_error();
       return;
     }
@@ -10436,21 +14137,8 @@ Call_expression::do_check_types(Gogo*)
 	}
     }
 
-  // Note that varargs was handled by the lower_varargs() method, so
-  // we don't have to worry about it here unless something is wrong.
-  if (this->is_varargs_ && !this->varargs_are_lowered_)
-    {
-      if (!fntype->is_varargs())
-	{
-	  go_error_at(this->location(),
-                      _("invalid use of %<...%> calling non-variadic function"));
-	  this->set_is_error();
-	  return;
-	}
-    }
-
   const Typed_identifier_list* parameters = fntype->parameters();
-  if (this->args_ == NULL || this->args_->size() == 0)
+  if (this->args_ == NULL || this->args_->empty())
     {
       if (parameters != NULL && !parameters->empty())
 	this->report_error(_("not enough arguments"));
@@ -10466,8 +14154,8 @@ Call_expression::do_check_types(Gogo*)
     {
       // This is F(G()) when G returns more than one result.  If the
       // results can be matched to parameters, it would have been
-      // lowered in do_lower.  If we get here we know there is a
-      // mismatch.
+      // rewritten in determine_types.  If we get here we know there
+      // is a mismatch.
       if (this->args_->front()->call_expression()->result_count()
 	  < parameters->size())
 	this->report_error(_("not enough arguments"));
@@ -10490,7 +14178,7 @@ Call_expression::do_check_types(Gogo*)
 	      return;
 	    }
 	  this->check_argument_type(i + 1, pt->type(), (*pa)->type(),
-				    (*pa)->location(), false);
+				    (*pa)->location());
 	}
       if (pa != this->args_->end())
 	this->report_error(_("too many arguments"));
@@ -10588,6 +14276,16 @@ Call_expression::do_get_backend(Translate_context* context)
   else
     has_closure_arg = true;
 
+  Expression* first_arg = NULL;
+  if (!is_interface_method && fntype->is_method())
+    {
+      first_arg = this->args_->front();
+      if (first_arg->type()->points_to() == NULL
+          && first_arg->type()->is_direct_iface_type())
+        first_arg = Expression::unpack_direct_iface(first_arg,
+                                                    first_arg->location());
+    }
+
   int nargs;
   std::vector<Bexpression*> fn_args;
   if (this->args_ == NULL || this->args_->empty())
@@ -10604,7 +14302,7 @@ Call_expression::do_get_backend(Translate_context* context)
 		&& this->args_->size() == 1);
       nargs = 1;
       fn_args.resize(1);
-      fn_args[0] = this->args_->front()->get_backend(context);
+      fn_args[0] = first_arg->get_backend(context);
     }
   else
     {
@@ -10619,7 +14317,7 @@ Call_expression::do_get_backend(Translate_context* context)
       Expression_list::const_iterator pe = this->args_->begin();
       if (!is_interface_method && fntype->is_method())
 	{
-          fn_args[i] = (*pe)->get_backend(context);
+          fn_args[i] = first_arg->get_backend(context);
 	  ++pe;
 	  ++i;
 	}
@@ -10658,10 +14356,10 @@ Call_expression::do_get_backend(Translate_context* context)
     }
   else
     {
-      Expression* first_arg;
-      fn = this->interface_method_function(interface_method, &first_arg,
+      Expression* arg0;
+      fn = this->interface_method_function(interface_method, &arg0,
                                            location);
-      fn_args[0] = first_arg->get_backend(context);
+      fn_args[0] = arg0->get_backend(context);
     }
 
   Bexpression* bclosure = NULL;
@@ -10713,7 +14411,60 @@ Call_expression::do_get_backend(Translate_context* context)
   return this->call_;
 }
 
-// Dump ast representation for a call expressin.
+// The cost of inlining a call expression.
+
+int
+Call_expression::do_inlining_cost() const
+{
+  Func_expression* fn = this->fn_->func_expression();
+
+  // FIXME: We don't yet support all kinds of calls.
+  if (fn != NULL && fn->closure() != NULL)
+    return 0x100000;
+  if (this->fn_->interface_field_reference_expression())
+    return 0x100000;
+  if (this->get_function_type()->is_method())
+    return 0x100000;
+
+  return 5;
+}
+
+// Export a call expression.
+
+void
+Call_expression::do_export(Export_function_body* efb) const
+{
+  bool simple_call = (this->fn_->func_expression() != NULL);
+  if (!simple_call)
+    efb->write_c_string("(");
+  this->fn_->export_expression(efb);
+  if (!simple_call)
+    efb->write_c_string(")");
+  this->export_arguments(efb);
+}
+
+// Export call expression arguments.
+
+void
+Call_expression::export_arguments(Export_function_body* efb) const
+{
+  efb->write_c_string("(");
+  if (this->args_ != NULL && !this->args_->empty())
+    {
+      Expression_list::const_iterator pa = this->args_->begin();
+      (*pa)->export_expression(efb);
+      for (pa++; pa != this->args_->end(); pa++)
+	{
+	  efb->write_c_string(", ");
+	  (*pa)->export_expression(efb);
+	}
+      if (this->is_varargs_)
+	efb->write_c_string("...");
+    }
+  efb->write_c_string(")");
+}
+
+// Dump ast representation for a call expression.
 
 void
 Call_expression::do_dump_expression(Ast_dump_context* ast_dump_context) const
@@ -10815,9 +14566,9 @@ Call_result_expression::do_check_types(Gogo*)
 // needs to pass down to the caller.
 
 void
-Call_result_expression::do_determine_type(const Type_context*)
+Call_result_expression::do_determine_type(Gogo* gogo, const Type_context*)
 {
-  this->call_->determine_type_no_context();
+  this->call_->determine_type_no_context(gogo);
 }
 
 // Return the backend representation.  We just refer to the temporary set by the
@@ -10868,6 +14619,19 @@ Expression::make_call_result(Call_expression* call, unsigned int index)
 
 // Class Index_expression.
 
+// Report whether EXPR is a map index expression.  This is called when
+// types are determined but before lowering.
+
+bool
+Index_expression::is_map_index(Expression* expr)
+{
+  if (expr->map_index_expression() != NULL)
+    return true;
+  if (expr->index_expression() != NULL)
+    return expr->index_expression()->left_->type()->map_type() != NULL;
+  return false;
+}
+
 // Traversal.
 
 int
@@ -10883,12 +14647,206 @@ Index_expression::do_traverse(Traverse* traverse)
   return TRAVERSE_CONTINUE;
 }
 
+void
+Index_expression::do_determine_type(Gogo* gogo, const Type_context*)
+{
+  this->left_->determine_type_no_context(gogo);
+
+  Type_context end_context;
+  Type* type = this->left_->type();
+  if (type->array_type() != NULL
+      || (type->points_to() != NULL
+	  && type->points_to()->array_type() != NULL
+	  && !type->points_to()->is_slice_type())
+      || type->is_string_type())
+    {
+      Type_context index_context(Type::lookup_integer_type("int"), false);
+      this->start_->determine_type(gogo, &index_context);
+      end_context = index_context;
+    }
+  else if (type->map_type() != NULL)
+    {
+      Type_context key_context(type->map_type()->key_type(), false);
+      this->start_->determine_type(gogo, &key_context);
+    }
+  else if (type->is_error())
+    this->set_is_error();
+  else
+    {
+      if (this->cap_ != NULL)
+	this->report_error(_("invalid 3-index slice of object "
+			     "that is not a slice"));
+      else if (this->end_ != NULL)
+	this->report_error(_("attempt to slice object that is not "
+			     "array, slice, or string"));
+      else
+	this->report_error(_("attempt to index object that is not "
+			     "array, slice, string, or map"));
+
+      this->start_->determine_type_no_context(gogo);
+    }
+
+  if (this->end_ != NULL)
+    this->end_->determine_type(gogo, &end_context);
+  if (this->cap_ != NULL)
+    this->cap_->determine_type(gogo, &end_context);
+}
+
+Type*
+Index_expression::do_type()
+{
+  if (this->is_error_expression())
+    return Type::make_error_type();
+
+  Type* type = this->left_->type();
+  if (this->end_ != NULL)
+    {
+      // A slice of an array is a slice type.  A slice of a slice or
+      // string type is that same type.
+      Array_type* at = type->deref()->array_type();
+      if (at != NULL && !at->is_slice_type())
+	return Type::make_array_type(at->element_type(), NULL);
+      return type;
+    }
+  if (type->deref()->array_type() != NULL)
+    return type->deref()->array_type()->element_type();
+  else if (type->is_string_type())
+    return Type::lookup_integer_type("byte");
+  else if (type->map_type() != NULL)
+    return type->map_type()->val_type();
+  else
+    return Type::make_error_type();
+}
+
+void
+Index_expression::do_check_types(Gogo*)
+{
+  if (this->is_error_expression())
+    return;
+
+  Type* ltype = this->left_->type();
+  if (ltype->is_error())
+    {
+      go_assert(saw_errors());
+      return;
+    }
+
+  if (this->left_->is_type_expression())
+    {
+      this->report_error(_("attempt to index type expression"));
+      return;
+    }
+
+  if (ltype->array_type() != NULL)
+    {
+      if (!Array_index_expression::check_indexes(this->left_, this->start_,
+						 this->end_, this->cap_,
+						 this->location()))
+	this->set_is_error();
+    }
+  else if (ltype->points_to() != NULL
+	   && ltype->points_to()->array_type() != NULL
+	   && !ltype->points_to()->is_slice_type())
+    {
+      Expression* deref = Expression::make_dereference(this->left_,
+						       NIL_CHECK_DEFAULT,
+						       this->location());
+      if (!Array_index_expression::check_indexes(deref, this->start_,
+						 this->end_, this->cap_,
+						 this->location()))
+	this->set_is_error();
+      delete deref;
+    }
+  else if (ltype->is_string_type())
+    {
+      if (this->cap_ != NULL)
+	this->report_error(_("invalid 3-index slice of string"));
+      else
+	{
+	  if (!String_index_expression::check_indexes(this->left_,
+						      this->start_,
+						      this->end_,
+						      this->location()))
+	    this->set_is_error();
+	}
+    }
+  else if (ltype->map_type() != NULL)
+    {
+      if (this->end_ != NULL || this->cap_ != NULL)
+	this->report_error(_("invalid slice of map"));
+      else
+	{
+	  Map_type* mt = ltype->map_type();
+	  std::string reason;
+	  if (!Type::are_assignable(mt->key_type(), this->start_->type(),
+				    &reason))
+	    {
+	      if (reason.empty())
+		this->report_error(_("incompatible type for map index"));
+	      else
+		{
+		  go_error_at(this->location(),
+			      "incompatible type for map index (%s)",
+			      reason.c_str());
+		  this->set_is_error();
+		}
+	    }
+	}
+    }
+  else
+    go_unreachable();
+}
+
+bool
+Index_expression::do_is_addressable() const
+{
+  if (this->is_error_expression())
+    return true;
+
+  Type* type = this->left_->type();
+  if (type->is_error())
+    return true;
+
+  // A slice index is addressable, and an index of an addressable
+  // array is addressable.
+
+  bool is_pointer = false;
+  if (type->points_to() != NULL
+      && type->points_to()->array_type() != NULL
+      && !type->points_to()->is_slice_type())
+    {
+      type = type->points_to();
+      is_pointer = true;
+    }
+
+  if (type->array_type() == NULL)
+    return false;
+
+  if (this->end_ != NULL)
+    return false;
+  if (type->is_slice_type())
+    return true;
+  return is_pointer || this->left_->is_addressable();
+}
+
+// We need to do a nil check of any pointer dereference.
+
+void
+Index_expression::do_issue_nil_check()
+{
+  this->left_->issue_nil_check();
+  this->needs_nil_check_ = true;
+}
+
 // Lower an index expression.  This converts the generic index
 // expression into an array index, a string index, or a map index.
 
 Expression*
-Index_expression::do_lower(Gogo*, Named_object*, Statement_inserter*, int)
+Index_expression::do_lower(Gogo*, Named_object*, Statement_inserter*)
 {
+  if (this->is_error_expression())
+    return Expression::make_error(this->location());
+
   Location location = this->location();
   Expression* left = this->left_;
   Expression* start = this->start_;
@@ -10899,11 +14857,6 @@ Index_expression::do_lower(Gogo*, Named_object*, Statement_inserter*, int)
   if (type->is_error())
     {
       go_assert(saw_errors());
-      return Expression::make_error(location);
-    }
-  else if (left->is_type_expression())
-    {
-      go_error_at(location, "attempt to index type expression");
       return Expression::make_error(location);
     }
   else if (type->array_type() != NULL)
@@ -10918,50 +14871,25 @@ Index_expression::do_lower(Gogo*, Named_object*, Statement_inserter*, int)
       // For an ordinary index into the array, the pointer will be
       // dereferenced.  For a slice it will not--the resulting slice
       // will simply reuse the pointer, which is incorrect if that
-      // pointer is nil.
-      if (end != NULL || cap != NULL)
+      // pointer is nil.  We may also be in a context that requires a
+      // nil check.
+      if (end != NULL || cap != NULL || this->needs_nil_check_)
 	deref->issue_nil_check();
 
       return Expression::make_array_index(deref, start, end, cap, location);
     }
   else if (type->is_string_type())
     {
-      if (cap != NULL)
-        {
-          go_error_at(location, "invalid 3-index slice of string");
-          return Expression::make_error(location);
-        }
+      go_assert(cap == NULL);
       return Expression::make_string_index(left, start, end, location);
     }
   else if (type->map_type() != NULL)
     {
-      if (end != NULL || cap != NULL)
-	{
-	  go_error_at(location, "invalid slice of map");
-	  return Expression::make_error(location);
-	}
+      go_assert(end == NULL && cap == NULL);
       return Expression::make_map_index(left, start, location);
     }
-  else if (cap != NULL)
-    {
-      go_error_at(location,
-		  "invalid 3-index slice of object that is not a slice");
-      return Expression::make_error(location);
-    }
-  else if (end != NULL)
-    {
-      go_error_at(location,
-		  ("attempt to slice object that is not "
-		   "array, slice, or string"));
-      return Expression::make_error(location);
-    }
   else
-    {
-      go_error_at(location,
-                  ("attempt to index object that is not "
-		   "array, slice, string, or map"));
-      return Expression::make_error(location);
-    }
+    go_unreachable();
 }
 
 // Write an indexed expression
@@ -11063,29 +14991,16 @@ Array_index_expression::do_type()
 // Set the type of an array index.
 
 void
-Array_index_expression::do_determine_type(const Type_context*)
+Array_index_expression::do_determine_type(Gogo* gogo, const Type_context*)
 {
-  this->array_->determine_type_no_context();
+  this->array_->determine_type_no_context(gogo);
 
   Type_context index_context(Type::lookup_integer_type("int"), false);
-  if (this->start_->is_constant())
-    this->start_->determine_type(&index_context);
-  else
-    this->start_->determine_type_no_context();
+  this->start_->determine_type(gogo, &index_context);
   if (this->end_ != NULL)
-    {
-      if (this->end_->is_constant())
-        this->end_->determine_type(&index_context);
-      else
-        this->end_->determine_type_no_context();
-    }
+    this->end_->determine_type(gogo, &index_context);
   if (this->cap_ != NULL)
-    {
-      if (this->cap_->is_constant())
-        this->cap_->determine_type(&index_context);
-      else
-        this->cap_->determine_type_no_context();
-    }
+    this->cap_->determine_type(gogo, &index_context);
 }
 
 // Check types of an array index.
@@ -11093,35 +15008,66 @@ Array_index_expression::do_determine_type(const Type_context*)
 void
 Array_index_expression::do_check_types(Gogo*)
 {
+  if (!Array_index_expression::check_indexes(this->array_, this->start_,
+					     this->end_, this->cap_,
+					     this->location()))
+    this->set_is_error();
+}
+
+// A static function to check array index types.  This is also called
+// by Index_expression::do_check_types.  It reports whether type
+// checking succeeded.
+
+bool
+Array_index_expression::check_indexes(Expression* array, Expression* start,
+				      Expression* end, Expression* cap,
+				      Location loc)
+{
+  bool ret = true;
+
   Numeric_constant nc;
   unsigned long v;
-  if (this->start_->type()->integer_type() == NULL
-      && !this->start_->type()->is_error()
-      && (!this->start_->numeric_constant_value(&nc)
+  if (start->type()->integer_type() == NULL
+      && !start->type()->is_error()
+      && (!start->type()->is_abstract()
+	  || !start->numeric_constant_value(&nc)
 	  || nc.to_unsigned_long(&v) == Numeric_constant::NC_UL_NOTINT))
-    this->report_error(_("index must be integer"));
-  if (this->end_ != NULL
-      && this->end_->type()->integer_type() == NULL
-      && !this->end_->type()->is_error()
-      && !this->end_->is_nil_expression()
-      && !this->end_->is_error_expression()
-      && (!this->end_->numeric_constant_value(&nc)
-	  || nc.to_unsigned_long(&v) == Numeric_constant::NC_UL_NOTINT))
-    this->report_error(_("slice end must be integer"));
-  if (this->cap_ != NULL
-      && this->cap_->type()->integer_type() == NULL
-      && !this->cap_->type()->is_error()
-      && !this->cap_->is_nil_expression()
-      && !this->cap_->is_error_expression()
-      && (!this->cap_->numeric_constant_value(&nc)
-	  || nc.to_unsigned_long(&v) == Numeric_constant::NC_UL_NOTINT))
-    this->report_error(_("slice capacity must be integer"));
+    {
+      go_error_at(loc, "index must be integer");
+      ret = false;
+    }
 
-  Array_type* array_type = this->array_->type()->array_type();
+  if (end != NULL
+      && end->type()->integer_type() == NULL
+      && !end->type()->is_error()
+      && !end->is_nil_expression()
+      && !end->is_error_expression()
+      && (!end->type()->is_abstract()
+	  || !end->numeric_constant_value(&nc)
+	  || nc.to_unsigned_long(&v) == Numeric_constant::NC_UL_NOTINT))
+    {
+      go_error_at(loc, "slice end must be integer");
+      ret = false;
+    }
+
+  if (cap != NULL
+      && cap->type()->integer_type() == NULL
+      && !cap->type()->is_error()
+      && !cap->is_nil_expression()
+      && !cap->is_error_expression()
+      && (!cap->type()->is_abstract()
+	  || !cap->numeric_constant_value(&nc)
+	  || nc.to_unsigned_long(&v) == Numeric_constant::NC_UL_NOTINT))
+    {
+      go_error_at(loc, "slice capacity must be integer");
+      ret = false;
+    }
+
+  Array_type* array_type = array->type()->array_type();
   if (array_type == NULL)
     {
-      go_assert(this->array_->type()->is_error());
-      return;
+      go_assert(array->type()->is_error());
+      return false;
     }
 
   unsigned int int_bits =
@@ -11135,62 +15081,66 @@ Array_index_expression::do_check_types(Gogo*)
   Numeric_constant inc;
   mpz_t ival;
   bool ival_valid = false;
-  if (this->start_->numeric_constant_value(&inc) && inc.to_int(&ival))
+  if (start->numeric_constant_value(&inc) && inc.to_int(&ival))
     {
       ival_valid = true;
       if (mpz_sgn(ival) < 0
 	  || mpz_sizeinbase(ival, 2) >= int_bits
 	  || (lval_valid
-	      && (this->end_ == NULL
+	      && (end == NULL
 		  ? mpz_cmp(ival, lval) >= 0
 		  : mpz_cmp(ival, lval) > 0)))
 	{
-	  go_error_at(this->start_->location(), "array index out of bounds");
-	  this->set_is_error();
+	  go_error_at(start->location(), "array index out of bounds");
+	  ret = false;
 	}
     }
-  if (this->end_ != NULL && !this->end_->is_nil_expression())
+
+  if (end != NULL && !end->is_nil_expression())
     {
       Numeric_constant enc;
       mpz_t eval;
       bool eval_valid = false;
-      if (this->end_->numeric_constant_value(&enc) && enc.to_int(&eval))
+      if (end->numeric_constant_value(&enc) && enc.to_int(&eval))
 	{
 	  eval_valid = true;
 	  if (mpz_sgn(eval) < 0
 	      || mpz_sizeinbase(eval, 2) >= int_bits
 	      || (lval_valid && mpz_cmp(eval, lval) > 0))
 	    {
-	      go_error_at(this->end_->location(), "array index out of bounds");
-	      this->set_is_error();
+	      go_error_at(end->location(), "array index out of bounds");
+	      ret = false;
 	    }
 	  else if (ival_valid && mpz_cmp(ival, eval) > 0)
-	    this->report_error(_("inverted slice range"));
+	    {
+	      go_error_at(loc, "inverted slice range");
+	      ret = false;
+	    }
 	}
 
       Numeric_constant cnc;
       mpz_t cval;
-      if (this->cap_ != NULL
-          && this->cap_->numeric_constant_value(&cnc) && cnc.to_int(&cval))
+      if (cap != NULL
+          && cap->numeric_constant_value(&cnc) && cnc.to_int(&cval))
         {
           if (mpz_sgn(cval) < 0
               || mpz_sizeinbase(cval, 2) >= int_bits
               || (lval_valid && mpz_cmp(cval, lval) > 0))
             {
-              go_error_at(this->cap_->location(), "array index out of bounds");
-              this->set_is_error();
+              go_error_at(cap->location(), "array index out of bounds");
+	      ret = false;
             }
 	  else if (ival_valid && mpz_cmp(ival, cval) > 0)
 	    {
-	      go_error_at(this->cap_->location(),
+	      go_error_at(cap->location(),
                           "invalid slice index: capacity less than start");
-	      this->set_is_error();
+	      ret = false;
 	    }
           else if (eval_valid && mpz_cmp(eval, cval) > 0)
             {
-              go_error_at(this->cap_->location(),
+              go_error_at(cap->location(),
                           "invalid slice index: capacity less than length");
-              this->set_is_error();
+	      ret = false;
             }
           mpz_clear(cval);
         }
@@ -11205,15 +15155,22 @@ Array_index_expression::do_check_types(Gogo*)
 
   // A slice of an array requires an addressable array.  A slice of a
   // slice is always possible.
-  if (this->end_ != NULL && !array_type->is_slice_type())
+  if (end != NULL && !array_type->is_slice_type())
     {
-      if (!this->array_->is_addressable())
-	this->report_error(_("slice of unaddressable value"));
+      if (!array->is_addressable())
+	{
+	  go_error_at(loc, "slice of unaddressable value");
+	  ret = false;
+	}
       else
-        // Set the array address taken but not escape. The escape
-        // analysis will make it escape to heap when needed.
-        this->array_->address_taken(false);
+	{
+	  // Set the array address taken but not escape. The escape
+	  // analysis will make it escape to heap when needed.
+	  array->address_taken(false);
+	}
     }
+
+  return ret;
 }
 
 // The subexpressions of an array index must be evaluated in order.
@@ -11230,13 +15187,21 @@ Array_index_expression::do_must_eval_subexpressions_in_order(
   return true;
 }
 
-// Flatten array indexing by using temporary variables for slices and indexes.
+// Flatten array indexing: add temporary variables and bounds checks.
 
 Expression*
-Array_index_expression::do_flatten(Gogo*, Named_object*,
+Array_index_expression::do_flatten(Gogo* gogo, Named_object*,
                                    Statement_inserter* inserter)
 {
+  if (this->is_flattened_)
+    return this;
+  this->is_flattened_ = true;
+
   Location loc = this->location();
+
+  if (this->is_error_expression())
+    return Expression::make_error(loc);
+
   Expression* array = this->array_;
   Expression* start = this->start_;
   Expression* end = this->end_;
@@ -11254,33 +15219,157 @@ Array_index_expression::do_flatten(Gogo*, Named_object*,
       return Expression::make_error(loc);
     }
 
+  Array_type* array_type = this->array_->type()->array_type();
+  if (array_type == NULL)
+    {
+      go_assert(saw_errors());
+      return Expression::make_error(loc);
+    }
+
   Temporary_statement* temp;
-  if (array->type()->is_slice_type() && !array->is_variable())
+  if (array_type->is_slice_type() && !array->is_multi_eval_safe())
     {
       temp = Statement::make_temporary(NULL, array, loc);
       inserter->insert(temp);
       this->array_ = Expression::make_temporary_reference(temp, loc);
+      array = this->array_;
     }
-  if (!start->is_variable())
+  if (!start->is_multi_eval_safe())
     {
       temp = Statement::make_temporary(NULL, start, loc);
       inserter->insert(temp);
       this->start_ = Expression::make_temporary_reference(temp, loc);
+      start = this->start_;
     }
   if (end != NULL
       && !end->is_nil_expression()
-      && !end->is_variable())
+      && !end->is_multi_eval_safe())
     {
       temp = Statement::make_temporary(NULL, end, loc);
       inserter->insert(temp);
       this->end_ = Expression::make_temporary_reference(temp, loc);
+      end = this->end_;
     }
-  if (cap != NULL && !cap->is_variable())
+  if (cap != NULL && !cap->is_multi_eval_safe())
     {
       temp = Statement::make_temporary(NULL, cap, loc);
       inserter->insert(temp);
       this->cap_ = Expression::make_temporary_reference(temp, loc);
+      cap = this->cap_;
     }
+
+  if (!this->needs_bounds_check_)
+    return this;
+
+  Expression* len;
+  if (!array_type->is_slice_type())
+    {
+      len = array_type->get_length(gogo, this->array_);
+      go_assert(len->is_constant());
+    }
+  else
+    {
+      len = array_type->get_length(gogo, this->array_->copy());
+      temp = Statement::make_temporary(NULL, len, loc);
+      temp->determine_types(gogo);
+      inserter->insert(temp);
+      len = Expression::make_temporary_reference(temp, loc);
+    }
+
+  Expression* scap = NULL;
+  if (array_type->is_slice_type())
+    {
+      scap = array_type->get_capacity(gogo, this->array_->copy());
+      temp = Statement::make_temporary(NULL, scap, loc);
+      temp->determine_types(gogo);
+      inserter->insert(temp);
+      scap = Expression::make_temporary_reference(temp, loc);
+    }
+
+  // The order of bounds checks here matches the order used by the gc
+  // compiler, as tested by issue30116[u].go.
+
+  if (cap != NULL)
+    {
+      if (array_type->is_slice_type())
+	Expression::check_bounds(gogo, cap, OPERATOR_LE, scap,
+				 Runtime::PANIC_SLICE3_ACAP,
+				 Runtime::PANIC_SLICE3_ACAP_U,
+				 Runtime::PANIC_EXTEND_SLICE3_ACAP,
+				 Runtime::PANIC_EXTEND_SLICE3_ACAP_U,
+				 inserter, loc);
+      else
+	Expression::check_bounds(gogo, cap, OPERATOR_LE, len,
+				 Runtime::PANIC_SLICE3_ALEN,
+				 Runtime::PANIC_SLICE3_ALEN_U,
+				 Runtime::PANIC_EXTEND_SLICE3_ALEN,
+				 Runtime::PANIC_EXTEND_SLICE3_ALEN_U,
+				 inserter, loc);
+
+      Expression* start_bound = cap;
+      if (end != NULL && !end->is_nil_expression())
+	{
+	  Expression::check_bounds(gogo, end, OPERATOR_LE, cap,
+				   Runtime::PANIC_SLICE3_B,
+				   Runtime::PANIC_SLICE3_B_U,
+				   Runtime::PANIC_EXTEND_SLICE3_B,
+				   Runtime::PANIC_EXTEND_SLICE3_B_U,
+				   inserter, loc);
+	  start_bound = end;
+	}
+
+      Expression::check_bounds(gogo, start, OPERATOR_LE, start_bound,
+			       Runtime::PANIC_SLICE3_C,
+			       Runtime::PANIC_SLICE3_C_U,
+			       Runtime::PANIC_EXTEND_SLICE3_C,
+			       Runtime::PANIC_EXTEND_SLICE3_C_U,
+			       inserter, loc);
+    }
+  else if (end != NULL && !end->is_nil_expression())
+    {
+      if (array_type->is_slice_type())
+	Expression::check_bounds(gogo, end, OPERATOR_LE, scap,
+				 Runtime::PANIC_SLICE_ACAP,
+				 Runtime::PANIC_SLICE_ACAP_U,
+				 Runtime::PANIC_EXTEND_SLICE_ACAP,
+				 Runtime::PANIC_EXTEND_SLICE_ACAP_U,
+				 inserter, loc);
+      else
+	Expression::check_bounds(gogo, end, OPERATOR_LE, len,
+				 Runtime::PANIC_SLICE_ALEN,
+				 Runtime::PANIC_SLICE_ALEN_U,
+				 Runtime::PANIC_EXTEND_SLICE_ALEN,
+				 Runtime::PANIC_EXTEND_SLICE_ALEN_U,
+				 inserter, loc);
+
+      Expression::check_bounds(gogo, start, OPERATOR_LE, end,
+			       Runtime::PANIC_SLICE_B,
+			       Runtime::PANIC_SLICE_B_U,
+			       Runtime::PANIC_EXTEND_SLICE_B,
+			       Runtime::PANIC_EXTEND_SLICE_B_U,
+			       inserter, loc);
+    }
+  else if (end != NULL)
+    {
+      Expression* start_bound;
+      if (array_type->is_slice_type())
+	start_bound = scap;
+      else
+	start_bound = len;
+      Expression::check_bounds(gogo, start, OPERATOR_LE, start_bound,
+			       Runtime::PANIC_SLICE_B,
+			       Runtime::PANIC_SLICE_B_U,
+			       Runtime::PANIC_EXTEND_SLICE_B,
+			       Runtime::PANIC_EXTEND_SLICE_B_U,
+			       inserter, loc);
+    }
+  else
+    Expression::check_bounds(gogo, start, OPERATOR_LT, len,
+			     Runtime::PANIC_INDEX,
+			     Runtime::PANIC_INDEX_U,
+			     Runtime::PANIC_EXTEND_INDEX,
+			     Runtime::PANIC_EXTEND_INDEX_U,
+			     inserter, loc);
 
   return this;
 }
@@ -11322,7 +15411,8 @@ Array_index_expression::do_get_backend(Translate_context* context)
       go_assert(this->array_->type()->is_error());
       return context->backend()->error_expression();
     }
-  go_assert(!array_type->is_slice_type() || this->array_->is_variable());
+  go_assert(!array_type->is_slice_type()
+	    || this->array_->is_multi_eval_safe());
 
   Location loc = this->location();
   Gogo* gogo = context->gogo();
@@ -11330,10 +15420,8 @@ Array_index_expression::do_get_backend(Translate_context* context)
   Type* int_type = Type::lookup_integer_type("int");
   Btype* int_btype = int_type->get_backend(gogo);
 
-  // We need to convert the length and capacity to the Go "int" type here
-  // because the length of a fixed-length array could be of type "uintptr"
-  // and gimple disallows binary operations between "uintptr" and other
-  // integer types. FIXME.
+  // Convert the length and capacity to "int".  FIXME: Do we need to
+  // do this?
   Bexpression* length = NULL;
   if (this->end_ == NULL || this->end_->is_nil_expression())
     {
@@ -11370,91 +15458,32 @@ Array_index_expression::do_get_backend(Translate_context* context)
   Bexpression* start = this->start_->get_backend(context);
   start = gogo->backend()->convert_expression(int_btype, start, loc);
 
-  Bexpression* crash = NULL;
-  Bexpression* bad_index = NULL;
-  if (this->needs_bounds_check_)
-    {
-      int code = (array_type->length() != NULL
-                  ? (this->end_ == NULL
-                     ? RUNTIME_ERROR_ARRAY_INDEX_OUT_OF_BOUNDS
-                     : RUNTIME_ERROR_ARRAY_SLICE_OUT_OF_BOUNDS)
-                  : (this->end_ == NULL
-                     ? RUNTIME_ERROR_SLICE_INDEX_OUT_OF_BOUNDS
-                     : RUNTIME_ERROR_SLICE_SLICE_OUT_OF_BOUNDS));
-      crash = gogo->runtime_error(code, loc)->get_backend(context);
-      bad_index = Expression::check_bounds(this->start_, loc)->get_backend(context);
-      Bexpression* start_too_large =
-        gogo->backend()->binary_expression((this->end_ == NULL
-                                            ? OPERATOR_GE
-                                            : OPERATOR_GT),
-                                           start,
-                                           (this->end_ == NULL
-                                            ? length
-                                            : capacity),
-                                           loc);
-      bad_index = gogo->backend()->binary_expression(OPERATOR_OROR,
-                                                     start_too_large,
-                                                     bad_index, loc);
-    }
-
-
   Bfunction* bfn = context->function()->func_value()->get_decl();
   if (this->end_ == NULL)
     {
-      // Simple array indexing.  This has to return an l-value, so
-      // wrap the index check into START.
-      if (this->needs_bounds_check_)
-        start =
-          gogo->backend()->conditional_expression(bfn, int_btype, bad_index,
-                                                  crash, start, loc);
-
+      // Simple array indexing.
       Bexpression* ret;
-      if (array_type->length() != NULL)
+      if (!array_type->is_slice_type())
 	{
 	  Bexpression* array = this->array_->get_backend(context);
 	  ret = gogo->backend()->array_index_expression(array, start, loc);
 	}
       else
 	{
-	  // Slice.
-	  Expression* valptr =
-              array_type->get_value_pointer(gogo, this->array_,
-                                            this->is_lvalue_);
+	  Expression* valptr = array_type->get_value_pointer(gogo,
+							     this->array_);
 	  Bexpression* ptr = valptr->get_backend(context);
           ptr = gogo->backend()->pointer_offset_expression(ptr, start, loc);
 
 	  Type* ele_type = this->array_->type()->array_type()->element_type();
 	  Btype* ele_btype = ele_type->get_backend(gogo);
-	  ret = gogo->backend()->indirect_expression(ele_btype, ptr, true, loc);
+	  ret = gogo->backend()->indirect_expression(ele_btype, ptr, false,
+						     loc);
 	}
       return ret;
     }
 
-  // Array slice.
-
-  if (this->cap_ != NULL)
-    {
-      cap_arg = gogo->backend()->convert_expression(int_btype, cap_arg, loc);
-
-      if (this->needs_bounds_check_)
-        {
-          Bexpression* bounds_bcheck =
-            Expression::check_bounds(this->cap_, loc)->get_backend(context);
-          bad_index =
-            gogo->backend()->binary_expression(OPERATOR_OROR, bounds_bcheck,
-                                               bad_index, loc);
-
-          Bexpression* cap_too_small =
-            gogo->backend()->binary_expression(OPERATOR_LT, cap_arg, start, loc);
-          Bexpression* cap_too_large =
-            gogo->backend()->binary_expression(OPERATOR_GT, cap_arg, capacity, loc);
-          Bexpression* bad_cap =
-            gogo->backend()->binary_expression(OPERATOR_OROR, cap_too_small,
-                                               cap_too_large, loc);
-          bad_index = gogo->backend()->binary_expression(OPERATOR_OROR, bad_cap,
-                                                         bad_index, loc);
-        }
-    }
+  // Slice expression.
 
   Bexpression* end;
   if (this->end_->is_nil_expression())
@@ -11463,24 +15492,6 @@ Array_index_expression::do_get_backend(Translate_context* context)
     {
       end = this->end_->get_backend(context);
       end = gogo->backend()->convert_expression(int_btype, end, loc);
-      if (this->needs_bounds_check_)
-        {
-          Bexpression* bounds_bcheck =
-            Expression::check_bounds(this->end_, loc)->get_backend(context);
-          bad_index =
-            gogo->backend()->binary_expression(OPERATOR_OROR, bounds_bcheck,
-                                               bad_index, loc);
-
-          Bexpression* end_too_small =
-            gogo->backend()->binary_expression(OPERATOR_LT, end, start, loc);
-          Bexpression* end_too_large =
-            gogo->backend()->binary_expression(OPERATOR_GT, end, cap_arg, loc);
-          Bexpression* bad_end =
-            gogo->backend()->binary_expression(OPERATOR_OROR, end_too_small,
-                                               end_too_large, loc);
-          bad_index = gogo->backend()->binary_expression(OPERATOR_OROR, bad_end,
-                                                         bad_index, loc);
-        }
     }
 
   Bexpression* result_length =
@@ -11501,8 +15512,7 @@ Array_index_expression::do_get_backend(Translate_context* context)
   Bexpression* offset = gogo->backend()->conditional_expression(bfn, int_btype,
 								cond, zero,
 								start, loc);
-  Expression* valptr = array_type->get_value_pointer(gogo, this->array_,
-                                                     this->is_lvalue_);
+  Expression* valptr = array_type->get_value_pointer(gogo, this->array_);
   Bexpression* val = valptr->get_backend(context);
   val = gogo->backend()->pointer_offset_expression(val, offset, loc);
 
@@ -11512,12 +15522,39 @@ Array_index_expression::do_get_backend(Translate_context* context)
   init.push_back(result_length);
   init.push_back(result_capacity);
 
-  Bexpression* ret =
-    gogo->backend()->constructor_expression(struct_btype, init, loc);
-  if (this->needs_bounds_check_)
-    ret = gogo->backend()->conditional_expression(bfn, struct_btype, bad_index,
-                                                  crash, ret, loc);
-  return ret;
+  return gogo->backend()->constructor_expression(struct_btype, init, loc);
+}
+
+// Export an array index expression.
+
+void
+Array_index_expression::do_export(Export_function_body* efb) const
+{
+  efb->write_c_string("(");
+  this->array_->export_expression(efb);
+  efb->write_c_string(")[");
+
+  Type* old_context = efb->type_context();
+  efb->set_type_context(Type::lookup_integer_type("int"));
+
+  this->start_->export_expression(efb);
+  if (this->end_ == NULL)
+    go_assert(this->cap_ == NULL);
+  else
+    {
+      efb->write_c_string(":");
+      if (!this->end_->is_nil_expression())
+	this->end_->export_expression(efb);
+      if (this->cap_ != NULL)
+	{
+	  efb->write_c_string(":");
+	  this->cap_->export_expression(efb);
+	}
+    }
+
+  efb->set_type_context(old_context);
+
+  efb->write_c_string("]");
 }
 
 // Dump ast representation for an array index expression.
@@ -11560,10 +15597,18 @@ String_index_expression::do_traverse(Traverse* traverse)
 }
 
 Expression*
-String_index_expression::do_flatten(Gogo*, Named_object*,
+String_index_expression::do_flatten(Gogo* gogo, Named_object*,
                                     Statement_inserter* inserter)
 {
+  if (this->is_flattened_)
+    return this;
+  this->is_flattened_ = true;
+
   Location loc = this->location();
+
+  if (this->is_error_expression())
+    return Expression::make_error(loc);
+
   Expression* string = this->string_;
   Expression* start = this->start_;
   Expression* end = this->end_;
@@ -11579,26 +15624,69 @@ String_index_expression::do_flatten(Gogo*, Named_object*,
     }
 
   Temporary_statement* temp;
-  if (!this->string_->is_variable())
+  if (!string->is_multi_eval_safe())
     {
-      temp = Statement::make_temporary(NULL, this->string_, loc);
+      temp = Statement::make_temporary(NULL, string, loc);
       inserter->insert(temp);
       this->string_ = Expression::make_temporary_reference(temp, loc);
+      string = this->string_;
     }
-  if (!this->start_->is_variable())
+  if (!start->is_multi_eval_safe())
     {
-      temp = Statement::make_temporary(NULL, this->start_, loc);
+      temp = Statement::make_temporary(NULL, start, loc);
       inserter->insert(temp);
       this->start_ = Expression::make_temporary_reference(temp, loc);
+      start = this->start_;
     }
-  if (this->end_ != NULL
-      && !this->end_->is_nil_expression()
-      && !this->end_->is_variable())
+  if (end != NULL
+      && !end->is_nil_expression()
+      && !end->is_multi_eval_safe())
     {
-      temp = Statement::make_temporary(NULL, this->end_, loc);
+      temp = Statement::make_temporary(NULL, end, loc);
       inserter->insert(temp);
       this->end_ = Expression::make_temporary_reference(temp, loc);
+      end = this->end_;
     }
+
+  Expression* len = Expression::make_string_info(string->copy(),
+						 STRING_INFO_LENGTH, loc);
+  temp = Statement::make_temporary(NULL, len, loc);
+  temp->determine_types(gogo);
+  inserter->insert(temp);
+  len = Expression::make_temporary_reference(temp, loc);
+
+  // The order of bounds checks here matches the order used by the gc
+  // compiler, as tested by issue30116[u].go.
+
+  if (end != NULL && !end->is_nil_expression())
+    {
+      Expression::check_bounds(gogo, end, OPERATOR_LE, len,
+			       Runtime::PANIC_SLICE_ALEN,
+			       Runtime::PANIC_SLICE_ALEN_U,
+			       Runtime::PANIC_EXTEND_SLICE_ALEN,
+			       Runtime::PANIC_EXTEND_SLICE_ALEN_U,
+			       inserter, loc);
+      Expression::check_bounds(gogo, start, OPERATOR_LE, end,
+			       Runtime::PANIC_SLICE_B,
+			       Runtime::PANIC_SLICE_B_U,
+			       Runtime::PANIC_EXTEND_SLICE_B,
+			       Runtime::PANIC_EXTEND_SLICE_B_U,
+			       inserter, loc);
+    }
+  else if (end != NULL)
+    Expression::check_bounds(gogo, start, OPERATOR_LE, len,
+			     Runtime::PANIC_SLICE_B,
+			     Runtime::PANIC_SLICE_B_U,
+			     Runtime::PANIC_EXTEND_SLICE_B,
+			     Runtime::PANIC_EXTEND_SLICE_B_U,
+			     inserter, loc);
+  else
+    Expression::check_bounds(gogo, start, OPERATOR_LT, len,
+			     Runtime::PANIC_INDEX,
+			     Runtime::PANIC_INDEX_U,
+			     Runtime::PANIC_EXTEND_INDEX,
+			     Runtime::PANIC_EXTEND_INDEX_U,
+			     inserter, loc);
 
   return this;
 }
@@ -11609,7 +15697,7 @@ Type*
 String_index_expression::do_type()
 {
   if (this->end_ == NULL)
-    return Type::lookup_integer_type("uint8");
+    return Type::lookup_integer_type("byte");
   else
     return this->string_->type();
 }
@@ -11617,22 +15705,14 @@ String_index_expression::do_type()
 // Determine the type of a string index.
 
 void
-String_index_expression::do_determine_type(const Type_context*)
+String_index_expression::do_determine_type(Gogo* gogo, const Type_context*)
 {
-  this->string_->determine_type_no_context();
+  this->string_->determine_type_no_context(gogo);
 
   Type_context index_context(Type::lookup_integer_type("int"), false);
-  if (this->start_->is_constant())
-    this->start_->determine_type(&index_context);
-  else
-    this->start_->determine_type_no_context();
+  this->start_->determine_type(gogo, &index_context);
   if (this->end_ != NULL)
-    {
-      if (this->end_->is_constant())
-        this->end_->determine_type(&index_context);
-      else
-        this->end_->determine_type_no_context();
-    }
+    this->end_->determine_type(gogo, &index_context);
 }
 
 // Check types of a string index.
@@ -11640,60 +15720,90 @@ String_index_expression::do_determine_type(const Type_context*)
 void
 String_index_expression::do_check_types(Gogo*)
 {
+  if (!String_index_expression::check_indexes(this->string_, this->start_,
+					      this->end_, this->location()))
+    this->set_is_error();
+}
+
+// A static function to check string index types.  This is also called
+// by Index_expression::do_check_types.  It reports whether type
+// checking succeeded.
+
+bool
+String_index_expression::check_indexes(Expression* string, Expression* start,
+				       Expression* end, Location loc)
+{
+  bool ret = true;
+
   Numeric_constant nc;
   unsigned long v;
-  if (this->start_->type()->integer_type() == NULL
-      && !this->start_->type()->is_error()
-      && (!this->start_->numeric_constant_value(&nc)
+  if (start->type()->integer_type() == NULL
+      && !start->type()->is_error()
+      && (!start->type()->is_abstract()
+	  || !start->numeric_constant_value(&nc)
 	  || nc.to_unsigned_long(&v) == Numeric_constant::NC_UL_NOTINT))
-    this->report_error(_("index must be integer"));
-  if (this->end_ != NULL
-      && this->end_->type()->integer_type() == NULL
-      && !this->end_->type()->is_error()
-      && !this->end_->is_nil_expression()
-      && !this->end_->is_error_expression()
-      && (!this->end_->numeric_constant_value(&nc)
+    {
+      go_error_at(loc, "index must be integer");
+      ret = false;
+    }
+
+  if (end != NULL
+      && end->type()->integer_type() == NULL
+      && !end->type()->is_error()
+      && !end->is_nil_expression()
+      && !end->is_error_expression()
+      && (!end->type()->is_abstract()
+	  || !end->numeric_constant_value(&nc)
 	  || nc.to_unsigned_long(&v) == Numeric_constant::NC_UL_NOTINT))
-    this->report_error(_("slice end must be integer"));
+    {
+      go_error_at(loc, "slice end must be integer");
+      ret = false;
+    }
 
   std::string sval;
-  bool sval_valid = this->string_->string_constant_value(&sval);
+  bool sval_valid = string->string_constant_value(&sval);
 
   Numeric_constant inc;
   mpz_t ival;
   bool ival_valid = false;
-  if (this->start_->numeric_constant_value(&inc) && inc.to_int(&ival))
+  if (start->numeric_constant_value(&inc) && inc.to_int(&ival))
     {
       ival_valid = true;
       if (mpz_sgn(ival) < 0
 	  || (sval_valid
-	      && (this->end_ == NULL
+	      && (end == NULL
 		  ? mpz_cmp_ui(ival, sval.length()) >= 0
 		  : mpz_cmp_ui(ival, sval.length()) > 0)))
 	{
-	  go_error_at(this->start_->location(), "string index out of bounds");
-	  this->set_is_error();
+	  go_error_at(start->location(), "string index out of bounds");
+	  ret = false;
 	}
     }
-  if (this->end_ != NULL && !this->end_->is_nil_expression())
+
+  if (end != NULL && !end->is_nil_expression())
     {
       Numeric_constant enc;
       mpz_t eval;
-      if (this->end_->numeric_constant_value(&enc) && enc.to_int(&eval))
+      if (end->numeric_constant_value(&enc) && enc.to_int(&eval))
 	{
 	  if (mpz_sgn(eval) < 0
 	      || (sval_valid && mpz_cmp_ui(eval, sval.length()) > 0))
 	    {
-	      go_error_at(this->end_->location(), "string index out of bounds");
-	      this->set_is_error();
+	      go_error_at(end->location(), "string index out of bounds");
+	      ret = false;
 	    }
 	  else if (ival_valid && mpz_cmp(ival, eval) > 0)
-	    this->report_error(_("inverted slice range"));
+	    {
+	      go_error_at(loc, "inverted slice range");
+	      ret = false;
+	    }
 	  mpz_clear(eval);
 	}
     }
   if (ival_valid)
     mpz_clear(ival);
+
+  return ret;
 }
 
 // Get the backend representation for a string index.
@@ -11702,19 +15812,7 @@ Bexpression*
 String_index_expression::do_get_backend(Translate_context* context)
 {
   Location loc = this->location();
-  Expression* string_arg = this->string_;
-  if (this->string_->type()->points_to() != NULL)
-    string_arg = Expression::make_dereference(this->string_,
-                                              NIL_CHECK_NOT_NEEDED, loc);
-
-  Expression* bad_index = Expression::check_bounds(this->start_, loc);
-
-  int code = (this->end_ == NULL
-	      ? RUNTIME_ERROR_STRING_INDEX_OUT_OF_BOUNDS
-	      : RUNTIME_ERROR_STRING_SLICE_OUT_OF_BOUNDS);
-
   Gogo* gogo = context->gogo();
-  Bexpression* crash = gogo->runtime_error(code, loc)->get_backend(context);
 
   Type* int_type = Type::lookup_integer_type("int");
 
@@ -11730,54 +15828,87 @@ String_index_expression::do_get_backend(Translate_context* context)
       return context->backend()->error_expression();
     }
 
+  go_assert(this->string_->is_multi_eval_safe());
+  go_assert(this->start_->is_multi_eval_safe());
+
   Expression* start = Expression::make_cast(int_type, this->start_, loc);
   Bfunction* bfn = context->function()->func_value()->get_decl();
 
+  Expression* length =
+    Expression::make_string_info(this->string_, STRING_INFO_LENGTH, loc);
+  Expression* bytes =
+    Expression::make_string_info(this->string_, STRING_INFO_DATA, loc);
+
+  Bexpression* bstart = start->get_backend(context);
+  Bexpression* ptr = bytes->get_backend(context);
+
   if (this->end_ == NULL)
     {
-      Expression* length =
-          Expression::make_string_info(this->string_, STRING_INFO_LENGTH, loc);
-
-      Expression* start_too_large =
-          Expression::make_binary(OPERATOR_GE, start, length, loc);
-      bad_index = Expression::make_binary(OPERATOR_OROR, start_too_large,
-                                          bad_index, loc);
-      Expression* bytes =
-	Expression::make_string_info(this->string_, STRING_INFO_DATA, loc);
-
-      Bexpression* bstart = start->get_backend(context);
-      Bexpression* ptr = bytes->get_backend(context);
       ptr = gogo->backend()->pointer_offset_expression(ptr, bstart, loc);
       Btype* ubtype = Type::lookup_integer_type("uint8")->get_backend(gogo);
-      Bexpression* index =
-	gogo->backend()->indirect_expression(ubtype, ptr, true, loc);
-
-      Btype* byte_btype = bytes->type()->points_to()->get_backend(gogo);
-      Bexpression* index_error = bad_index->get_backend(context);
-      return gogo->backend()->conditional_expression(bfn, byte_btype,
-                                                     index_error, crash,
-                                                     index, loc);
+      return gogo->backend()->indirect_expression(ubtype, ptr, false, loc);
     }
 
   Expression* end = NULL;
   if (this->end_->is_nil_expression())
-    end = Expression::make_integer_sl(-1, int_type, loc);
+    end = length;
   else
     {
-      Expression* bounds_check = Expression::check_bounds(this->end_, loc);
-      bad_index =
-          Expression::make_binary(OPERATOR_OROR, bounds_check, bad_index, loc);
+      go_assert(this->end_->is_multi_eval_safe());
       end = Expression::make_cast(int_type, this->end_, loc);
     }
 
-  Expression* strslice = Runtime::make_call(Runtime::STRING_SLICE, loc, 3,
-                                            string_arg, start, end);
-  Bexpression* bstrslice = strslice->get_backend(context);
+  end = end->copy();
+  Bexpression* bend = end->get_backend(context);
+  Bexpression* new_length =
+    gogo->backend()->binary_expression(OPERATOR_MINUS, bend, bstart, loc);
 
-  Btype* str_btype = strslice->type()->get_backend(gogo);
-  Bexpression* index_error = bad_index->get_backend(context);
-  return gogo->backend()->conditional_expression(bfn, str_btype, index_error,
-						 crash, bstrslice, loc);
+  // If the new length is zero, don't change pointer.  Otherwise we can
+  // get a pointer to the next object in memory, keeping it live
+  // unnecessarily.  When the length is zero, the actual pointer
+  // value doesn't matter.
+  Btype* int_btype = int_type->get_backend(gogo);
+  Bexpression* zero =
+    Expression::make_integer_ul(0, int_type, loc)->get_backend(context);
+  Bexpression* cond =
+    gogo->backend()->binary_expression(OPERATOR_EQEQ, new_length, zero,
+                                       loc);
+  Bexpression* offset =
+    gogo->backend()->conditional_expression(bfn, int_btype, cond, zero,
+                                            bstart, loc);
+
+  ptr = gogo->backend()->pointer_offset_expression(ptr, offset, loc);
+
+  Btype* str_btype = this->type()->get_backend(gogo);
+  std::vector<Bexpression*> init;
+  init.push_back(ptr);
+  init.push_back(new_length);
+  return gogo->backend()->constructor_expression(str_btype, init, loc);
+}
+
+// Export a string index expression.
+
+void
+String_index_expression::do_export(Export_function_body* efb) const
+{
+  efb->write_c_string("(");
+  this->string_->export_expression(efb);
+  efb->write_c_string(")[");
+
+  Type* old_context = efb->type_context();
+  efb->set_type_context(Type::lookup_integer_type("int"));
+
+  this->start_->export_expression(efb);
+  if (this->end_ != NULL)
+    {
+      efb->write_c_string(":");
+      if (!this->end_->is_nil_expression())
+	this->end_->export_expression(efb);
+    }
+
+  efb->set_type_context(old_context);
+
+  efb->write_c_string("]");
 }
 
 // Dump ast representation for a string index expression.
@@ -11822,6 +15953,29 @@ Map_index_expression::do_traverse(Traverse* traverse)
   return Expression::traverse(&this->index_, traverse);
 }
 
+void
+Map_index_expression::do_determine_type(Gogo* gogo, const Type_context*)
+{
+  this->map_->determine_type_no_context(gogo);
+  Map_type* mt = this->map_->type()->map_type();
+  go_assert(mt != NULL);
+  Type_context index_context(mt->key_type(), false);
+  this->index_->determine_type(gogo, &index_context);
+  if (this->value_pointer_ != NULL)
+    this->value_pointer_->determine_type_no_context(gogo);
+}
+
+void
+Map_index_expression::do_check_types(Gogo*)
+{
+  // Types should have been checked before this was created, so this
+  // will probably never be called.  Check it anyhow to be sure.
+  Map_type* mt = this->map_->type()->map_type();
+  go_assert(mt != NULL);
+  if (!Type::are_assignable(mt->key_type(), this->index_->type(), NULL))
+    this->report_error(_("incompatible type for map index"));
+}
+
 // We need to pass in a pointer to the key, so flatten the index into a
 // temporary variable if it isn't already.  The value pointer will be
 // dereferenced and checked for nil, so flatten into a temporary to avoid
@@ -11841,12 +15995,19 @@ Map_index_expression::do_flatten(Gogo* gogo, Named_object*,
       return Expression::make_error(loc);
     }
 
+  // Avoid copy for string([]byte) conversions used in map keys.
+  // mapaccess doesn't keep the reference, so this is safe.
+  Type_conversion_expression* ce = this->index_->conversion_expression();
+  if (ce != NULL && ce->type()->is_string_type()
+      && ce->expr()->type()->is_slice_type())
+    ce->set_no_copy(true);
+
   if (!Type::are_identical(mt->key_type(), this->index_->type(),
 			   Type::COMPARE_ERRORS | Type::COMPARE_TAGS,
 			   NULL))
     {
       if (this->index_->type()->interface_type() != NULL
-	  && !this->index_->is_variable())
+	  && !this->index_->is_multi_eval_safe())
 	{
 	  Temporary_statement* temp =
 	    Statement::make_temporary(NULL, this->index_, loc);
@@ -11857,7 +16018,7 @@ Map_index_expression::do_flatten(Gogo* gogo, Named_object*,
 							this->index_, loc);
     }
 
-  if (!this->index_->is_variable())
+  if (!this->index_->is_multi_eval_safe())
     {
       Temporary_statement* temp = Statement::make_temporary(NULL, this->index_,
                                                             loc);
@@ -11870,7 +16031,7 @@ Map_index_expression::do_flatten(Gogo* gogo, Named_object*,
   if (this->value_pointer_->is_error_expression()
       || this->value_pointer_->type()->is_error_type())
     return Expression::make_error(loc);
-  if (!this->value_pointer_->is_variable())
+  if (!this->value_pointer_->is_multi_eval_safe())
     {
       Temporary_statement* temp =
 	Statement::make_temporary(NULL, this->value_pointer_, loc);
@@ -11892,38 +16053,19 @@ Map_index_expression::do_type()
   return mt->val_type();
 }
 
-// Fix the type of a map index.
+// Add explicit type conversions.
 
 void
-Map_index_expression::do_determine_type(const Type_context*)
+Map_index_expression::do_add_conversions()
 {
-  this->map_->determine_type_no_context();
-  Map_type* mt = this->get_map_type();
-  Type* key_type = mt == NULL ? NULL : mt->key_type();
-  Type_context subcontext(key_type, false);
-  this->index_->determine_type(&subcontext);
-}
-
-// Check types of a map index.
-
-void
-Map_index_expression::do_check_types(Gogo*)
-{
-  std::string reason;
   Map_type* mt = this->get_map_type();
   if (mt == NULL)
     return;
-  if (!Type::are_assignable(mt->key_type(), this->index_->type(), &reason))
-    {
-      if (reason.empty())
-	this->report_error(_("incompatible type for map index"));
-      else
-	{
-	  go_error_at(this->location(), "incompatible type for map index (%s)",
-                      reason.c_str());
-	  this->set_is_error();
-	}
-    }
+  Type* lt = mt->key_type();
+  Type* rt = this->index_->type();
+  if (!Type::are_identical(lt, rt, 0, NULL)
+      && lt->interface_type() != NULL)
+    this->index_ = Expression::make_cast(lt, this->index_, this->location());
 }
 
 // Get the backend representation for a map index.
@@ -11939,7 +16081,7 @@ Map_index_expression::do_get_backend(Translate_context* context)
     }
 
   go_assert(this->value_pointer_ != NULL
-            && this->value_pointer_->is_variable());
+            && this->value_pointer_->is_multi_eval_safe());
 
   Expression* val = Expression::make_dereference(this->value_pointer_,
                                                  NIL_CHECK_NOT_NEEDED,
@@ -11970,28 +16112,82 @@ Map_index_expression::get_value_pointer(Gogo* gogo)
 						     this->index_,
                                                      loc);
 
+      Expression* type_expr = Expression::make_type_descriptor(type, loc);
       Expression* zero = type->fat_zero_value(gogo);
-
       Expression* map_index;
-
       if (zero == NULL)
-	map_index =
-          Runtime::make_call(Runtime::MAPACCESS1, loc, 3,
-			     Expression::make_type_descriptor(type, loc),
-                             map_ref, index_ptr);
+        {
+          Runtime::Function code;
+          Expression* key;
+          switch (type->algorithm(gogo))
+            {
+              case Map_type::MAP_ALG_FAST32:
+              case Map_type::MAP_ALG_FAST32PTR:
+                {
+                  Type* uint32_type = Type::lookup_integer_type("uint32");
+                  Type* uint32_ptr_type = Type::make_pointer_type(uint32_type);
+                  key = Expression::make_unsafe_cast(uint32_ptr_type, index_ptr,
+                                                     loc);
+                  key = Expression::make_dereference(key, NIL_CHECK_NOT_NEEDED,
+                                                     loc);
+                  code = Runtime::MAPACCESS1_FAST32;
+                  break;
+                }
+              case Map_type::MAP_ALG_FAST64:
+              case Map_type::MAP_ALG_FAST64PTR:
+                {
+                  Type* uint64_type = Type::lookup_integer_type("uint64");
+                  Type* uint64_ptr_type = Type::make_pointer_type(uint64_type);
+                  key = Expression::make_unsafe_cast(uint64_ptr_type, index_ptr,
+                                                     loc);
+                  key = Expression::make_dereference(key, NIL_CHECK_NOT_NEEDED,
+                                                     loc);
+                  code = Runtime::MAPACCESS1_FAST64;
+                  break;
+                }
+              case Map_type::MAP_ALG_FASTSTR:
+                key = this->index_;
+                code = Runtime::MAPACCESS1_FASTSTR;
+                break;
+              default:
+                key = index_ptr;
+                code = Runtime::MAPACCESS1;
+                break;
+            }
+          map_index = Runtime::make_call(gogo, code, loc, 3,
+                                         type_expr, map_ref, key);
+        }
       else
-	map_index =
-	  Runtime::make_call(Runtime::MAPACCESS1_FAT, loc, 4,
-			     Expression::make_type_descriptor(type, loc),
-			     map_ref, index_ptr, zero);
+        map_index = Runtime::make_call(gogo, Runtime::MAPACCESS1_FAT, loc, 4,
+                                       type_expr, map_ref, index_ptr, zero);
 
       Type* val_type = type->val_type();
       this->value_pointer_ =
           Expression::make_unsafe_cast(Type::make_pointer_type(val_type),
                                        map_index, this->location());
+      this->value_pointer_->determine_type_no_context(gogo);
     }
 
   return this->value_pointer_;
+}
+
+// Export a map index expression.
+
+void
+Map_index_expression::do_export(Export_function_body* efb) const
+{
+  efb->write_c_string("(");
+  this->map_->export_expression(efb);
+  efb->write_c_string(")[");
+
+  Type* old_context = efb->type_context();
+  efb->set_type_context(this->get_map_type()->key_type());
+
+  this->index_->export_expression(efb);
+
+  efb->set_type_context(old_context);
+
+  efb->write_c_string("]");
 }
 
 // Dump ast representation for a map index expression
@@ -12021,7 +16217,7 @@ Expression::make_map_index(Expression* map, Expression* index,
 
 Expression*
 Field_reference_expression::do_lower(Gogo* gogo, Named_object* function,
-				     Statement_inserter* inserter, int)
+				     Statement_inserter* inserter)
 {
   Struct_type* struct_type = this->expr_->type()->struct_type();
   if (struct_type == NULL)
@@ -12062,7 +16258,7 @@ Field_reference_expression::do_lower(Gogo* gogo, Named_object* function,
   if (nt != NULL)
     s.append(Gogo::unpack_hidden_name(nt->name()));
   s.push_back('.');
-  s.append(field->field_name());
+  s.append(Gogo::unpack_hidden_name(field->field_name()));
   s.push_back('"');
 
   // We can't use a string here, because internally a string holds a
@@ -12072,7 +16268,7 @@ Field_reference_expression::do_lower(Gogo* gogo, Named_object* function,
 
   Expression* length_expr = Expression::make_integer_ul(s.length(), NULL, loc);
 
-  Type* byte_type = gogo->lookup_global("byte")->type_value();
+  Type* byte_type = Type::lookup_integer_type("byte");
   Array_type* array_type = Type::make_array_type(byte_type, length_expr);
   array_type->set_is_array_incomparable();
 
@@ -12097,7 +16293,8 @@ Field_reference_expression::do_lower(Gogo* gogo, Named_object* function,
   e = Expression::make_var_reference(no, loc);
   e = Expression::make_unary(OPERATOR_AND, e, loc);
 
-  Expression* call = Runtime::make_call(Runtime::FIELDTRACK, loc, 1, e);
+  Expression* call = Runtime::make_call(gogo, Runtime::FIELDTRACK, loc, 1, e);
+  call->determine_type_no_context(gogo);
   gogo->lower_expression(function, inserter, &call);
   inserter->insert(Statement::make_statement(call, false));
 
@@ -12231,7 +16428,7 @@ Interface_field_reference_expression::do_flatten(Gogo*, Named_object*,
       return Expression::make_error(this->location());
     }
 
-  if (!this->expr_->is_variable())
+  if (!this->expr_->is_multi_eval_safe())
     {
       Temporary_statement* temp =
 	Statement::make_temporary(NULL, this->expr_, this->location());
@@ -12266,9 +16463,10 @@ Interface_field_reference_expression::do_type()
 // Determine types.
 
 void
-Interface_field_reference_expression::do_determine_type(const Type_context*)
+Interface_field_reference_expression::do_determine_type(Gogo* gogo,
+							const Type_context*)
 {
-  this->expr_->determine_type_no_context();
+  this->expr_->determine_type_no_context(gogo);
 }
 
 // Check the types for an interface field reference.
@@ -12406,16 +16604,37 @@ Interface_field_reference_expression::create_thunk(Gogo* gogo,
 						loc);
   call->set_varargs_are_lowered();
 
-  Statement* s = Statement::make_return_from_call(call, loc);
+  Statement* s = Statement::make_return_from_call(new_no, call, loc);
+  s->determine_types(gogo);
   gogo->add_statement(s);
   Block* b = gogo->finish_block(loc);
   gogo->add_block(b, loc);
+
+  // This is called after lowering.
   gogo->lower_block(new_no, b);
-  gogo->flatten_block(new_no, b);
+
   gogo->finish_function(loc);
 
   ins.first->second->push_back(std::make_pair(name, new_no));
   return new_no;
+}
+
+// Lookup a thunk to call method NAME on TYPE.
+
+Named_object*
+Interface_field_reference_expression::lookup_thunk(Interface_type* type,
+						   const std::string& name)
+{
+  Interface_method_thunks::const_iterator p =
+    Interface_field_reference_expression::interface_method_thunks.find(type);
+  if (p == Interface_field_reference_expression::interface_method_thunks.end())
+    return NULL;
+  for (Method_thunks::const_iterator pm = p->second->begin();
+       pm != p->second->end();
+       ++pm)
+    if (pm->first == name)
+      return pm->second;
+  return NULL;
 }
 
 // Get the backend representation for a method value.
@@ -12431,9 +16650,11 @@ Interface_field_reference_expression::do_get_backend(Translate_context* context)
     }
 
   Named_object* thunk =
-    Interface_field_reference_expression::create_thunk(context->gogo(),
-						       type, this->name_);
-  if (thunk->is_erroneous())
+    Interface_field_reference_expression::lookup_thunk(type, this->name_);
+
+  // The thunk should have been created during the
+  // create_function_descriptors pass.
+  if (thunk == NULL || thunk->is_erroneous())
     {
       go_assert(saw_errors());
       return context->backend()->error_expression();
@@ -12473,8 +16694,9 @@ Interface_field_reference_expression::do_get_backend(Translate_context* context)
                               Expression::make_nil(loc), loc);
   Bexpression* bnil_check = nil_check->get_backend(context);
 
-  Bexpression* bcrash = gogo->runtime_error(RUNTIME_ERROR_NIL_DEREFERENCE,
-					    loc)->get_backend(context);
+  Expression* crash = Runtime::make_call(gogo, Runtime::PANIC_MEM, loc, 0);
+  crash->determine_type_no_context(gogo);
+  Bexpression* bcrash = crash->get_backend(context);
 
   Bfunction* bfn = context->function()->func_value()->get_decl();
   Bexpression* bcond =
@@ -12506,277 +16728,6 @@ Expression::make_interface_field_reference(Expression* expr,
   return new Interface_field_reference_expression(expr, field, location);
 }
 
-// A general selector.  This is a Parser_expression for LEFT.NAME.  It
-// is lowered after we know the type of the left hand side.
-
-class Selector_expression : public Parser_expression
-{
- public:
-  Selector_expression(Expression* left, const std::string& name,
-		      Location location)
-    : Parser_expression(EXPRESSION_SELECTOR, location),
-      left_(left), name_(name)
-  { }
-
- protected:
-  int
-  do_traverse(Traverse* traverse)
-  { return Expression::traverse(&this->left_, traverse); }
-
-  Expression*
-  do_lower(Gogo*, Named_object*, Statement_inserter*, int);
-
-  Expression*
-  do_copy()
-  {
-    return new Selector_expression(this->left_->copy(), this->name_,
-				   this->location());
-  }
-
-  void
-  do_dump_expression(Ast_dump_context* ast_dump_context) const;
-
- private:
-  Expression*
-  lower_method_expression(Gogo*);
-
-  // The expression on the left hand side.
-  Expression* left_;
-  // The name on the right hand side.
-  std::string name_;
-};
-
-// Lower a selector expression once we know the real type of the left
-// hand side.
-
-Expression*
-Selector_expression::do_lower(Gogo* gogo, Named_object*, Statement_inserter*,
-			      int)
-{
-  Expression* left = this->left_;
-  if (left->is_type_expression())
-    return this->lower_method_expression(gogo);
-  return Type::bind_field_or_method(gogo, left->type(), left, this->name_,
-				    this->location());
-}
-
-// Lower a method expression T.M or (*T).M.  We turn this into a
-// function literal.
-
-Expression*
-Selector_expression::lower_method_expression(Gogo* gogo)
-{
-  Location location = this->location();
-  Type* left_type = this->left_->type();
-  Type* type = left_type;
-  const std::string& name(this->name_);
-
-  bool is_pointer;
-  if (type->points_to() == NULL)
-    is_pointer = false;
-  else
-    {
-      is_pointer = true;
-      type = type->points_to();
-    }
-  Named_type* nt = type->named_type();
-  if (nt == NULL)
-    {
-      go_error_at(location,
-                  ("method expression requires named type or "
-                   "pointer to named type"));
-      return Expression::make_error(location);
-    }
-
-  bool is_ambiguous;
-  Method* method = nt->method_function(name, &is_ambiguous);
-  const Typed_identifier* imethod = NULL;
-  if (method == NULL && !is_pointer)
-    {
-      Interface_type* it = nt->interface_type();
-      if (it != NULL)
-	imethod = it->find_method(name);
-    }
-
-  if ((method == NULL && imethod == NULL)
-      || (left_type->named_type() != NULL && left_type->points_to() != NULL))
-    {
-      if (!is_ambiguous)
-	go_error_at(location, "type %<%s%s%> has no method %<%s%>",
-                    is_pointer ? "*" : "",
-                    nt->message_name().c_str(),
-                    Gogo::message_name(name).c_str());
-      else
-	go_error_at(location, "method %<%s%s%> is ambiguous in type %<%s%>",
-                    Gogo::message_name(name).c_str(),
-                    is_pointer ? "*" : "",
-                    nt->message_name().c_str());
-      return Expression::make_error(location);
-    }
-
-  if (method != NULL && !is_pointer && !method->is_value_method())
-    {
-      go_error_at(location, "method requires pointer (use %<(*%s).%s%>)",
-                  nt->message_name().c_str(),
-                  Gogo::message_name(name).c_str());
-      return Expression::make_error(location);
-    }
-
-  // Build a new function type in which the receiver becomes the first
-  // argument.
-  Function_type* method_type;
-  if (method != NULL)
-    {
-      method_type = method->type();
-      go_assert(method_type->is_method());
-    }
-  else
-    {
-      method_type = imethod->type()->function_type();
-      go_assert(method_type != NULL && !method_type->is_method());
-    }
-
-  const char* const receiver_name = "$this";
-  Typed_identifier_list* parameters = new Typed_identifier_list();
-  parameters->push_back(Typed_identifier(receiver_name, this->left_->type(),
-					 location));
-
-  const Typed_identifier_list* method_parameters = method_type->parameters();
-  if (method_parameters != NULL)
-    {
-      int i = 0;
-      for (Typed_identifier_list::const_iterator p = method_parameters->begin();
-	   p != method_parameters->end();
-	   ++p, ++i)
-	{
-	  if (!p->name().empty())
-	    parameters->push_back(*p);
-	  else
-	    {
-	      char buf[20];
-	      snprintf(buf, sizeof buf, "$param%d", i);
-	      parameters->push_back(Typed_identifier(buf, p->type(),
-						     p->location()));
-	    }
-	}
-    }
-
-  const Typed_identifier_list* method_results = method_type->results();
-  Typed_identifier_list* results;
-  if (method_results == NULL)
-    results = NULL;
-  else
-    {
-      results = new Typed_identifier_list();
-      for (Typed_identifier_list::const_iterator p = method_results->begin();
-	   p != method_results->end();
-	   ++p)
-	results->push_back(*p);
-    }
-
-  Function_type* fntype = Type::make_function_type(NULL, parameters, results,
-						   location);
-  if (method_type->is_varargs())
-    fntype->set_is_varargs();
-
-  // We generate methods which always takes a pointer to the receiver
-  // as their first argument.  If this is for a pointer type, we can
-  // simply reuse the existing function.  We use an internal hack to
-  // get the right type.
-  // FIXME: This optimization is disabled because it doesn't yet work
-  // with function descriptors when the method expression is not
-  // directly called.
-  if (method != NULL && is_pointer && false)
-    {
-      Named_object* mno = (method->needs_stub_method()
-			   ? method->stub_object()
-			   : method->named_object());
-      Expression* f = Expression::make_func_reference(mno, NULL, location);
-      f = Expression::make_cast(fntype, f, location);
-      Type_conversion_expression* tce =
-	static_cast<Type_conversion_expression*>(f);
-      tce->set_may_convert_function_types();
-      return f;
-    }
-
-  Named_object* no = gogo->start_function(gogo->thunk_name(), fntype, false,
-					  location);
-
-  Named_object* vno = gogo->lookup(receiver_name, NULL);
-  go_assert(vno != NULL);
-  Expression* ve = Expression::make_var_reference(vno, location);
-  Expression* bm;
-  if (method != NULL)
-    bm = Type::bind_field_or_method(gogo, nt, ve, name, location);
-  else
-    bm = Expression::make_interface_field_reference(ve, name, location);
-
-  // Even though we found the method above, if it has an error type we
-  // may see an error here.
-  if (bm->is_error_expression())
-    {
-      gogo->finish_function(location);
-      return bm;
-    }
-
-  Expression_list* args;
-  if (parameters->size() <= 1)
-    args = NULL;
-  else
-    {
-      args = new Expression_list();
-      Typed_identifier_list::const_iterator p = parameters->begin();
-      ++p;
-      for (; p != parameters->end(); ++p)
-	{
-	  vno = gogo->lookup(p->name(), NULL);
-	  go_assert(vno != NULL);
-	  args->push_back(Expression::make_var_reference(vno, location));
-	}
-    }
-
-  gogo->start_block(location);
-
-  Call_expression* call = Expression::make_call(bm, args,
-						method_type->is_varargs(),
-						location);
-
-  Statement* s = Statement::make_return_from_call(call, location);
-  gogo->add_statement(s);
-
-  Block* b = gogo->finish_block(location);
-
-  gogo->add_block(b, location);
-
-  // Lower the call in case there are multiple results.
-  gogo->lower_block(no, b);
-  gogo->flatten_block(no, b);
-
-  gogo->finish_function(location);
-
-  return Expression::make_func_reference(no, NULL, location);
-}
-
-// Dump the ast for a selector expression.
-
-void
-Selector_expression::do_dump_expression(Ast_dump_context* ast_dump_context)
-    const
-{
-  ast_dump_context->dump_expression(this->left_);
-  ast_dump_context->ostream() << ".";
-  ast_dump_context->ostream() << this->name_;
-}
-
-// Make a selector expression.
-
-Expression*
-Expression::make_selector(Expression* left, const std::string& name,
-			  Location location)
-{
-  return new Selector_expression(left, name, location);
-}
-
 // Class Allocation_expression.
 
 int
@@ -12795,7 +16746,7 @@ void
 Allocation_expression::do_check_types(Gogo*)
 {
   if (!this->type_->in_heap())
-    go_error_at(this->location(), "can't heap allocate go:notinheap type");
+    go_error_at(this->location(), "cannot heap allocate go:notinheap type");
 }
 
 // Make a copy of an allocation expression.
@@ -12808,6 +16759,8 @@ Allocation_expression::do_copy()
 			      this->location());
   if (this->allocate_on_stack_)
     alloc->set_allocate_on_stack();
+  if (this->no_zero_)
+    alloc->set_no_zero();
   return alloc;
 }
 
@@ -12833,10 +16786,14 @@ Allocation_expression::do_get_backend(Translate_context* context)
       Named_object* fn = context->function();
       go_assert(fn != NULL);
       Bfunction* fndecl = fn->func_value()->get_or_make_decl(gogo, fn);
-      Bexpression* zero = gogo->backend()->zero_expression(btype);
+      Bexpression* init = (this->no_zero_
+                           ? NULL
+                           : gogo->backend()->zero_expression(btype));
       Bvariable* temp =
         gogo->backend()->temporary_variable(fndecl, context->bblock(), btype,
-                                            zero, true, loc, &decl);
+                                            init,
+					    Backend::variable_address_is_taken,
+					    loc, &decl);
       Bexpression* ret = gogo->backend()->var_expression(temp, loc);
       ret = gogo->backend()->address_expression(ret, loc);
       ret = gogo->backend()->compound_expression(decl, ret, loc);
@@ -12941,6 +16898,33 @@ Struct_construction_expression::is_constant_struct() const
   return true;
 }
 
+// Return whether this is a zero value.
+
+bool
+Struct_construction_expression::do_is_zero_value() const
+{
+  if (this->vals() == NULL)
+    return true;
+  for (Expression_list::const_iterator pv = this->vals()->begin();
+       pv != this->vals()->end();
+       ++pv)
+    if (*pv != NULL && !(*pv)->is_zero_value())
+      return false;
+
+  const Struct_field_list* fields = this->type_->struct_type()->fields();
+  for (Struct_field_list::const_iterator pf = fields->begin();
+       pf != fields->end();
+       ++pf)
+    {
+      // Interface conversion may cause a zero value being converted
+      // to a non-zero value, like interface{}(0).  Be conservative.
+      if (pf->type()->interface_type() != NULL)
+        return false;
+    }
+
+  return true;
+}
+
 // Return whether this struct can be used as a constant initializer.
 
 bool
@@ -12972,7 +16956,8 @@ Struct_construction_expression::do_is_static_initializer() const
 // Final type determination.
 
 void
-Struct_construction_expression::do_determine_type(const Type_context*)
+Struct_construction_expression::do_determine_type(Gogo* gogo,
+						  const Type_context*)
 {
   if (this->vals() == NULL)
     return;
@@ -12987,45 +16972,76 @@ Struct_construction_expression::do_determine_type(const Type_context*)
       if (*pv != NULL)
 	{
 	  Type_context subcontext(pf->type(), false);
-	  (*pv)->determine_type(&subcontext);
+	  (*pv)->determine_type(gogo, &subcontext);
 	}
     }
   // Extra values are an error we will report elsewhere; we still want
   // to determine the type to avoid knockon errors.
   for (; pv != this->vals()->end(); ++pv)
-    (*pv)->determine_type_no_context();
+    (*pv)->determine_type_no_context(gogo);
 }
 
 // Check types.
 
 void
-Struct_construction_expression::do_check_types(Gogo*)
+Struct_construction_expression::do_check_types(Gogo* gogo)
 {
-  if (this->vals() == NULL)
-    return;
+  Struct_construction_expression::check_value_types(gogo, this->type_,
+						    this->vals(),
+						    this->location());
+}
 
-  Struct_type* st = this->type_->struct_type();
-  if (this->vals()->size() > st->field_count())
+// Check types.  This static function is also called by
+// Composite_literal_expression::do_check_types.  Reports whether type
+// checking succeeded.
+
+bool
+Struct_construction_expression::check_value_types(Gogo* gogo,
+						  Type* type,
+						  Expression_list* vals,
+						  Location loc)
+{
+  if (vals == NULL || vals->empty())
+    return true;
+
+  Struct_type* st = type->struct_type();
+  if (vals->size() > st->field_count())
     {
-      this->report_error(_("too many expressions for struct"));
-      return;
+      go_error_at(loc, "too many expressions for struct");
+      return false;
     }
 
+  bool imported_type =
+    (type->named_type() != NULL
+     && type->named_type()->named_object()->package() != NULL);
+
+  bool ret = true;
   const Struct_field_list* fields = st->fields();
-  Expression_list::const_iterator pv = this->vals()->begin();
+  Expression_list::const_iterator pv = vals->begin();
   int i = 0;
   for (Struct_field_list::const_iterator pf = fields->begin();
        pf != fields->end();
        ++pf, ++pv, ++i)
     {
-      if (pv == this->vals()->end())
+      if (pv == vals->end())
 	{
-	  this->report_error(_("too few expressions for struct"));
-	  break;
+	  go_error_at(loc, "too few expressions for struct");
+	  return false;
 	}
 
       if (*pv == NULL)
 	continue;
+
+      if (imported_type
+	  && (Gogo::is_hidden_name(pf->field_name())
+	      || pf->is_embedded_builtin(gogo)))
+	{
+	  go_error_at(loc,
+		      "assignment of unexported field %qs in %qs literal",
+		      Gogo::message_name(pf->field_name()).c_str(),
+		      type->named_type()->message_name().c_str());
+	  ret = false;
+	}
 
       std::string reason;
       if (!Type::are_assignable(pf->type(), (*pv)->type(), &reason))
@@ -13039,10 +17055,11 @@ Struct_construction_expression::do_check_types(Gogo*)
                         ("incompatible type for field %d in "
                          "struct construction (%s)"),
                         i + 1, reason.c_str());
-	  this->set_is_error();
+	  ret = false;
 	}
     }
-  go_assert(pv == this->vals()->end());
+  go_assert(pv == vals->end());
+  return ret;
 }
 
 // Copy.
@@ -13061,42 +17078,31 @@ Struct_construction_expression::do_copy()
   return ret;
 }
 
-// Flatten a struct construction expression.  Store the values into
-// temporaries in case they need interface conversion.
+// Make implicit type conversions explicit.
 
-Expression*
-Struct_construction_expression::do_flatten(Gogo*, Named_object*,
-					   Statement_inserter* inserter)
+void
+Struct_construction_expression::do_add_conversions()
 {
   if (this->vals() == NULL)
-    return this;
-
-  // If this is a constant struct, we don't need temporaries.
-  if (this->is_constant_struct() || this->is_static_initializer())
-    return this;
+    return;
 
   Location loc = this->location();
-  for (Expression_list::iterator pv = this->vals()->begin();
-       pv != this->vals()->end();
-       ++pv)
+  const Struct_field_list* fields = this->type_->struct_type()->fields();
+  Expression_list::iterator pv = this->vals()->begin();
+  for (Struct_field_list::const_iterator pf = fields->begin();
+       pf != fields->end();
+       ++pf, ++pv)
     {
+      if (pv == this->vals()->end())
+        break;
       if (*pv != NULL)
-	{
-          if ((*pv)->is_error_expression() || (*pv)->type()->is_error_type())
-            {
-              go_assert(saw_errors());
-              return Expression::make_error(loc);
-            }
-	  if (!(*pv)->is_variable())
-	    {
-	      Temporary_statement* temp =
-		Statement::make_temporary(NULL, *pv, loc);
-	      inserter->insert(temp);
-	      *pv = Expression::make_temporary_reference(temp, loc);
-	    }
-	}
+        {
+          Type* ft = pf->type();
+          if (!Type::are_identical(ft, (*pv)->type(), 0, NULL)
+              && ft->interface_type() != NULL)
+           *pv = Expression::make_cast(ft, *pv, loc);
+        }
     }
-  return this;
 }
 
 // Return the backend representation for constructing a struct.
@@ -13222,6 +17228,28 @@ Array_construction_expression::is_constant_array() const
   return true;
 }
 
+// Return whether this is a zero value.
+
+bool
+Array_construction_expression::do_is_zero_value() const
+{
+  if (this->vals() == NULL)
+    return true;
+
+  // Interface conversion may cause a zero value being converted
+  // to a non-zero value, like interface{}(0).  Be conservative.
+  if (this->type_->array_type()->element_type()->interface_type() != NULL)
+    return false;
+
+  for (Expression_list::const_iterator pv = this->vals()->begin();
+       pv != this->vals()->end();
+       ++pv)
+    if (*pv != NULL && !(*pv)->is_zero_value())
+      return false;
+
+  return true;
+}
+
 // Return whether this can be used a constant initializer.
 
 bool
@@ -13247,17 +17275,31 @@ Array_construction_expression::do_is_static_initializer() const
 // Final type determination.
 
 void
-Array_construction_expression::do_determine_type(const Type_context*)
+Array_construction_expression::do_determine_type(Gogo* gogo,
+						 const Type_context*)
 {
+  if (this->is_error_expression())
+    {
+      go_assert(saw_errors());
+      return;
+    }
+
   if (this->vals() == NULL)
     return;
-  Type_context subcontext(this->type_->array_type()->element_type(), false);
+  Array_type* at = this->type_->array_type();
+  if (at == NULL || at->is_error() || at->element_type()->is_error())
+    {
+      go_assert(saw_errors());
+      this->set_is_error();
+      return;
+    }
+  Type_context subcontext(at->element_type(), false);
   for (Expression_list::const_iterator pv = this->vals()->begin();
        pv != this->vals()->end();
        ++pv)
     {
       if (*pv != NULL)
-	(*pv)->determine_type(&subcontext);
+	(*pv)->determine_type(gogo, &subcontext);
     }
 }
 
@@ -13266,10 +17308,22 @@ Array_construction_expression::do_determine_type(const Type_context*)
 void
 Array_construction_expression::do_check_types(Gogo*)
 {
+  if (this->is_error_expression())
+    {
+      go_assert(saw_errors());
+      return;
+    }
+
   if (this->vals() == NULL)
     return;
 
   Array_type* at = this->type_->array_type();
+  if (at == NULL || at->is_error() || at->element_type()->is_error())
+    {
+      go_assert(saw_errors());
+      this->set_is_error();
+      return;
+    }
   int i = 0;
   Type* element_type = at->element_type();
   for (Expression_list::const_iterator pv = this->vals()->begin();
@@ -13287,42 +17341,30 @@ Array_construction_expression::do_check_types(Gogo*)
     }
 }
 
-// Flatten an array construction expression.  Store the values into
-// temporaries in case they need interface conversion.
+// Make implicit type conversions explicit.
 
-Expression*
-Array_construction_expression::do_flatten(Gogo*, Named_object*,
-					   Statement_inserter* inserter)
+void
+Array_construction_expression::do_add_conversions()
 {
-  if (this->vals() == NULL)
-    return this;
+  if (this->is_error_expression())
+    {
+      go_assert(saw_errors());
+      return;
+    }
 
-  // If this is a constant array, we don't need temporaries.
-  if (this->is_constant_array() || this->is_static_initializer())
-    return this;
+  if (this->vals() == NULL)
+    return;
+
+  Type* et = this->type_->array_type()->element_type();
+  if (et->interface_type() == NULL)
+    return;
 
   Location loc = this->location();
   for (Expression_list::iterator pv = this->vals()->begin();
        pv != this->vals()->end();
        ++pv)
-    {
-      if (*pv != NULL)
-	{
-          if ((*pv)->is_error_expression() || (*pv)->type()->is_error_type())
-            {
-              go_assert(saw_errors());
-              return Expression::make_error(loc);
-            }
-	  if (!(*pv)->is_variable())
-	    {
-	      Temporary_statement* temp =
-		Statement::make_temporary(NULL, *pv, loc);
-	      inserter->insert(temp);
-	      *pv = Expression::make_temporary_reference(temp, loc);
-	    }
-	}
-    }
-  return this;
+    if (!Type::are_identical(et, (*pv)->type(), 0, NULL))
+      *pv = Expression::make_cast(et, *pv, loc);
 }
 
 // Get a constructor expression for the array values.
@@ -13567,14 +17609,14 @@ Slice_construction_expression::create_array_val()
 // the new temp statement.
 
 Expression*
-Slice_construction_expression::do_flatten(Gogo* gogo, Named_object* no,
+Slice_construction_expression::do_flatten(Gogo*, Named_object*,
                                           Statement_inserter* inserter)
 {
   if (this->type()->array_type() == NULL)
-    return NULL;
-
-  // Base class flattening first
-  this->Array_construction_expression::do_flatten(gogo, no, inserter);
+    {
+      go_assert(saw_errors());
+      return Expression::make_error(this->location());
+    }
 
   // Create a stack-allocated storage temp if storage won't escape
   if (!this->storage_escapes_
@@ -13583,7 +17625,7 @@ Slice_construction_expression::do_flatten(Gogo* gogo, Named_object* no,
     {
       Location loc = this->location();
       this->array_val_ = this->create_array_val();
-      go_assert(this->array_val_);
+      go_assert(this->array_val_ != NULL);
       Temporary_statement* temp =
           Statement::make_temporary(this->valtype_, this->array_val_, loc);
       inserter->insert(temp);
@@ -13696,6 +17738,59 @@ Map_construction_expression::do_traverse(Traverse* traverse)
   return TRAVERSE_CONTINUE;
 }
 
+void
+Map_construction_expression::do_determine_type(Gogo* gogo, const Type_context*)
+{
+  Map_type* mt = this->type_->map_type();
+  go_assert(mt != NULL);
+  Type_context key_context(mt->key_type(), false);
+  Type_context val_context(mt->val_type(), false);
+  if (this->vals_ != NULL)
+    {
+      for (Expression_list::const_iterator pv = this->vals_->begin();
+	   pv != this->vals_->end();
+	   ++pv)
+	{
+	  (*pv)->determine_type(gogo, &key_context);
+	  ++pv;
+	  (*pv)->determine_type(gogo, &val_context);
+	}
+    }
+}
+
+void
+Map_construction_expression::do_check_types(Gogo*)
+{
+  // Types should have been checked before this was created, so this
+  // will probably never be called.  Check it anyhow to be sure.
+
+  if (this->vals_ == NULL)
+    return;
+
+  Map_type* mt = this->type_->map_type();
+  go_assert(mt != NULL);
+  Type* key_type = mt->key_type();
+  Type* val_type = mt->val_type();
+  for (Expression_list::const_iterator pv = this->vals_->begin();
+       pv != this->vals_->end();
+       ++pv)
+    {
+      if (!Type::are_assignable(key_type, (*pv)->type(), NULL))
+	{
+	  go_error_at((*pv)->location(),
+		      "incompatible type for key in map composite literal");
+	  this->set_is_error();
+	}
+      ++pv;
+      if (!Type::are_assignable(val_type, (*pv)->type(), NULL))
+	{
+	  go_error_at((*pv)->location(),
+		      "incompatible type for value in map composite literal");
+	  this->set_is_error();
+	}
+    }
+}
+
 // Flatten constructor initializer into a temporary variable since
 // we need to take its address for __go_construct_map.
 
@@ -13730,7 +17825,8 @@ Map_construction_expression::do_flatten(Gogo* gogo, Named_object*,
               go_assert(saw_errors());
               return Expression::make_error(loc);
             }
-	  if (key->type()->interface_type() != NULL && !key->is_variable())
+	  if (key->type()->interface_type() != NULL
+	      && !key->is_multi_eval_safe())
 	    {
 	      Temporary_statement* temp =
 		Statement::make_temporary(NULL, key, loc);
@@ -13746,7 +17842,8 @@ Map_construction_expression::do_flatten(Gogo* gogo, Named_object*,
               go_assert(saw_errors());
               return Expression::make_error(loc);
             }
-	  if (val->type()->interface_type() != NULL && !val->is_variable())
+	  if (val->type()->interface_type() != NULL
+	      && !val->is_multi_eval_safe())
 	    {
 	      Temporary_statement* temp =
 		Statement::make_temporary(NULL, val, loc);
@@ -13774,66 +17871,11 @@ Map_construction_expression::do_flatten(Gogo* gogo, Named_object*,
           Statement::make_temporary(NULL, constructor, loc);
       constructor->issue_nil_check();
       this->constructor_temp_->set_is_address_taken();
+      this->constructor_temp_->determine_types(gogo);
       inserter->insert(this->constructor_temp_);
     }
 
   return this;
-}
-
-// Final type determination.
-
-void
-Map_construction_expression::do_determine_type(const Type_context*)
-{
-  if (this->vals_ == NULL)
-    return;
-
-  Map_type* mt = this->type_->map_type();
-  Type_context key_context(mt->key_type(), false);
-  Type_context val_context(mt->val_type(), false);
-  for (Expression_list::const_iterator pv = this->vals_->begin();
-       pv != this->vals_->end();
-       ++pv)
-    {
-      (*pv)->determine_type(&key_context);
-      ++pv;
-      (*pv)->determine_type(&val_context);
-    }
-}
-
-// Check types.
-
-void
-Map_construction_expression::do_check_types(Gogo*)
-{
-  if (this->vals_ == NULL)
-    return;
-
-  Map_type* mt = this->type_->map_type();
-  int i = 0;
-  Type* key_type = mt->key_type();
-  Type* val_type = mt->val_type();
-  for (Expression_list::const_iterator pv = this->vals_->begin();
-       pv != this->vals_->end();
-       ++pv, ++i)
-    {
-      if (!Type::are_assignable(key_type, (*pv)->type(), NULL))
-	{
-	  go_error_at((*pv)->location(),
-                      "incompatible type for element %d key in map construction",
-                      i + 1);
-	  this->set_is_error();
-	}
-      ++pv;
-      if (!Type::are_assignable(val_type, (*pv)->type(), NULL))
-	{
-	  go_error_at((*pv)->location(),
-                      ("incompatible type for element %d value "
-                       "in map construction"),
-		   i + 1);
-	  this->set_is_error();
-	}
-    }
 }
 
 // Copy.
@@ -13846,6 +17888,37 @@ Map_construction_expression::do_copy()
 					  ? NULL
 					  : this->vals_->copy()),
 					 this->location());
+}
+
+// Make implicit type conversions explicit.
+
+void
+Map_construction_expression::do_add_conversions()
+{
+  if (this->vals_ == NULL || this->vals_->empty())
+    return;
+
+  Map_type* mt = this->type_->map_type();
+  Type* kt = mt->key_type();
+  Type* vt = mt->val_type();
+  bool key_is_interface = (kt->interface_type() != NULL);
+  bool val_is_interface = (vt->interface_type() != NULL);
+  if (!key_is_interface && !val_is_interface)
+    return;
+
+  Location loc = this->location();
+  for (Expression_list::iterator pv = this->vals_->begin();
+       pv != this->vals_->end();
+       ++pv)
+    {
+      if (key_is_interface &&
+          !Type::are_identical(kt, (*pv)->type(), 0, NULL))
+        *pv = Expression::make_cast(kt, *pv, loc);
+      ++pv;
+      if (val_is_interface &&
+          !Type::are_identical(vt, (*pv)->type(), 0, NULL))
+        *pv = Expression::make_cast(vt, *pv, loc);
+    }
 }
 
 // Return the backend representation for constructing a map.
@@ -13891,9 +17964,11 @@ Map_construction_expression::do_get_backend(Translate_context* context)
   Expression* val_offset =
       Expression::make_struct_field_offset(this->element_type_, valfield);
 
+  Gogo* gogo = context->gogo();
   Expression* map_ctor =
-      Runtime::make_call(Runtime::CONSTRUCT_MAP, loc, 5, descriptor, count,
-                         entry_size, val_offset, ventries);
+    Runtime::make_call(gogo, Runtime::CONSTRUCT_MAP, loc, 5,
+		       descriptor, count, entry_size, val_offset, ventries);
+  map_ctor->determine_type_no_context(gogo);
   return map_ctor->get_backend(context);
 }
 
@@ -13925,6 +18000,122 @@ Map_construction_expression::do_dump_expression(
   ast_dump_context->ostream() << "}";
 }
 
+// A composite literal key.  This is seen during parsing, but is not
+// resolved to a named_object in case this is a composite literal of
+// struct type.
+
+class Composite_literal_key_expression : public Parser_expression
+{
+ public:
+  Composite_literal_key_expression(const std::string& name, Location location)
+    : Parser_expression(EXPRESSION_COMPOSITE_LITERAL_KEY, location),
+      name_(name), expr_(NULL)
+  { }
+
+  const std::string&
+  name() const
+  { return this->name_; }
+
+ protected:
+  Type*
+  do_type();
+
+  void
+  do_determine_type(Gogo*, const Type_context*);
+
+  Expression*
+  do_lower(Gogo*, Named_object*, Statement_inserter*);
+
+  Expression*
+  do_copy()
+  {
+    return new Composite_literal_key_expression(this->name_, this->location());
+  }
+
+  void
+  do_dump_expression(Ast_dump_context*) const;
+
+ private:
+  // The name.
+  std::string name_;
+  // After we look up the name, a corresponding expression.
+  Expression* expr_;
+};
+
+// Determine the type of a composite literal key.  We will never get
+// here for keys in composite literals of struct types, because they
+// will be handled by Composite_literal_expression::do_determine_type.
+// So if we get here, this must be a regular name reference after all.
+
+void
+Composite_literal_key_expression::do_determine_type(
+    Gogo* gogo,
+    const Type_context* context)
+{
+  if (this->expr_ != NULL)
+    {
+      // Already resolved.
+      return;
+    }
+
+  Named_object* no = gogo->lookup(this->name_, NULL);
+  if (no == NULL)
+    {
+      // Gogo::lookup doesn't look in the global namespace, and names
+      // used in composite literal keys aren't seen by
+      // Gogo::define_global_names, so we have to look in the global
+      // namespace ourselves.
+      no = gogo->lookup_global(Gogo::unpack_hidden_name(this->name_).c_str());
+      if (no == NULL)
+	{
+	  go_error_at(this->location(), "reference to undefined name %qs",
+		      Gogo::message_name(this->name_).c_str());
+	  this->set_is_error();
+	  return;
+	}
+    }
+
+  this->expr_ = Expression::make_unknown_reference(no, this->location());
+  this->expr_->determine_type(gogo, context);
+}
+
+Type*
+Composite_literal_key_expression::do_type()
+{
+  if (this->is_error_expression())
+    return Type::make_error_type();
+  go_assert(this->expr_ != NULL);
+  return this->expr_->type();
+}
+
+Expression*
+Composite_literal_key_expression::do_lower(Gogo*, Named_object*,
+					   Statement_inserter*)
+{
+  if (this->is_error_expression())
+    return Expression::make_error(this->location());
+  go_assert(this->expr_ != NULL);
+  return this->expr_;
+}
+
+// Dump a composite literal key.
+
+void
+Composite_literal_key_expression::do_dump_expression(
+    Ast_dump_context* ast_dump_context) const
+{
+  ast_dump_context->ostream() << "_UnknownName_(" << this->name_ << ")";
+}
+
+// Make a composite literal key.
+
+Expression*
+Expression::make_composite_literal_key(const std::string& name,
+				       Location location)
+{
+  return new Composite_literal_key_expression(name, location);
+}
+
 // Class Composite_literal_expression.
 
 // Traversal.
@@ -13946,6 +18137,7 @@ Composite_literal_expression::do_traverse(Traverse* traverse)
 
       for (int depth = 0; depth < this->depth_; ++depth)
         {
+	  type = type->deref();
           if (type->array_type() != NULL)
             type = type->array_type()->element_type();
           else if (type->map_type() != NULL)
@@ -13961,6 +18153,7 @@ Composite_literal_expression::do_traverse(Traverse* traverse)
               return TRAVERSE_CONTINUE;
             }
         }
+      type = type->deref();
 
       while (true)
 	{
@@ -13999,98 +18192,170 @@ Composite_literal_expression::do_traverse(Traverse* traverse)
   return TRAVERSE_CONTINUE;
 }
 
-// Lower a generic composite literal into a specific version based on
-// the type.
-
-Expression*
-Composite_literal_expression::do_lower(Gogo* gogo, Named_object* function,
-				       Statement_inserter* inserter, int)
+void
+Composite_literal_expression::do_determine_type(Gogo* gogo,
+						const Type_context*)
 {
+  // Resolve the type if this composite literal is within another
+  // composite literal and has omitted the type.  The DEPTH_ field
+  // tells us how deeply this one is embedded.
   Type* type = this->type_;
-
   for (int depth = 0; depth < this->depth_; ++depth)
     {
       type = type->deref();
       if (type->array_type() != NULL)
 	type = type->array_type()->element_type();
       else if (type->map_type() != NULL)
-        {
-          if (this->key_path_[depth])
-            type = type->map_type()->key_type();
-          else
-            type = type->map_type()->val_type();
-        }
+	{
+	  if (this->key_path_[depth])
+	    type = type->map_type()->key_type();
+	  else
+	    type = type->map_type()->val_type();
+	}
       else
 	{
 	  if (!type->is_error())
-	    go_error_at(this->location(),
-                        ("may only omit types within composite literals "
-                         "of slice, array, or map type"));
-	  return Expression::make_error(this->location());
+	    this->report_error(_("may only omit types within composite "
+				 "literals of slice, array, or map type"));
+	  else
+	    {
+	      go_assert(saw_errors());
+	      this->set_is_error();
+	    }
+	  return;
 	}
     }
 
-  Type *pt = type->points_to();
-  bool is_pointer = false;
-  if (pt != NULL)
+  this->type_ = type;
+  this->depth_ = 0;
+
+  type = type->deref();
+
+  if (this->vals_ == NULL || this->vals_->empty())
     {
-      is_pointer = true;
-      type = pt;
+      // No value types to determine.
+      if (type->array_type() != NULL
+	  && type->array_type()->length() != NULL
+	  && type->array_type()->length()->is_nil_expression())
+	this->resolve_array_length(type);
+      return;
     }
 
-  Expression* ret;
-  if (type->is_error())
-    return Expression::make_error(this->location());
-  else if (type->struct_type() != NULL)
-    ret = this->lower_struct(gogo, type);
-  else if (type->array_type() != NULL)
-    ret = this->lower_array(type);
-  else if (type->map_type() != NULL)
-    ret = this->lower_map(gogo, function, inserter, type);
-  else
+  if (type->struct_type() != NULL && this->has_keys_)
     {
-      go_error_at(this->location(),
-                  ("expected struct, slice, array, or map type "
-                   "for composite literal"));
-      return Expression::make_error(this->location());
-    }
-
-  if (is_pointer)
-    ret = Expression::make_heap_expression(ret, this->location());
-
-  return ret;
-}
-
-// Lower a struct composite literal.
-
-Expression*
-Composite_literal_expression::lower_struct(Gogo* gogo, Type* type)
-{
-  Location location = this->location();
-  Struct_type* st = type->struct_type();
-  if (this->vals_ == NULL || !this->has_keys_)
-    {
-      if (this->vals_ != NULL
-	  && !this->vals_->empty()
-	  && type->named_type() != NULL
-	  && type->named_type()->named_object()->package() != NULL)
+      // Rewrite the value list by removing the struct field keys.  We
+      // do this now rather than during lowering because handling
+      // struct keys is painful.  We don't need to do this for
+      // slice/array/map literals, because it's easy to determine
+      // their types with or without the keys.
+      if (!this->resolve_struct_keys(gogo, type))
 	{
-	  for (Struct_field_list::const_iterator pf = st->fields()->begin();
-	       pf != st->fields()->end();
-	       ++pf)
+	  this->set_is_error();
+	  delete this->vals_;
+	  this->vals_ = NULL;
+	  this->has_keys_ = false;
+	  return;
+	}
+    }
+
+  if (type->struct_type() != NULL)
+    {
+      const Struct_field_list* fields = type->struct_type()->fields();
+      Expression_list::const_iterator pv = this->vals_->begin();
+      for (Struct_field_list::const_iterator pf = fields->begin();
+	   pf != fields->end();
+	   ++pf, ++pv)
+	{
+	  if (pv == this->vals_->end())
+	    return;
+	  if (*pv != NULL)
 	    {
-	      if (Gogo::is_hidden_name(pf->field_name())
-		  || pf->is_embedded_builtin(gogo))
-		go_error_at(this->location(),
-                            "assignment of unexported field %qs in %qs literal",
-                            Gogo::message_name(pf->field_name()).c_str(),
-                            type->named_type()->message_name().c_str());
+	      Type_context subcontext(pf->type(), false);
+	      (*pv)->determine_type(gogo, &subcontext);
 	    }
 	}
-
-      return new Struct_construction_expression(type, this->vals_, location);
+      // Extra values are an error we will report in the check_types
+      // pass; we still want to determine the type to avoid knockon
+      // errors.
+      for (; pv != this->vals_->end(); ++pv)
+	(*pv)->determine_type_no_context(gogo);
     }
+  else if (type->array_type() != NULL)
+    {
+      Array_type* at = type->array_type();
+      Type_context intcontext(Type::lookup_integer_type("int"), false);
+      Type_context subcontext(at->element_type(), false);
+      for (Expression_list::const_iterator pv = this->vals_->begin();
+	   pv != this->vals_->end();
+	   ++pv)
+	{
+	  if (this->has_keys_)
+	    {
+	      if (*pv != NULL)
+		(*pv)->determine_type(gogo, &intcontext);
+	      ++pv;
+	      if (pv == this->vals_->end())
+		break;
+	    }
 
+	  if (*pv != NULL)
+	    (*pv)->determine_type(gogo, &subcontext);
+	}
+
+      if (at->length() != NULL && at->length()->is_nil_expression())
+	this->resolve_array_length(type);
+    }
+  else if (type->map_type() != NULL)
+    {
+      if (!this->has_keys_)
+	{
+	  this->report_error(_("map composite literal must have keys"));
+	  return;
+	}
+
+      Map_type* mt = type->map_type();
+      Type_context key_context(mt->key_type(), false);
+      Type_context val_context(mt->val_type(), false);
+      for (Expression_list::const_iterator pv = this->vals_->begin();
+	   pv != this->vals_->end();
+	   ++pv)
+	{
+	  if (*pv != NULL)
+	    (*pv)->determine_type(gogo, &key_context);
+	  ++pv;
+	  if (*pv != NULL)
+	    (*pv)->determine_type(gogo, &val_context);
+	}
+    }
+  else
+    {
+      // We'll report this as an error in the check_types pass.
+      // Determine types to avoid knockon errors.
+      for (Expression_list::const_iterator pv = this->vals_->begin();
+	   pv != this->vals_->end();
+	   ++pv)
+	{
+	  if (*pv != NULL)
+	    (*pv)->determine_type_no_context(gogo);
+	}
+    }
+}
+
+Type*
+Composite_literal_expression::do_type()
+{
+  if (this->is_error_expression())
+    return Type::make_error_type();
+  go_assert(this->depth_ == 0);
+  return this->type_;
+}
+
+// Resolve the field keys of a struct composite literal.
+
+bool
+Composite_literal_expression::resolve_struct_keys(Gogo* gogo, Type* type)
+{
+  Struct_type* st = type->struct_type();
   size_t field_count = st->field_count();
   std::vector<Expression*> vals(field_count);
   std::vector<unsigned long>* traverse_order = new(std::vector<unsigned long>);
@@ -14110,8 +18375,8 @@ Composite_literal_expression::lower_struct(Gogo* gogo, Type* type)
       if (name_expr == NULL)
 	{
 	  go_error_at(val->location(),
-                      "mixture of field and value initializers");
-	  return Expression::make_error(location);
+		      "mixture of field and value initializers");
+	  return false;
 	}
 
       bool bad_key = false;
@@ -14119,6 +18384,11 @@ Composite_literal_expression::lower_struct(Gogo* gogo, Type* type)
       const Named_object* no = NULL;
       switch (name_expr->classification())
 	{
+	case EXPRESSION_COMPOSITE_LITERAL_KEY:
+	  name =
+	    static_cast<Composite_literal_key_expression*>(name_expr)->name();
+	  break;
+
 	case EXPRESSION_UNKNOWN_REFERENCE:
 	  name = name_expr->unknown_expression()->name();
 	  if (type->named_type() != NULL)
@@ -14128,7 +18398,8 @@ Composite_literal_expression::lower_struct(Gogo* gogo, Type* type)
 	      // this incorrect lookup as a usage of the object's package.
 	      no = name_expr->unknown_expression()->named_object();
 	      if (no->package() != NULL
-		  && no->package() != type->named_type()->named_object()->package())
+		  && (no->package()
+		      != type->named_type()->named_object()->package()))
 		no->package()->forget_usage(name_expr);
 	    }
 	  break;
@@ -14167,7 +18438,7 @@ Composite_literal_expression::lower_struct(Gogo* gogo, Type* type)
       if (bad_key)
 	{
 	  go_error_at(name_expr->location(), "expected struct field name");
-	  return Expression::make_error(location);
+	  return false;
 	}
 
       if (no != NULL)
@@ -14198,31 +18469,22 @@ Composite_literal_expression::lower_struct(Gogo* gogo, Type* type)
       if (sf == NULL)
 	{
 	  go_error_at(name_expr->location(), "unknown field %qs in %qs",
-                      Gogo::message_name(name).c_str(),
-                      (type->named_type() != NULL
-                       ? type->named_type()->message_name().c_str()
-                       : "unnamed struct"));
-	  return Expression::make_error(location);
+		      Gogo::message_name(name).c_str(),
+		      (type->named_type() != NULL
+		       ? type->named_type()->message_name().c_str()
+		       : "unnamed struct"));
+	  return false;
 	}
       if (vals[index] != NULL)
 	{
 	  go_error_at(name_expr->location(),
-                      "duplicate value for field %qs in %qs",
-                      Gogo::message_name(name).c_str(),
-                      (type->named_type() != NULL
-                       ? type->named_type()->message_name().c_str()
-                       : "unnamed struct"));
-	  return Expression::make_error(location);
+		      "duplicate value for field %qs in %qs",
+		      Gogo::message_name(name).c_str(),
+		      (type->named_type() != NULL
+		       ? type->named_type()->message_name().c_str()
+		       : "unnamed struct"));
+	  return false;
 	}
-
-      if (type->named_type() != NULL
-	  && type->named_type()->named_object()->package() != NULL
-	  && (Gogo::is_hidden_name(sf->field_name())
-	      || sf->is_embedded_builtin(gogo)))
-	go_error_at(name_expr->location(),
-                    "assignment of unexported field %qs in %qs literal",
-                    Gogo::message_name(sf->field_name()).c_str(),
-                    type->named_type()->message_name().c_str());
 
       vals[index] = val;
       traverse_order->push_back(static_cast<unsigned long>(index));
@@ -14242,7 +18504,7 @@ Composite_literal_expression::lower_struct(Gogo* gogo, Type* type)
                     (type->named_type() != NULL
                      ? type->named_type()->message_name().c_str()
                      : "unnamed struct"));
-      return Expression::make_error(location);
+      return false;
     }
 
   Expression_list* list = new Expression_list;
@@ -14250,9 +18512,200 @@ Composite_literal_expression::lower_struct(Gogo* gogo, Type* type)
   for (size_t i = 0; i < field_count; ++i)
     list->push_back(vals[i]);
 
+  this->vals_ = list;
+  this->traverse_order_ = traverse_order;
+  this->has_keys_ = false;
+
+  return true;
+}
+
+// Handle [...]{...}
+
+void
+Composite_literal_expression::resolve_array_length(Type* type)
+{
+  size_t size;
+  if (this->vals_ == NULL || this->vals_->empty())
+    size = 0;
+  else if (!this->has_keys_)
+    size = this->vals_->size();
+  else
+    {
+      unsigned long index = 0;
+      size = 0;
+      for (Expression_list::const_iterator pv = this->vals_->begin();
+	   pv != this->vals_->end();
+	   pv += 2)
+	{
+	  Expression* index_expr = *pv;
+	  if (index_expr != NULL)
+	    {
+	      Numeric_constant nc;
+	      unsigned long iv;
+	      if (!index_expr->numeric_constant_value(&nc)
+		  || nc.to_unsigned_long(&iv) != Numeric_constant::NC_UL_VALID)
+		{
+		  // We will report an error when lowering.
+		  break;
+		}
+	      index = iv;
+	    }
+
+	  if (index >= size)
+	    size = index + 1;
+
+	  ++index;
+	}
+    }
+
+  Expression* elen = Expression::make_integer_ul(size, NULL, this->location());
+  this->type_ = Type::make_array_type(type->array_type()->element_type(),
+				      elen);
+}
+
+void
+Composite_literal_expression::do_check_types(Gogo* gogo)
+{
+  if (this->is_error_expression() || this->type_->is_error())
+    {
+      go_assert(saw_errors());
+      return;
+    }
+  go_assert(this->depth_ == 0);
+
+  Type* type = this->type_->deref();
+  if (type->struct_type() != NULL)
+    {
+      go_assert(!this->has_keys_);
+      if (!Struct_construction_expression::check_value_types(gogo, type,
+							     this->vals_,
+							     this->location()))
+	this->set_is_error();
+    }
+  else if (type->array_type() != NULL)
+    {
+      Type* element_type = type->array_type()->element_type();
+      if (element_type->is_error())
+	{
+	  go_assert(saw_errors());
+	  return;
+	}
+      if (this->vals_ == NULL || this->vals_->empty())
+	return;
+      int i = 0;
+      for (Expression_list::const_iterator pv = this->vals_->begin();
+	   pv != this->vals_->end();
+	   ++pv, ++i)
+	{
+	  if (this->has_keys_)
+	    {
+	      // We check the key type in the lowering pass.
+	      ++pv;
+	      if (pv == this->vals_->end())
+		break;
+	    }
+	  if (*pv != NULL
+	      && !Type::are_assignable(element_type, (*pv)->type(), NULL))
+	    {
+	      go_error_at((*pv)->location(),
+			  ("incompatible type for element %d "
+			   "in composite literal"),
+			  i + 1);
+	      this->set_is_error();
+	    }
+	}
+    }
+  else if (type->map_type() != NULL)
+    {
+      if (this->vals_ == NULL || this->vals_->empty())
+	return;
+      if (!this->has_keys_)
+	{
+	  this->report_error(_("map composite literal must have keys"));
+	  return;
+	}
+      int i = 0;
+      Map_type* mt = type->map_type();
+      Type* key_type = mt->key_type();
+      Type* val_type = mt->val_type();
+      for (Expression_list::const_iterator pv = this->vals_->begin();
+	   pv != this->vals_->end();
+	   ++pv, ++i)
+	{
+	  if (*pv != NULL
+	      && !Type::are_assignable(key_type, (*pv)->type(), NULL))
+	    {
+	      go_error_at((*pv)->location(),
+			  ("incompatible type for element %d key "
+			   "in map construction"),
+			  i + 1);
+	      this->set_is_error();
+	    }
+	  ++pv;
+	  if (!Type::are_assignable(val_type, (*pv)->type(), NULL))
+	    {
+	      go_error_at((*pv)->location(),
+			  ("incompatible type for element %d value "
+			   "in map construction"),
+			  i + 1);
+	      this->set_is_error();
+	    }
+	}
+    }
+  else
+    {
+      this->report_error(_("expected struct, slice, array, or map type "
+			   "for composite literal"));
+    }
+}
+
+// Lower a generic composite literal into a specific version based on
+// the type.
+
+Expression*
+Composite_literal_expression::do_lower(Gogo* gogo, Named_object* function,
+				       Statement_inserter* inserter)
+{
+  if (this->is_error_expression() || this->type_->is_error())
+    return Expression::make_error(this->location());
+  go_assert(this->depth_ == 0);
+
+  Type* type = this->type_;
+  Type *pt = type->points_to();
+  bool is_pointer = false;
+  if (pt != NULL)
+    {
+      is_pointer = true;
+      type = pt;
+    }
+
+  Expression* ret;
+  if (type->is_error())
+    return Expression::make_error(this->location());
+  else if (type->struct_type() != NULL)
+    ret = this->lower_struct(type);
+  else if (type->array_type() != NULL)
+    ret = this->lower_array(type);
+  else if (type->map_type() != NULL)
+    ret = this->lower_map(gogo, function, inserter, type);
+  else
+    go_unreachable();
+
+  if (is_pointer)
+    ret = Expression::make_heap_expression(ret, this->location());
+
+  return ret;
+}
+
+// Lower a struct composite literal.
+
+Expression*
+Composite_literal_expression::lower_struct(Type* type)
+{
+  go_assert(!this->has_keys_);
   Struct_construction_expression* ret =
-    new Struct_construction_expression(type, list, location);
-  ret->set_traverse_order(traverse_order);
+    new Struct_construction_expression(type, this->vals_, this->location());
+  ret->set_traverse_order(this->traverse_order_);
   return ret;
 }
 
@@ -14343,7 +18796,7 @@ Composite_literal_expression::lower_array(Type* type)
 
 	  Named_type* ntype = Type::lookup_integer_type("int");
 	  Integer_type* inttype = ntype->integer_type();
-	  if (sizeof(index) <= static_cast<size_t>(inttype->bits() * 8)
+	  if (sizeof(index) >= static_cast<size_t>(inttype->bits() / 8)
 	      && index >> (inttype->bits() - 1) != 0)
 	    {
 	      go_error_at(index_expr->location(), "index value overflow");
@@ -14402,11 +18855,11 @@ Composite_literal_expression::lower_array(Type* type)
       traverse_order = new std::vector<unsigned long>();
       traverse_order->reserve(v.size());
 
-      for (V::const_iterator p = v.begin(); p != v.end(); ++p)
+      for (V::const_iterator pv = v.begin(); pv != v.end(); ++pv)
 	{
-	  indexes->push_back(p->index);
-	  vals->push_back(p->expr);
-	  traverse_order->push_back(p->traversal_order);
+	  indexes->push_back(pv->index);
+	  vals->push_back(pv->expr);
+	  traverse_order->push_back(pv->traversal_order);
 	}
     }
 
@@ -14429,32 +18882,9 @@ Composite_literal_expression::make_array(
   Location location = this->location();
   Array_type* at = type->array_type();
 
-  if (at->length() != NULL && at->length()->is_nil_expression())
-    {
-      size_t size;
-      if (vals == NULL)
-	size = 0;
-      else if (indexes != NULL)
-	size = indexes->back() + 1;
-      else
-	{
-	  size = vals->size();
-	  Integer_type* it = Type::lookup_integer_type("int")->integer_type();
-	  if (sizeof(size) <= static_cast<size_t>(it->bits() * 8)
-	      && size >> (it->bits() - 1) != 0)
-	    {
-	      go_error_at(location, "too many elements in composite literal");
-	      return Expression::make_error(location);
-	    }
-	}
-
-      Expression* elen = Expression::make_integer_ul(size, NULL, location);
-      at = Type::make_array_type(at->element_type(), elen);
-      type = at;
-    }
-  else if (at->length() != NULL
-	   && !at->length()->is_error_expression()
-	   && this->vals_ != NULL)
+  if (at->length() != NULL
+      && !at->length()->is_error_expression()
+      && this->vals_ != NULL)
     {
       Numeric_constant nc;
       unsigned long val;
@@ -14501,13 +18931,11 @@ Composite_literal_expression::lower_map(Gogo* gogo, Named_object* function,
   Location location = this->location();
   Unordered_map(unsigned int, std::vector<Expression*>) st;
   Unordered_map(unsigned int, std::vector<Expression*>) nt;
+  bool saw_false = false;
+  bool saw_true = false;
   if (this->vals_ != NULL)
     {
-      if (!this->has_keys_)
-	{
-	  go_error_at(location, "map composite literal must have keys");
-	  return Expression::make_error(location);
-	}
+      go_assert(this->has_keys_);
 
       for (Expression_list::iterator p = this->vals_->begin();
 	   p != this->vals_->end();
@@ -14526,7 +18954,6 @@ Composite_literal_expression::lower_map(Gogo* gogo, Named_object* function,
 	  // literals.  Lower it now to get the right error message.
 	  if ((*p)->unknown_expression() != NULL)
 	    {
-	      (*p)->unknown_expression()->clear_is_composite_literal_key();
 	      gogo->lower_expression(function, inserter, &*p);
 	      go_assert((*p)->is_error_expression());
 	      return Expression::make_error(location);
@@ -14536,6 +18963,7 @@ Composite_literal_expression::lower_map(Gogo* gogo, Named_object* function,
 	    continue;
 	  std::string sval;
 	  Numeric_constant nval;
+	  bool bval;
 	  if ((*p)->string_constant_value(&sval)) // Check string keys.
 	    {
 	      unsigned int h = Gogo::hash_string(sval, 0);
@@ -14573,8 +19001,9 @@ Composite_literal_expression::lower_map(Gogo* gogo, Named_object* function,
 		  mit->second.push_back(*p);
 		}
 	    }
-	  else if ((*p)->numeric_constant_value(&nval)) // Check numeric keys.
+	  else if ((*p)->numeric_constant_value(&nval))
 	    {
+	      // Check numeric keys.
 	      unsigned int h = nval.hash(0);
 	      Unordered_map(unsigned int, std::vector<Expression*>)::iterator mit;
 	      mit = nt.find(h);
@@ -14608,6 +19037,19 @@ Composite_literal_expression::lower_map(Gogo* gogo, Named_object* function,
 		  // Add this new numeric key to the vector indexed by h.
 		  mit->second.push_back(*p);
 		}
+	    }
+	  else if ((*p)->boolean_constant_value(&bval))
+	    {
+	      if ((bval && saw_true) || (!bval && saw_false))
+		{
+		  go_error_at((*p)->location(),
+			      "duplicate key in map literal");
+		  return Expression::make_error(location);
+		}
+	      if (bval)
+		saw_true = true;
+	      else
+		saw_false = true;
 	    }
 	}
     }
@@ -14737,6 +19179,50 @@ Expression::is_local_variable() const
 	  || (no->is_variable() && !no->var_value()->is_global()));
 }
 
+// Return true if multiple evaluations are OK.
+
+bool
+Expression::is_multi_eval_safe()
+{
+  switch (this->classification_)
+    {
+    case EXPRESSION_VAR_REFERENCE:
+      {
+	// A variable is a simple reference if not stored in the heap.
+	const Named_object* no = this->var_expression()->named_object();
+	if (no->is_variable())
+	  return !no->var_value()->is_in_heap();
+	else if (no->is_result_variable())
+	  return !no->result_var_value()->is_in_heap();
+	else
+	  go_unreachable();
+      }
+
+    case EXPRESSION_TEMPORARY_REFERENCE:
+      return true;
+
+    default:
+      break;
+    }
+
+  if (!this->is_constant())
+    return false;
+
+  // Only numeric and boolean constants are really multi-evaluation
+  // safe.  We don't want multiple copies of string constants.
+  Type* type = this->type();
+  return type->is_numeric_type() || type->is_boolean_type();
+}
+
+const Named_object*
+Expression::named_constant() const
+{
+  if (this->classification() != EXPRESSION_CONST_REFERENCE)
+    return NULL;
+  const Const_expression* ce = static_cast<const Const_expression*>(this);
+  return ce->named_object();
+}
+
 // Class Type_guard_expression.
 
 // Traversal.
@@ -14761,7 +19247,7 @@ Type_guard_expression::do_flatten(Gogo*, Named_object*,
       return Expression::make_error(this->location());
     }
 
-  if (!this->expr_->is_variable())
+  if (!this->expr_->is_multi_eval_safe())
     {
       Temporary_statement* temp = Statement::make_temporary(NULL, this->expr_,
                                                             this->location());
@@ -14825,13 +19311,16 @@ Type_guard_expression::do_get_backend(Translate_context* context)
 {
   Expression* conversion;
   if (this->type_->interface_type() != NULL)
-    conversion =
-        Expression::convert_interface_to_interface(this->type_, this->expr_,
-                                                   true, this->location());
+    conversion = Expression::convert_interface_to_interface(context->gogo(),
+							    this->type_,
+							    this->expr_,
+							    true,
+							    this->location());
   else
-    conversion =
-        Expression::convert_for_assignment(context->gogo(), this->type_,
-                                           this->expr_, this->location());
+    conversion = Expression::convert_for_assignment(context->gogo(),
+						    this->type_,
+						    this->expr_,
+						    this->location());
 
   Gogo* gogo = context->gogo();
   Btype* bt = this->type_->get_backend(gogo);
@@ -14891,7 +19380,9 @@ Heap_expression::do_get_backend(Translate_context* context)
   Bfunction* fndecl = fn->func_value()->get_or_make_decl(gogo, fn);
   Bvariable* space_temp =
     gogo->backend()->temporary_variable(fndecl, context->bblock(), btype,
-					space, true, loc, &decl);
+					space,
+					Backend::variable_address_is_taken,
+					loc, &decl);
   Btype* expr_btype = etype->get_backend(gogo);
 
   Bexpression* bexpr = this->expr_->get_backend(context);
@@ -14912,21 +19403,48 @@ Heap_expression::do_get_backend(Translate_context* context)
       Bstatement* edecl;
       Bvariable* btemp =
 	gogo->backend()->temporary_variable(fndecl, context->bblock(),
-					    expr_btype, bexpr, true, loc,
-					    &edecl);
+					    expr_btype, bexpr,
+					    Backend::variable_address_is_taken,
+					    loc, &edecl);
       Bexpression* btempref = gogo->backend()->var_expression(btemp,
 							      loc);
-      Bexpression* addr = gogo->backend()->address_expression(btempref, loc);
-
-      Expression* td = Expression::make_type_descriptor(etype, loc);
-      Type* etype_ptr = Type::make_pointer_type(etype);
       space = gogo->backend()->var_expression(space_temp, loc);
+      Type* etype_ptr = Type::make_pointer_type(etype);
       Expression* elhs = Expression::make_backend(space, etype_ptr, loc);
-      Expression* erhs = Expression::make_backend(addr, etype_ptr, loc);
-      Expression* call = Runtime::make_call(Runtime::TYPEDMEMMOVE, loc, 3,
-					    td, elhs, erhs);
-      Bexpression* bcall = call->get_backend(context);
-      Bstatement* s = gogo->backend()->expression_statement(fndecl, bcall);
+      Expression* erhs;
+      Expression* call;
+      if (etype->is_direct_iface_type())
+        {
+          // Single pointer.
+          Type* uintptr_type = Type::lookup_integer_type("uintptr");
+          erhs = Expression::make_backend(btempref, etype, loc);
+          erhs = Expression::unpack_direct_iface(erhs, loc);
+          erhs = Expression::make_unsafe_cast(uintptr_type, erhs, loc);
+          call = Runtime::make_call(gogo, Runtime::GCWRITEBARRIER, loc, 2,
+                                    elhs, erhs);
+        }
+      else
+        {
+          Expression* td = Expression::make_type_descriptor(etype, loc);
+          Bexpression* addr =
+            gogo->backend()->address_expression(btempref, loc);
+          erhs = Expression::make_backend(addr, etype_ptr, loc);
+          call = Runtime::make_call(gogo, Runtime::TYPEDMEMMOVE, loc, 3,
+                                    td, elhs, erhs);
+        }
+      Statement* cs = Statement::make_statement(call, false);
+
+      space = gogo->backend()->var_expression(space_temp, loc);
+      Bexpression* ref =
+        gogo->backend()->indirect_expression(expr_btype, space, true, loc);
+      Expression* eref = Expression::make_backend(ref, etype, loc);
+      btempref = gogo->backend()->var_expression(btemp, loc);
+      erhs = Expression::make_backend(btempref, etype, loc);
+      Statement* as = Statement::make_assignment(eref, erhs, loc);
+
+      as = gogo->check_write_barrier(context->block(), as, cs);
+      Bstatement* s = as->get_backend(context);
+
       assn = gogo->backend()->compound_statement(edecl, s);
     }
   decl = gogo->backend()->compound_statement(decl, assn);
@@ -15040,14 +19558,26 @@ Receive_expression::do_get_backend(Translate_context* context)
       return context->backend()->error_expression();
     }
 
+  Gogo* gogo = context->gogo();
   Expression* recv_ref =
     Expression::make_temporary_reference(this->temp_receiver_, loc);
   Expression* recv_addr =
     Expression::make_temporary_reference(this->temp_receiver_, loc);
   recv_addr = Expression::make_unary(OPERATOR_AND, recv_addr, loc);
-  Expression* recv = Runtime::make_call(Runtime::CHANRECV1, loc, 2,
+  Expression* recv = Runtime::make_call(gogo, Runtime::CHANRECV1, loc, 2,
 					this->channel_, recv_addr);
-  return Expression::make_compound(recv, recv_ref, loc)->get_backend(context);
+  Expression* ret = Expression::make_compound(recv, recv_ref, loc);
+  ret->determine_type_no_context(gogo);
+  return ret->get_backend(context);
+}
+
+// Export a receive expression.
+
+void
+Receive_expression::do_export(Export_function_body* efb) const
+{
+  efb->write_c_string("<-");
+  this->channel_->export_expression(efb);
 }
 
 // Dump ast representation for a receive expression.
@@ -15057,6 +19587,16 @@ Receive_expression::do_dump_expression(Ast_dump_context* ast_dump_context) const
 {
   ast_dump_context->ostream() << " <- " ;
   ast_dump_context->dump_expression(channel_);
+}
+
+// Import a receive expression.
+
+Expression*
+Receive_expression::do_import(Import_expression* imp, Location loc)
+{
+  imp->require_c_string("<-");
+  Expression* expr = Expression::import_expression(imp, loc);
+  return Expression::make_receive(expr, loc);
 }
 
 // Make a receive expression.
@@ -15091,7 +19631,7 @@ class Type_descriptor_expression : public Expression
   { return true; }
 
   void
-  do_determine_type(const Type_context*)
+  do_determine_type(Gogo*, const Type_context*)
   { }
 
   Expression*
@@ -15159,7 +19699,7 @@ class GC_symbol_expression : public Expression
   { return true; }
 
   void
-  do_determine_type(const Type_context*)
+  do_determine_type(Gogo*, const Type_context*)
   { }
 
   Expression*
@@ -15218,7 +19758,7 @@ class Ptrmask_symbol_expression : public Expression
   { return true; }
 
   void
-  do_determine_type(const Type_context*)
+  do_determine_type(Gogo*, const Type_context*)
   { }
 
   Expression*
@@ -15305,7 +19845,7 @@ class Type_info_expression : public Expression
   do_type();
 
   void
-  do_determine_type(const Type_context*)
+  do_determine_type(Gogo*, const Type_context*)
   { }
 
   Expression*
@@ -15410,49 +19950,7 @@ Expression::make_type_info(Type* type, Type_info type_info)
   return new Type_info_expression(type, type_info);
 }
 
-// An expression that evaluates to some characteristic of a slice.
-// This is used when indexing, bound-checking, or nil checking a slice.
-
-class Slice_info_expression : public Expression
-{
- public:
-  Slice_info_expression(Expression* slice, Slice_info slice_info,
-                        Location location)
-    : Expression(EXPRESSION_SLICE_INFO, location),
-      slice_(slice), slice_info_(slice_info)
-  { }
-
- protected:
-  Type*
-  do_type();
-
-  void
-  do_determine_type(const Type_context*)
-  { }
-
-  Expression*
-  do_copy()
-  {
-    return new Slice_info_expression(this->slice_->copy(), this->slice_info_,
-                                     this->location());
-  }
-
-  Bexpression*
-  do_get_backend(Translate_context* context);
-
-  void
-  do_dump_expression(Ast_dump_context*) const;
-
-  void
-  do_issue_nil_check()
-  { this->slice_->issue_nil_check(); }
-
- private:
-  // The slice for which we are getting information.
-  Expression* slice_;
-  // What information we want.
-  Slice_info slice_info_;
-};
+// Slice_info_expression.
 
 // Return the type of the slice info.
 
@@ -15531,6 +20029,16 @@ Slice_value_expression::do_traverse(Traverse* traverse)
   return TRAVERSE_CONTINUE;
 }
 
+// Determine type of a slice value.
+
+void
+Slice_value_expression::do_determine_type(Gogo* gogo, const Type_context*)
+{
+  this->valmem_->determine_type_no_context(gogo);
+  this->len_->determine_type_no_context(gogo);
+  this->cap_->determine_type_no_context(gogo);
+}
+
 Expression*
 Slice_value_expression::do_copy()
 {
@@ -15578,6 +20086,45 @@ Expression::make_slice_value(Type* at, Expression* valmem, Expression* len,
   return new Slice_value_expression(at, valmem, len, cap, location);
 }
 
+// Look through the expression of a Slice_value_expression's valmem to
+// find an call to makeslice.  If found, return the call expression and
+// the containing temporary statement (if any).
+
+std::pair<Call_expression*, Temporary_statement*>
+Expression::find_makeslice_call(Expression* expr)
+{
+  Unsafe_type_conversion_expression* utce =
+    expr->unsafe_conversion_expression();
+  if (utce != NULL)
+    expr = utce->expr();
+
+  Slice_value_expression* sve = expr->slice_value_expression();
+  if (sve == NULL)
+    return std::make_pair<Call_expression*, Temporary_statement*>(NULL, NULL);
+  expr = sve->valmem();
+
+  utce = expr->unsafe_conversion_expression();
+  if (utce != NULL)
+    expr = utce->expr();
+
+  Temporary_reference_expression* tre = expr->temporary_reference_expression();
+  Temporary_statement* ts = (tre != NULL ? tre->statement() : NULL);
+  if (ts != NULL && ts->init() != NULL && !ts->assigned()
+      && !ts->is_address_taken())
+    expr = ts->init();
+
+  Call_expression* call = expr->call_expression();
+  if (call == NULL)
+    return std::make_pair<Call_expression*, Temporary_statement*>(NULL, NULL);
+
+  Func_expression* fe = call->fn()->func_expression();
+  if (fe != NULL
+      && fe->runtime_code() == Runtime::MAKESLICE)
+    return std::make_pair(call, ts);
+
+  return std::make_pair<Call_expression*, Temporary_statement*>(NULL, NULL);
+}
+
 // An expression that evaluates to some characteristic of a non-empty interface.
 // This is used to access the method table or underlying object of an interface.
 
@@ -15595,7 +20142,7 @@ class Interface_info_expression : public Expression
   do_type();
 
   void
-  do_determine_type(const Type_context*)
+  do_determine_type(Gogo*, const Type_context*)
   { }
 
   Expression*
@@ -15636,9 +20183,9 @@ Interface_info_expression::do_type()
 
         Interface_type* itype = this->iface_->type()->interface_type();
 
-        Hashtable::const_iterator p = result_types.find(itype);
-        if (p != result_types.end())
-          return p->second;
+        Hashtable::const_iterator pr = result_types.find(itype);
+        if (pr != result_types.end())
+          return pr->second;
 
         Type* pdt = Type::make_type_descriptor_ptr_type();
         if (itype->is_empty())
@@ -15765,8 +20312,7 @@ class Interface_value_expression : public Expression
   { return this->type_; }
 
   void
-  do_determine_type(const Type_context*)
-  { go_unreachable(); }
+  do_determine_type(Gogo*, const Type_context*);
 
   Expression*
   do_copy()
@@ -15799,6 +20345,13 @@ Interface_value_expression::do_traverse(Traverse* traverse)
       || Expression::traverse(&this->obj_, traverse) == TRAVERSE_EXIT)
     return TRAVERSE_EXIT;
   return TRAVERSE_CONTINUE;
+}
+
+void
+Interface_value_expression::do_determine_type(Gogo* gogo, const Type_context*)
+{
+  this->first_field_->determine_type_no_context(gogo);
+  this->obj_->determine_type_no_context(gogo);
 }
 
 Bexpression*
@@ -15860,8 +20413,8 @@ class Interface_mtable_expression : public Expression
   { return true; }
 
   void
-  do_determine_type(const Type_context*)
-  { go_unreachable(); }
+  do_determine_type(Gogo*, const Type_context*)
+  { }
 
   Expression*
   do_copy()
@@ -15976,9 +20529,8 @@ Interface_mtable_expression::do_get_backend(Translate_context* context)
     {
       // The interface conversion table is defined elsewhere.
       Btype* btype = this->type()->get_backend(gogo);
-      std::string asm_name(go_selectively_encode_id(mangled_name));
       this->bvar_ =
-          gogo->backend()->immutable_struct_reference(mangled_name, asm_name,
+          gogo->backend()->immutable_struct_reference(mangled_name, "",
                                                       btype, loc);
       return gogo->backend()->var_expression(this->bvar_, this->location());
     }
@@ -16018,11 +20570,27 @@ Interface_mtable_expression::do_get_backend(Translate_context* context)
       else
 	m = st->method_function(p->name(), &is_ambiguous);
       go_assert(m != NULL);
-      Named_object* no = m->named_object();
+
+      // See the comment in Type::method_constructor.
+      bool use_direct_iface_stub = false;
+      if (m->is_value_method()
+	  && this->is_pointer_
+	  && this->type_->is_direct_iface_type())
+	use_direct_iface_stub = true;
+      if (!m->is_value_method()
+	  && this->is_pointer_
+	  && !this->type_->in_heap())
+	use_direct_iface_stub = true;
+      Named_object* no = (use_direct_iface_stub
+			  ? m->iface_stub_object()
+			  : m->named_object());
 
       go_assert(no->is_function() || no->is_function_declaration());
 
-      Btype* fcn_btype = m->type()->get_backend_fntype(gogo);
+      Function_type* fcn_type = (no->is_function()
+                                 ? no->func_value()->type()
+                                 : no->func_declaration_value()->type());
+      Btype* fcn_btype = fcn_type->get_backend_fntype(gogo);
       Backend::Btyped_identifier bmtype(p->name(), fcn_btype, loc);
       bstructfields.push_back(bmtype);
 
@@ -16040,11 +20608,13 @@ Interface_mtable_expression::do_get_backend(Translate_context* context)
   Bexpression* ctor =
       gogo->backend()->constructor_expression(btype, ctor_bexprs, loc);
 
-  std::string asm_name(go_selectively_encode_id(mangled_name));
-  this->bvar_ = gogo->backend()->immutable_struct(mangled_name, asm_name, false,
-						  !is_public, btype, loc);
-  gogo->backend()->immutable_struct_set_init(this->bvar_, mangled_name, false,
-                                             !is_public, btype, loc, ctor);
+  unsigned int flags = 0;
+  if (!is_public)
+    flags |= Backend::variable_is_hidden;
+  this->bvar_ = gogo->backend()->immutable_struct(mangled_name, "", flags,
+						  btype, loc);
+  gogo->backend()->immutable_struct_set_init(this->bvar_, mangled_name, flags,
+					     btype, loc, ctor);
   return gogo->backend()->var_expression(this->bvar_, loc);
 }
 
@@ -16089,7 +20659,7 @@ class Struct_field_offset_expression : public Expression
   { return Type::lookup_integer_type("uintptr"); }
 
   void
-  do_determine_type(const Type_context*)
+  do_determine_type(Gogo*, const Type_context*)
   { }
 
   Expression*
@@ -16174,7 +20744,7 @@ class Label_addr_expression : public Expression
   { return Type::make_pointer_type(Type::make_void_type()); }
 
   void
-  do_determine_type(const Type_context*)
+  do_determine_type(Gogo*, const Type_context*)
   { }
 
   Expression*
@@ -16237,11 +20807,12 @@ Conditional_expression::do_type()
 // Determine type for a conditional expression.
 
 void
-Conditional_expression::do_determine_type(const Type_context* context)
+Conditional_expression::do_determine_type(Gogo* gogo,
+					  const Type_context* context)
 {
-  this->cond_->determine_type_no_context();
-  this->then_->determine_type(context);
-  this->else_->determine_type(context);
+  this->cond_->determine_type_no_context(gogo);
+  this->then_->determine_type(gogo, context);
+  this->else_->determine_type(gogo, context);
 }
 
 // Get the backend representation of a conditional expression.
@@ -16307,10 +20878,10 @@ Compound_expression::do_type()
 // Determine type for a compound expression.
 
 void
-Compound_expression::do_determine_type(const Type_context* context)
+Compound_expression::do_determine_type(Gogo* gogo, const Type_context* context)
 {
-  this->init_->determine_type_no_context();
-  this->expr_->determine_type(context);
+  this->init_->determine_type_no_context(gogo);
+  this->expr_->determine_type(gogo, context);
 }
 
 // Get the backend representation of a compound expression.
@@ -16384,6 +20955,71 @@ Expression::make_backend(Bexpression* bexpr, Type* type, Location location)
 Expression*
 Expression::import_expression(Import_expression* imp, Location loc)
 {
+  Expression* expr = Expression::import_expression_without_suffix(imp, loc);
+  while (true)
+    {
+      if (imp->match_c_string("("))
+	{
+	  imp->advance(1);
+	  Expression_list* args = new Expression_list();
+	  bool is_varargs = false;
+	  while (!imp->match_c_string(")"))
+	    {
+	      Expression* arg = Expression::import_expression(imp, loc);
+	      if (arg->is_error_expression())
+		return arg;
+	      args->push_back(arg);
+	      if (imp->match_c_string(")"))
+		break;
+	      else if (imp->match_c_string("...)"))
+		{
+		  imp->advance(3);
+		  is_varargs = true;
+		  break;
+		}
+	      imp->require_c_string(", ");
+	    }
+	  imp->require_c_string(")");
+	  expr = Expression::make_call(expr, args, is_varargs, loc);
+          expr->call_expression()->set_varargs_are_lowered();
+	}
+      else if (imp->match_c_string("["))
+	{
+	  imp->advance(1);
+	  Expression* start = Expression::import_expression(imp, loc);
+	  Expression* end = NULL;
+	  Expression* cap = NULL;
+	  if (imp->match_c_string(":"))
+	    {
+	      imp->advance(1);
+	      int c = imp->peek_char();
+	      if (c == ':' || c == ']')
+		end = Expression::make_nil(loc);
+	      else
+		end = Expression::import_expression(imp, loc);
+	      if (imp->match_c_string(":"))
+		{
+		  imp->advance(1);
+		  cap = Expression::import_expression(imp, loc);
+		}
+	    }
+	  imp->require_c_string("]");
+	  expr = Expression::make_index(expr, start, end, cap, loc);
+	}
+      else
+	break;
+    }
+
+  return expr;
+}
+
+// Import an expression without considering a suffix (function
+// arguments, index operations, etc.).
+
+Expression*
+Expression::import_expression_without_suffix(Import_expression* imp,
+					     Location loc)
+{
   int c = imp->peek_char();
   if (c == '+' || c == '-' || c == '!' || c == '^' || c == '&' || c == '*')
     return Unary_expression::do_import(imp, loc);
@@ -16402,6 +21038,8 @@ Expression::import_expression(Import_expression* imp, Location loc)
       // This handles integers, floats and complex constants.
       return Integer_expression::do_import(imp, loc);
     }
+  else if (imp->match_c_string("<-"))
+    return Receive_expression::do_import(imp, loc);
   else if (imp->match_c_string("$nil")
 	   || (imp->version() < EXPORT_FORMAT_V3
 	       && imp->match_c_string("nil")))
@@ -16419,26 +21057,73 @@ Expression::import_expression(Import_expression* imp, Location loc)
     }
   if (ifb->saw_error())
     return Expression::make_error(loc);
-  std::string id = ifb->read_identifier();
-  if (id.empty())
+
+  if (ifb->match_c_string("$t"))
+    return Temporary_reference_expression::do_import(ifb, loc);
+
+  return Expression::import_identifier(ifb, loc);
+}
+
+// Import an identifier in an expression.  This is a reference to a
+// variable or function.
+
+Expression*
+Expression::import_identifier(Import_function_body* ifb, Location loc)
+{
+  std::string id;
+  Package* pkg;
+  bool is_exported;
+  if (!Import::read_qualified_identifier(ifb, &id, &pkg, &is_exported))
     {
       if (!ifb->saw_error())
-	go_error_at(imp->location(),
-		    "import error: expected identifier at %lu",
+	go_error_at(ifb->location(),
+		    "import error for %qs: bad qualified identifier at %lu",
+		    ifb->name().c_str(),
 		    static_cast<unsigned long>(ifb->off()));
       ifb->set_saw_error();
       return Expression::make_error(loc);
     }
-  Named_object* var = ifb->block()->bindings()->lookup(id);
-  if (var == NULL)
+
+  Named_object* no = NULL;
+  if (pkg == NULL && is_exported)
+    no = ifb->block()->bindings()->lookup(id);
+  if (no == NULL)
+    {
+      const Package* ipkg = pkg;
+      if (ipkg == NULL)
+	ipkg = ifb->function()->package();
+      if (!is_exported)
+	id = '.' + ipkg->pkgpath() + '.' + id;
+      no = ipkg->bindings()->lookup(id);
+    }
+  if (no == NULL)
+    no = ifb->gogo()->lookup_global(id.c_str());
+
+  if (no == NULL)
     {
       if (!ifb->saw_error())
-	go_error_at(imp->location(), "import error: lookup of %qs failed",
-		    id.c_str());
+	go_error_at(ifb->location(),
+		    "import error for %qs: lookup of %qs failed",
+		    ifb->name().c_str(), id.c_str());
       ifb->set_saw_error();
       return Expression::make_error(loc);
     }
-  return Expression::make_var_reference(var, loc);
+
+  if (no->is_variable() || no->is_result_variable())
+    return Expression::make_var_reference(no, loc);
+  else if (no->is_function() || no->is_function_declaration())
+    return Expression::make_func_reference(no, NULL, loc);
+  else
+    {
+      if (!ifb->saw_error())
+	go_error_at(ifb->location(),
+		    ("import error for %qs: "
+		     "unexpected type of identifier %qs (%d)"),
+		    ifb->name().c_str(),
+		    id.c_str(), no->classification());
+      ifb->set_saw_error();
+      return Expression::make_error(loc);
+    }
 }
 
 // Class Expression_list.
@@ -16515,7 +21200,7 @@ Numeric_constant::Numeric_constant(const Numeric_constant& a)
       mpz_init_set(this->u_.int_val, a.u_.int_val);
       break;
     case NC_FLOAT:
-      mpfr_init_set(this->u_.float_val, a.u_.float_val, GMP_RNDN);
+      mpfr_init_set(this->u_.float_val, a.u_.float_val, MPFR_RNDN);
       break;
     case NC_COMPLEX:
       mpc_init2(this->u_.complex_val, mpc_precision);
@@ -16543,7 +21228,7 @@ Numeric_constant::operator=(const Numeric_constant& a)
       mpz_init_set(this->u_.int_val, a.u_.int_val);
       break;
     case NC_FLOAT:
-      mpfr_init_set(this->u_.float_val, a.u_.float_val, GMP_RNDN);
+      mpfr_init_set(this->u_.float_val, a.u_.float_val, MPFR_RNDN);
       break;
     case NC_COMPLEX:
       mpc_init2(this->u_.complex_val, mpc_precision);
@@ -16661,9 +21346,9 @@ Numeric_constant::set_float(Type* type, const mpfr_t val)
       && !type->float_type()->is_abstract())
     bits = type->float_type()->bits();
   if (Numeric_constant::is_float_neg_zero(val, bits))
-    mpfr_init_set_ui(this->u_.float_val, 0, GMP_RNDN);
+    mpfr_init_set_ui(this->u_.float_val, 0, MPFR_RNDN);
   else
-    mpfr_init_set(this->u_.float_val, val, GMP_RNDN);
+    mpfr_init_set(this->u_.float_val, val, MPFR_RNDN);
 }
 
 // Set to a complex value.
@@ -16683,14 +21368,14 @@ Numeric_constant::set_complex(Type* type, const mpc_t val)
     bits = type->complex_type()->bits() / 2;
 
   mpfr_t real;
-  mpfr_init_set(real, mpc_realref(val), GMP_RNDN);
+  mpfr_init_set(real, mpc_realref(val), MPFR_RNDN);
   if (Numeric_constant::is_float_neg_zero(real, bits))
-    mpfr_set_ui(real, 0, GMP_RNDN);
+    mpfr_set_ui(real, 0, MPFR_RNDN);
 
   mpfr_t imag;
-  mpfr_init_set(imag, mpc_imagref(val), GMP_RNDN);
+  mpfr_init_set(imag, mpc_imagref(val), MPFR_RNDN);
   if (Numeric_constant::is_float_neg_zero(imag, bits))
-    mpfr_set_ui(imag, 0, GMP_RNDN);
+    mpfr_set_ui(imag, 0, MPFR_RNDN);
 
   mpc_init2(this->u_.complex_val, mpc_precision);
   mpc_set_fr_fr(this->u_.complex_val, real, imag, MPC_RNDNN);
@@ -16709,7 +21394,7 @@ Numeric_constant::is_float_neg_zero(const mpfr_t val, int bits)
     return false;
   if (mpfr_zero_p(val))
     return true;
-  mp_exp_t min_exp;
+  mpfr_exp_t min_exp;
   switch (bits)
     {
     case 0:
@@ -16754,7 +21439,7 @@ void
 Numeric_constant::get_float(mpfr_t* val) const
 {
   go_assert(this->is_float());
-  mpfr_init_set(*val, this->u_.float_val, GMP_RNDN);
+  mpfr_init_set(*val, this->u_.float_val, MPFR_RNDN);
 }
 
 // Get a complex value.
@@ -16814,7 +21499,7 @@ Numeric_constant::mpfr_to_unsigned_long(const mpfr_t fval,
     return NC_UL_NOTINT;
   mpz_t ival;
   mpz_init(ival);
-  mpfr_get_z(ival, fval, GMP_RNDN);
+  mpfr_get_z(ival, fval, MPFR_RNDN);
   To_unsigned_long ret = this->mpz_to_unsigned_long(ival, val);
   mpz_clear(ival);
   return ret;
@@ -16881,7 +21566,7 @@ Numeric_constant::mpfr_to_memory_size(const mpfr_t fval, int64_t* val) const
     return false;
   mpz_t ival;
   mpz_init(ival);
-  mpfr_get_z(ival, fval, GMP_RNDN);
+  mpfr_get_z(ival, fval, MPFR_RNDN);
   bool ret = this->mpz_to_memory_size(ival, val);
   mpz_clear(ival);
   return ret;
@@ -16902,14 +21587,14 @@ Numeric_constant::to_int(mpz_t* val) const
       if (!mpfr_integer_p(this->u_.float_val))
 	return false;
       mpz_init(*val);
-      mpfr_get_z(*val, this->u_.float_val, GMP_RNDN);
+      mpfr_get_z(*val, this->u_.float_val, MPFR_RNDN);
       return true;
     case NC_COMPLEX:
       if (!mpfr_zero_p(mpc_imagref(this->u_.complex_val))
 	  || !mpfr_integer_p(mpc_realref(this->u_.complex_val)))
 	return false;
       mpz_init(*val);
-      mpfr_get_z(*val, mpc_realref(this->u_.complex_val), GMP_RNDN);
+      mpfr_get_z(*val, mpc_realref(this->u_.complex_val), MPFR_RNDN);
       return true;
     default:
       go_unreachable();
@@ -16925,15 +21610,15 @@ Numeric_constant::to_float(mpfr_t* val) const
     {
     case NC_INT:
     case NC_RUNE:
-      mpfr_init_set_z(*val, this->u_.int_val, GMP_RNDN);
+      mpfr_init_set_z(*val, this->u_.int_val, MPFR_RNDN);
       return true;
     case NC_FLOAT:
-      mpfr_init_set(*val, this->u_.float_val, GMP_RNDN);
+      mpfr_init_set(*val, this->u_.float_val, MPFR_RNDN);
       return true;
     case NC_COMPLEX:
       if (!mpfr_zero_p(mpc_imagref(this->u_.complex_val)))
 	return false;
-      mpfr_init_set(*val, mpc_realref(this->u_.complex_val), GMP_RNDN);
+      mpfr_init_set(*val, mpc_realref(this->u_.complex_val), MPFR_RNDN);
       return true;
     default:
       go_unreachable();
@@ -17032,13 +21717,13 @@ Numeric_constant::check_int_type(Integer_type* type, bool issue_error,
 	  if (issue_error)
             {
               go_error_at(location,
-                          "floating point constant truncated to integer");
+                          "floating-point constant truncated to integer");
               this->set_invalid();
             }
 	  return false;
 	}
       mpz_init(val);
-      mpfr_get_z(val, this->u_.float_val, GMP_RNDN);
+      mpfr_get_z(val, this->u_.float_val, MPFR_RNDN);
       break;
 
     case NC_COMPLEX:
@@ -17053,7 +21738,7 @@ Numeric_constant::check_int_type(Integer_type* type, bool issue_error,
 	  return false;
 	}
       mpz_init(val);
-      mpfr_get_z(val, mpc_realref(this->u_.complex_val), GMP_RNDN);
+      mpfr_get_z(val, mpc_realref(this->u_.complex_val), MPFR_RNDN);
       break;
 
     default:
@@ -17107,11 +21792,11 @@ Numeric_constant::check_float_type(Float_type* type, bool issue_error,
     {
     case NC_INT:
     case NC_RUNE:
-      mpfr_init_set_z(val, this->u_.int_val, GMP_RNDN);
+      mpfr_init_set_z(val, this->u_.int_val, MPFR_RNDN);
       break;
 
     case NC_FLOAT:
-      mpfr_init_set(val, this->u_.float_val, GMP_RNDN);
+      mpfr_init_set(val, this->u_.float_val, MPFR_RNDN);
       break;
 
     case NC_COMPLEX:
@@ -17120,11 +21805,12 @@ Numeric_constant::check_float_type(Float_type* type, bool issue_error,
 	  if (issue_error)
             {
               this->set_invalid();
-              go_error_at(location, "complex constant truncated to float");
+              go_error_at(location,
+			  "complex constant truncated to floating-point");
             }
 	  return false;
 	}
-      mpfr_init_set(val, mpc_realref(this->u_.complex_val), GMP_RNDN);
+      mpfr_init_set(val, mpc_realref(this->u_.complex_val), MPFR_RNDN);
       break;
 
     default:
@@ -17141,8 +21827,8 @@ Numeric_constant::check_float_type(Float_type* type, bool issue_error,
     }
   else
     {
-      mp_exp_t exp = mpfr_get_exp(val);
-      mp_exp_t max_exp;
+      mpfr_exp_t exp = mpfr_get_exp(val);
+      mpfr_exp_t max_exp;
       switch (type->bits())
 	{
 	case 32:
@@ -17173,8 +21859,8 @@ Numeric_constant::check_float_type(Float_type* type, bool issue_error,
 	    default:
 	      go_unreachable();
 	    }
-	  mpfr_set(t, val, GMP_RNDN);
-	  mpfr_set(val, t, GMP_RNDN);
+	  mpfr_set(t, val, MPFR_RNDN);
+	  mpfr_set(val, t, MPFR_RNDN);
 	  mpfr_clear(t);
 
 	  this->set_float(type, val);
@@ -17185,7 +21871,7 @@ Numeric_constant::check_float_type(Float_type* type, bool issue_error,
 
   if (!ret && issue_error)
     {
-      go_error_at(location, "floating point constant overflow");
+      go_error_at(location, "floating-point constant overflow");
       this->set_invalid();
     }
 
@@ -17201,7 +21887,7 @@ Numeric_constant::check_complex_type(Complex_type* type, bool issue_error,
   if (type->is_abstract())
     return true;
 
-  mp_exp_t max_exp;
+  mpfr_exp_t max_exp;
   switch (type->bits())
     {
     case 64:
@@ -17333,12 +22019,12 @@ Numeric_constant::hash(unsigned int seed) const
       break;
     case NC_COMPLEX:
       mpfr_init(m);
-      mpc_abs(m, this->u_.complex_val, GMP_RNDN);
-      val = mpfr_get_ui(m, GMP_RNDN);
+      mpc_abs(m, this->u_.complex_val, MPFR_RNDN);
+      val = mpfr_get_ui(m, MPFR_RNDN);
       mpfr_clear(m);
       break;
     case NC_FLOAT:
-      f = mpfr_get_d_2exp(&e, this->u_.float_val, GMP_RNDN) * 4294967295.0;
+      f = mpfr_get_d_2exp(&e, this->u_.float_val, MPFR_RNDN) * 4294967295.0;
       val = static_cast<unsigned long>(e + static_cast<long>(f));
       break;
     default:
@@ -17347,4 +22033,3 @@ Numeric_constant::hash(unsigned int seed) const
 
   return (static_cast<unsigned int>(val) + seed) * PRIME;
 }
-

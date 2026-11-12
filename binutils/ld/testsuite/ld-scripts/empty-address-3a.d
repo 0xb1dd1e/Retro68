@@ -1,7 +1,8 @@
 #source: empty-address-3.s
 #ld: -T empty-address-3a.t
 #nm: -n
-#notarget: mmix-knuth-mmixware
+#xfail: [is_xcoff_format]
+
 #...
 0+0 T _start
 #...

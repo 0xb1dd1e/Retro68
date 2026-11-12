@@ -1,7 +1,7 @@
 // PR target/85503
 // { dg-do compile { target { { powerpc64le-*-* } && c++11 } } }
-// { dg-require-effective-target powerpc_vsx_ok }
 // { dg-options "-O2 -mvsx" }
+// { dg-require-effective-target powerpc_vsx }
 
 namespace b {
 template < int c > struct d { static constexpr int e = c; };
@@ -138,6 +138,7 @@ struct ad< ai< cr, ag, ah, cu, ct, cw > > {
 };
 template < typename, int ag, int ah, int, int, int >
 class ai : public af< ai< double, ag, ah > > {
+public:
   typedef ai cv;
 };
 template < typename bk, typename ce, typename cf >

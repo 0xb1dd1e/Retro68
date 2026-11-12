@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -56,7 +56,8 @@ package Lib.Writ is
    --  incompatible with new versions of the compiler. Any changes to ali file
    --  formats must be carefully evaluated to understand any such possible
    --  conflicts, and in particular, it is very undesirable to create conflicts
-   --  between older versions of GPS and newer versions of the compiler.
+   --  between older versions of GNAT Studio and newer versions of the
+   --  compiler.
 
    --  If the following guidelines are respected, downward compatibility
    --  problems (old tools reading new ali files) should be minimized:
@@ -198,6 +199,11 @@ package Lib.Writ is
    --         GP   Set if this compilation was done in GNATprove mode, either
    --              from direct use of GNATprove, or from use of -gnatdF.
 
+   --         ID   Interrupts_System_By_Default pragma applies to this
+   --              partition. No handlers will be installed by default,
+   --              including signal handlers. This is a configuration
+   --              pragma.
+
    --         Lx   A valid Locking_Policy pragma applies to all the units in
    --              this file, where x is the first character (upper case) of
    --              the policy name (e.g. 'C' for Ceiling_Locking).
@@ -222,9 +228,9 @@ package Lib.Writ is
    --         OL   Pragma Default_Scalar_Storage_Order (Low_Order_First) is
    --              present in a configuration pragma file that applies.
 
-   --         Qx   A valid Queueing_Policy pragma applies to all the units
-   --              in this file, where x is the first character (upper case)
-   --              of the policy name (e.g. 'P' for Priority_Queueing).
+   --         Qx   A valid Queuing_Policy pragma applies to all the units in
+   --              this file, where x is the first character (upper case) of
+   --              the policy name (e.g. 'P' for Priority_Queuing).
 
    --         SL   Indicates that the unit is an Interface to a Standalone
    --              Library. Note that this indication is never given by the
@@ -247,10 +253,11 @@ package Lib.Writ is
    --              generated exception tables. If ZX is not present, the
    --              longjmp/setjmp exception scheme is in use.
 
-   --      Note that language defined units never output policy (Lx, Tx, Qx)
-   --      parameters. Language defined units must correctly handle all
-   --      possible cases. These values are checked for consistency by the
-   --      binder and then copied to the generated binder output file.
+   --      Note that library units from the GNAT runtime library should never
+   --      output policy (Lx, Tx, Qx) parameters. They must correctly handle
+   --      all possible cases to be usable in all contexts. These values are
+   --      checked for consistency by the binder and then copied to the
+   --      generated binder output file.
 
    --    Note: The P line must be present. Even in Ignore_Errors mode, Scan_ALI
    --    insists on finding a P line. So if changes are made to the ALI format,
@@ -846,6 +853,108 @@ package Lib.Writ is
    --      dependency checking, but must be present for proper interpretation
    --      of the cross-reference data.
 
+   --  -------------------------
+   --  -- G  Invocation Graph --
+   --  -------------------------
+
+   --  An invocation graph line has the following format:
+   --
+   --    G line-kind line-attributes
+   --
+   --      Attribute line-kind is a Character which denotes the nature of the
+   --      line. Table ALI.Invocation_Graph_Line_Codes lists all legal values.
+   --
+   --      Attribute line-attributes depends on the value of line-kind, and is
+   --      contents are described further below.
+   --
+   --  An invocation signature uniquely identifies an invocation construct in
+   --  the ALI file namespace, and has the following format:
+   --
+   --      [ name scope line column (locations | "none") ]
+   --
+   --      Attribute name is a String which denotes the name of the construct
+   --
+   --      Attribute scope is a String which denotes the qualified name of the
+   --      scope where the construct is declared.
+   --
+   --      Attribute line is a Positive which denotes the line number where the
+   --      initial declaration of the construct appears.
+   --
+   --      Attribute column is a Positive which denotes the column number where
+   --      the initial declaration of the construct appears.
+   --
+   --      Attribute locations is a String which denotes the line and column
+   --      locations of all instances where the initial declaration of the
+   --      construct appears.
+   --
+   --  When the line-kind denotes invocation graph attributes, line-attributes
+   --  are set as follows:
+   --
+   --      encoding-kind
+   --
+   --      Attribute encoding-kind is a Character which specifies the encoding
+   --      kind used when collecting invocation constructs and relations. Table
+   --      ALI.Invocation_Graph_Encoding_Codes lists all legal values.
+   --
+   --  When the line-kind denotes an invocation construct, line-attributes are
+   --  set as follows:
+   --
+   --      construct-kind construct-spec-placement construct-body-placement
+   --        construct-signature
+   --
+   --      Attribute construct-kind is a Character which denotes the nature of
+   --      the construct. Table ALI.Invocation_Construct_Codes lists all legal
+   --      values.
+   --
+   --      Attribute construct-spec-placement is a Character which denotes the
+   --      placement of the construct's spec within the unit. All legal values
+   --      are listed in table ALI.Spec_And_Body_Placement_Codes.
+   --
+   --      Attribute construct-body-placement is a Character which denotes the
+   --      placement of the construct's body within the unit. All legal values
+   --      are listed in table ALI.Spec_And_Body_Placement_Codes.
+   --
+   --      Attribute construct-signature is the invocation signature of the
+   --      construct.
+   --
+   --  When the line-kind denotes an invocation relation, line-attributes are
+   --  set as follows:
+   --
+   --      relation-kind (extra-name | "none") invoker-signature
+   --         target-signature
+   --
+   --      Attribute relation-kind is a Character which denotes the nature of
+   --      the relation. All legal values are listed in ALI.Invocation_Codes.
+   --
+   --      Attribute extra-name is a String which denotes the name of an extra
+   --      entity used for error diagnostics. The value of extra-name depends
+   --      on the relation-kind as follows:
+   --
+   --        Accept_Alternative                     - related entry
+   --        Access_Taken                           - related subprogram
+   --        Call                                   - not present
+   --        Controlled_Adjustment                  - related controlled type
+   --        Controlled_Finalization                - related controlled type
+   --        Controlled_Initialization              - related controlled type
+   --        Default_Initial_Condition_Verification - related private type
+   --        Initial_Condition_Verification         - not present
+   --        Instantiation                          - not present
+   --        Internal_Controlled_Adjustment         - related controlled type
+   --        Internal_Controlled_Finalization       - related controlled type
+   --        Internal_Controlled_Initialization     - related controlled type
+   --        Invariant_Verification                 - related private type
+   --        Postcondition_Verification             - related routine
+   --        Protected_Entry_Call                   - not present
+   --        Protected_Subprogram_Call              - not present
+   --        Task_Activation                        - not present
+   --        Task_Entry_Call                        - not present
+   --        Type_Initialization                    - related type
+   --
+   --      Attribute invoker-signature is the invocation signature of the
+   --      invoker.
+   --
+   --      Attribute target-signature is the invocation signature of the target
+
    --------------------------
    -- Cross-Reference Data --
    --------------------------
@@ -948,17 +1057,15 @@ package Lib.Writ is
    procedure Write_ALI (Object : Boolean);
    --  This procedure writes the library information for the current main unit
    --  The Object parameter is true if an object file is created, and false
-   --  otherwise. Note that the pseudo-object file generated in GNATProve mode
+   --  otherwise. Note that the pseudo-object file generated in GNATprove mode
    --  does count as an object file from this point of view.
-   --
-   --  Note: in the case where we are not generating code (-gnatc mode), this
-   --  routine only writes an ALI file if it cannot find an existing up to
-   --  date ALI file. If it *can* find an existing up to date ALI file, then
-   --  it reads this file and sets the Lib.Compilation_Arguments table from
-   --  the A lines in this file.
+   --  May output duplicate D lines caused by generic instantiations. This is
+   --  by design as GNATcoverage relies on them for its coverage of generic
+   --  instantiations, although this may be revisited in the future.
 
    procedure Add_Preprocessing_Dependency (S : Source_File_Index);
    --  Indicate that there is a dependency to be added on a preprocessing data
-   --  file or on a preprocessing definition file.
+   --  file, on a preprocessing definition file or on a file included through
+   --  External_Initialization.
 
 end Lib.Writ;

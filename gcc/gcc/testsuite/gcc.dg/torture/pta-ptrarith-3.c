@@ -1,5 +1,5 @@
 /* { dg-do run } */
-/* { dg-options "-fdump-tree-alias" } */
+/* { dg-options "-fdump-tree-alias-details" } */
 /* { dg-skip-if "" { *-*-* } { "-O0" "-fno-fat-lto-objects" } { "" } } */
 
 extern void abort (void);
@@ -33,4 +33,4 @@ int main()
   return 0;
 }
 
-/* { dg-final { scan-tree-dump "q_. = { i j k }" "alias" } } */
+/* { dg-final { scan-tree-dump "q_\[0-9\]* = { i j k }" "alias" } } */

@@ -1,5 +1,5 @@
 #source: weakhid.s
-#as: --pic --no-underscore --em=criself
+#as: --pic --no-underscore --emulation=criself
 #ld: --shared -m crislinux -z nocombreloc --hash-style=sysv
 #objdump: -s -R -T
 
@@ -16,7 +16,7 @@ DYNAMIC SYMBOL TABLE:
 
 
 DYNAMIC RELOCATION RECORDS
-OFFSET   TYPE              VALUE 
+OFFSET +TYPE +VALUE
 0+21b8 R_CRIS_32         xweakobj
 0+21bc R_CRIS_32         xregobj
 

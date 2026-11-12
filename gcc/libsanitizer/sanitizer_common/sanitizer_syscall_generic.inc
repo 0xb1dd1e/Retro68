@@ -1,7 +1,8 @@
 //===-- sanitizer_syscall_generic.inc ---------------------------*- C++ -*-===//
 //
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -12,13 +13,14 @@
 // NetBSD uses libc calls directly
 #if !SANITIZER_NETBSD
 
-#if SANITIZER_FREEBSD || SANITIZER_MAC || SANITIZER_OPENBSD || SANITIZER_SOLARIS
+#if SANITIZER_FREEBSD || SANITIZER_APPLE || SANITIZER_SOLARIS
 # define SYSCALL(name) SYS_ ## name
 #else
 # define SYSCALL(name) __NR_ ## name
 #endif
 
-#if defined(__x86_64__) && (SANITIZER_FREEBSD || SANITIZER_MAC)
+#if (defined(__x86_64__) && (SANITIZER_FREEBSD || SANITIZER_APPLE)) || \
+    (defined(__aarch64__) && SANITIZER_FREEBSD)
 # define internal_syscall __syscall
 # else
 # define internal_syscall syscall

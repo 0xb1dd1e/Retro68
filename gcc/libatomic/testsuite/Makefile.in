@@ -91,12 +91,16 @@ target_triplet = @target@
 subdir = testsuite
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/../config/acx.m4 \
+	$(top_srcdir)/../config/clang-plugin.m4 \
 	$(top_srcdir)/../config/depstand.m4 \
+	$(top_srcdir)/../config/gcc-plugin.m4 \
+	$(top_srcdir)/../config/gthr.m4 \
 	$(top_srcdir)/../config/lead-dot.m4 \
 	$(top_srcdir)/../config/lthostflags.m4 \
 	$(top_srcdir)/../config/multi.m4 \
 	$(top_srcdir)/../config/override.m4 \
 	$(top_srcdir)/../config/stdint.m4 \
+	$(top_srcdir)/../config/toolexeclibdir.m4 \
 	$(top_srcdir)/../config/warnings.m4 \
 	$(top_srcdir)/../ltoptions.m4 $(top_srcdir)/../ltsugar.m4 \
 	$(top_srcdir)/../ltversion.m4 $(top_srcdir)/../lt~obsolete.m4 \
@@ -108,7 +112,7 @@ am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 DIST_COMMON = $(srcdir)/Makefile.am
 mkinstalldirs = $(SHELL) $(top_srcdir)/../mkinstalldirs
 CONFIG_HEADER = $(top_builddir)/auto-config.h
-CONFIG_CLEAN_FILES =
+CONFIG_CLEAN_FILES = libatomic-site-extra.exp
 CONFIG_CLEAN_VPATH_FILES =
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
@@ -170,6 +174,7 @@ LIBOBJS = @LIBOBJS@
 LIBS = @LIBS@
 LIBTOOL = @LIBTOOL@
 LIPO = @LIPO@
+LLVM_CONFIG = @LLVM_CONFIG@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
 MAINT = @MAINT@
@@ -190,7 +195,6 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
 PACKAGE_URL = @PACKAGE_URL@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
-PERL = @PERL@
 RANLIB = @RANLIB@
 SECTION_LDFLAGS = @SECTION_LDFLAGS@
 SED = @SED@
@@ -198,6 +202,7 @@ SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
 SIZES = @SIZES@
 STRIP = @STRIP@
+SYSROOT_CFLAGS_FOR_TARGET = @SYSROOT_CFLAGS_FOR_TARGET@
 VERSION = @VERSION@
 XCFLAGS = @XCFLAGS@
 XLDFLAGS = @XLDFLAGS@
@@ -261,6 +266,7 @@ target_alias = @target_alias@
 target_cpu = @target_cpu@
 target_os = @target_os@
 target_vendor = @target_vendor@
+tmake_file = @tmake_file@
 toolexecdir = @toolexecdir@
 toolexeclibdir = @toolexeclibdir@
 top_build_prefix = @top_build_prefix@
@@ -277,6 +283,7 @@ _RUNTEST = $(shell if test -f $(top_srcdir)/../dejagnu/runtest; then \
 	     echo $(top_srcdir)/../dejagnu/runtest; else echo runtest; fi)
 
 RUNTEST = $(_RUNTEST) $(AM_RUNTESTFLAGS)
+EXTRA_DEJAGNU_SITE_CONFIG = libatomic-site-extra.exp
 all: all-am
 
 .SUFFIXES:
@@ -309,6 +316,8 @@ $(top_srcdir)/configure: @MAINTAINER_MODE_TRUE@ $(am__configure_deps)
 $(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
+libatomic-site-extra.exp: $(top_builddir)/config.status $(srcdir)/libatomic-site-extra.exp.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 
 mostlyclean-libtool:
 	-rm -f *.lo

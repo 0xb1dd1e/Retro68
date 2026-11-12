@@ -2,12 +2,11 @@
 // { dg-options "-fconcepts" }
 
 template<class T>
-concept bool Addable(){
- return requires(T x){
-  {x + x} -> T;
+concept Addable =
+ requires(T x){
+  {x + x} -> T;	// { dg-error "return-type-requirement is not a type-constraint" }
  };
-}
 
 int main(){
- Addable t = 0;
+ Addable auto t = 0;
 }

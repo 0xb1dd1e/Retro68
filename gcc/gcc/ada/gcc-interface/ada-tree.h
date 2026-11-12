@@ -6,7 +6,7 @@
  *                                                                          *
  *                              C Header File                               *
  *                                                                          *
- *          Copyright (C) 1992-2018, Free Software Foundation, Inc.         *
+ *          Copyright (C) 1992-2026, Free Software Foundation, Inc.         *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -73,15 +73,23 @@ do {							 \
 #define TYPE_IS_FAT_POINTER_P(NODE) \
   (TREE_CODE (NODE) == RECORD_TYPE && TYPE_FAT_POINTER_P (NODE))
 
-/* For integral types and array types, nonzero if this is a packed array type
-   used for bit-packed types.  Such types should not be extended to a larger
-   size or validated against a specified size.  */
-#define TYPE_PACKED_ARRAY_TYPE_P(NODE) \
+/* For RECORD_TYPE, UNION_TYPE, and QUAL_UNION_TYPE, nonzero if this is a
+   record being used as an extended access (only true for RECORD_TYPE).  */
+#define TYPE_EXTENDED_POINTER_P(NODE) \
+  TYPE_LANG_FLAG_7 (RECORD_OR_UNION_CHECK (NODE))
+
+#define TYPE_IS_EXTENDED_POINTER_P(NODE) \
+  (TREE_CODE (NODE) == RECORD_TYPE && TYPE_EXTENDED_POINTER_P (NODE))
+
+/* For integral types and array types, nonzero if this is an implementation
+   type for a bit-packed array type.  Such types should not be extended to a
+   larger size or validated against a specified size.  */
+#define TYPE_BIT_PACKED_ARRAY_TYPE_P(NODE) \
   TYPE_LANG_FLAG_0 (TREE_CHECK2 (NODE, INTEGER_TYPE, ARRAY_TYPE))
 
-#define TYPE_IS_PACKED_ARRAY_TYPE_P(NODE) \
+#define BIT_PACKED_ARRAY_TYPE_P(NODE) \
   ((TREE_CODE (NODE) == INTEGER_TYPE || TREE_CODE (NODE) == ARRAY_TYPE) \
-   && TYPE_PACKED_ARRAY_TYPE_P (NODE))
+   && TYPE_BIT_PACKED_ARRAY_TYPE_P (NODE))
 
 /* For FUNCTION_TYPE and METHOD_TYPE, nonzero if the function returns by
    direct reference, i.e. the callee returns a pointer to a memory location
@@ -96,11 +104,6 @@ do {							 \
 /* For ARRAY_TYPE, nonzero if this type corresponds to a dimension of
    an Ada array other than the first.  */
 #define TYPE_MULTI_ARRAY_P(NODE) TYPE_LANG_FLAG_1 (ARRAY_TYPE_CHECK (NODE))
-
-/* For FUNCTION_TYPE and METHOD_TYPE, nonzero if function returns an
-   unconstrained array or record type.  */
-#define TYPE_RETURN_UNCONSTRAINED_P(NODE) \
-  TYPE_LANG_FLAG_1 (FUNC_OR_METHOD_CHECK (NODE))
 
 /* For RECORD_TYPE, UNION_TYPE, and QUAL_UNION_TYPE, nonzero if this denotes
    a justified modular type (will only be true for RECORD_TYPE).  */
@@ -189,14 +192,11 @@ do {							 \
 /* True for a dummy type if TYPE appears in a profile.  */
 #define TYPE_DUMMY_IN_PROFILE_P(NODE) TYPE_LANG_FLAG_6 (NODE)
 
-/* True if objects of this type are guaranteed to be properly aligned.  */
-#define TYPE_ALIGN_OK(NODE) TYPE_LANG_FLAG_7 (NODE)
-
 /* True for types that implement a packed array and for original packed array
    types.  */
 #define TYPE_IMPL_PACKED_ARRAY_P(NODE) \
   ((TREE_CODE (NODE) == ARRAY_TYPE && TYPE_PACKED (NODE)) \
-   || (TREE_CODE (NODE) == INTEGER_TYPE && TYPE_PACKED_ARRAY_TYPE_P (NODE)))
+   || (TREE_CODE (NODE) == INTEGER_TYPE && TYPE_BIT_PACKED_ARRAY_TYPE_P (NODE)))
 
 /* True for types that can hold a debug type.  */
 #define TYPE_CAN_HAVE_DEBUG_TYPE_P(NODE) (!TYPE_IMPL_PACKED_ARRAY_P (NODE))
@@ -392,6 +392,25 @@ do {						   \
 #define SET_TYPE_SCALE_FACTOR(NODE, X) \
   SET_TYPE_LANG_SPECIFIC (INTEGER_TYPE_CHECK (NODE), X)
 
+/* For an UNCONSTRAINED_ARRAY_TYPE, this is the twin UNCONSTRAINED_ARRAY_TYPE
+   built for extended access types.  */
+#define TYPE_EXTENDED_UNCONSTRAINED_ARRAY(NODE) \
+  GET_TYPE_LANG_SPECIFIC (TREE_CHECK2 ((NODE), UNCONSTRAINED_ARRAY_TYPE, \
+				       ENUMERAL_TYPE))
+#define SET_TYPE_EXTENDED_UNCONSTRAINED_ARRAY(NODE, X) \
+  SET_TYPE_LANG_SPECIFIC (TREE_CHECK2 ((NODE), UNCONSTRAINED_ARRAY_TYPE, \
+				       ENUMERAL_TYPE), X)
+
+/* When the compiler only has a dummy type for an unconstrained array type, we
+   don't build a duplicate dummy only to store the record type for the extended
+   access. Instead, we store it in the original dummy type, using the same
+   lang_type field that will hold the tree for the duplicated array type built
+   later.  */
+#define TYPE_DUMMY_EXT_POINTER_TO(NODE) \
+  GET_TYPE_LANG_SPECIFIC (TREE_CHECK ((NODE), ENUMERAL_TYPE))
+#define SET_TYPE_DUMMY_EXT_POINTER_TO(NODE, X) \
+  SET_TYPE_LANG_SPECIFIC (TREE_CHECK ((NODE), ENUMERAL_TYPE), X)
+
 /* For types with TYPE_CAN_HAVE_DEBUG_TYPE_P, this is the type to use in
    debugging information.  */
 #define TYPE_DEBUG_TYPE(NODE) \
@@ -409,10 +428,6 @@ do {						   \
 
 
 /* Flags added to decl nodes.  */
-
-/* Nonzero in a FUNCTION_DECL that represents a stubbed function
-   discriminant.  */
-#define DECL_STUBBED_P(NODE) DECL_LANG_FLAG_0 (FUNCTION_DECL_CHECK (NODE))
 
 /* Nonzero in a VAR_DECL if it is guaranteed to be constant after having
    been elaborated and TREE_READONLY is not set on it.  */
@@ -482,6 +497,9 @@ do {						   \
    value of a function call or 'reference to a function call.  */
 #define DECL_RETURN_VALUE_P(NODE) DECL_LANG_FLAG_5 (VAR_DECL_CHECK (NODE))
 
+/* Nonzero in a PARM_DECL if its mechanism was forced to by-reference.  */
+#define DECL_FORCED_BY_REF_P(NODE) DECL_LANG_FLAG_5 (PARM_DECL_CHECK (NODE))
+
 /* In a FIELD_DECL corresponding to a discriminant, contains the
    discriminant number.  */
 #define DECL_DISCRIMINANT_NUMBER(NODE) DECL_INITIAL (FIELD_DECL_CHECK (NODE))
@@ -520,13 +538,6 @@ do {						   \
 #define DECL_INDUCTION_VAR(NODE) \
   GET_DECL_LANG_SPECIFIC (VAR_DECL_CHECK (NODE))
 #define SET_DECL_INDUCTION_VAR(NODE, X) \
-  SET_DECL_LANG_SPECIFIC (VAR_DECL_CHECK (NODE), X)
-
-/* In a VAR_DECL without the DECL_LOOP_PARM_P flag set and that is a renaming
-   pointer, points to the object being renamed, if any.  */
-#define DECL_RENAMED_OBJECT(NODE) \
-  GET_DECL_LANG_SPECIFIC (VAR_DECL_CHECK (NODE))
-#define SET_DECL_RENAMED_OBJECT(NODE, X) \
   SET_DECL_LANG_SPECIFIC (VAR_DECL_CHECK (NODE), X)
 
 /* In a TYPE_DECL, points to the parallel type if any, otherwise 0.  */
@@ -582,3 +593,9 @@ do {						   \
 
 #define EXIT_STMT_COND(NODE)     TREE_OPERAND_CHECK_CODE (NODE, EXIT_STMT, 0)
 #define EXIT_STMT_LABEL(NODE)    TREE_OPERAND_CHECK_CODE (NODE, EXIT_STMT, 1)
+
+/* Small kludge to be able to define Ada built-in functions locally.
+   We overload them on top of the C++ coroutines builtin functions.  */
+#define BUILT_IN_LIKELY      BUILT_IN_CORO_PROMISE
+#define BUILT_IN_UNLIKELY    BUILT_IN_CORO_RESUME
+#define BUILT_IN_RETURN_SLOT BUILT_IN_CORO_DESTROY

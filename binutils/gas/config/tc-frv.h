@@ -1,5 +1,5 @@
 /* tc-frv.h -- Header file for tc-frv.c.
-   Copyright (C) 2002-2018 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -27,7 +27,7 @@
 
 #define TARGET_FORMAT (frv_md_fdpic_enabled () \
 		       ? "elf32-frvfdpic" : "elf32-frv")
-extern bfd_boolean frv_md_fdpic_enabled (void);
+extern bool frv_md_fdpic_enabled (void);
 
 #define TARGET_BYTES_BIG_ENDIAN 1
 
@@ -53,7 +53,7 @@ extern long frv_relax_frag (fragS *, long);
 
 #define tc_fix_adjustable(FIX) frv_fix_adjustable (FIX)
 struct fix;
-extern bfd_boolean frv_fix_adjustable (struct fix *);
+extern bool frv_fix_adjustable (struct fix *);
 
 /* When relaxing, we need to emit various relocs we otherwise wouldn't.  */
 #define TC_FORCE_RELOCATION(fix) frv_force_relocation (fix)
@@ -76,7 +76,6 @@ void frv_frob_label (symbolS *);
 
 /* Call md_pcrel_from_section(), not md_pcrel_from().  */
 #define MD_PCREL_FROM_SECTION(FIX, SEC) md_pcrel_from_section (FIX, SEC)
-extern long md_pcrel_from_section (struct fix *, segT);
 
 /* After all of the symbols have been adjusted, go over the file looking
    for any relocations that pic won't support.  */
@@ -99,8 +98,8 @@ extern void frv_frob_file (void);
    code actually happens to run, but this is probably too much effort
    for little gain.  This code is not meant to be run anyway, so just
    emit nops.  */
-#define MAX_MEM_FOR_RS_ALIGN_CODE (3 + 4)
-#define HANDLE_ALIGN(FRAGP) do						\
+#define MAX_MEM_FOR_RS_ALIGN_CODE(p2align, max) (3 + 4)
+#define HANDLE_ALIGN(SEC, FRAGP) do						\
   if ((FRAGP)->fr_type == rs_align_code) 				\
     {									\
       valueT count = ((FRAGP)->fr_next->fr_address			\

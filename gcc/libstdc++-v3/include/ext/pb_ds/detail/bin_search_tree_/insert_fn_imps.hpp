@@ -1,6 +1,6 @@
 // -*- C++ -*-
 
-// Copyright (C) 2005-2019 Free Software Foundation, Inc.
+// Copyright (C) 2005-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the terms
@@ -37,6 +37,8 @@
  * @file bin_search_tree_/insert_fn_imps.hpp
  * Contains an implementation class for bin_search_tree_.
  */
+
+#ifdef PB_DS_CLASS_C_DEC
 
 PB_DS_CLASS_T_DEC
 inline std::pair<typename PB_DS_CLASS_C_DEC::point_iterator, bool>
@@ -120,7 +122,6 @@ insert_leaf_new(const_reference r_value, node_pointer p_nd, bool left_nd)
     }
 
   p_new_nd->m_p_parent = p_nd;
-  p_new_nd->m_p_left = p_new_nd->m_p_right = 0;
   PB_DS_ASSERT_NODE_CONSISTENT(p_nd)
 
   update_to_top(p_new_nd, (node_update* )this);
@@ -140,7 +141,6 @@ insert_imp_empty(const_reference r_value)
     m_p_head->m_p_parent = p_new_node;
 
   p_new_node->m_p_parent = m_p_head;
-  p_new_node->m_p_left = p_new_node->m_p_right = 0;
   _GLIBCXX_DEBUG_ONLY(debug_base::insert_new(PB_DS_V2F(r_value));)
 
   update_to_top(m_p_head->m_p_parent, (node_update*)this);
@@ -178,3 +178,4 @@ get_new_node_for_leaf_insert(const_reference r_val, true_type)
   ++m_size;
   return p_new_nd;
 }
+#endif

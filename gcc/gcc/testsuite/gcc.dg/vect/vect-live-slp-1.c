@@ -1,3 +1,5 @@
+/* Disabling epilogues until we find a better way to deal with scans.  */
+/* { dg-additional-options "--param vect-epilogues-nomask=0" } */
 /* { dg-require-effective-target vect_int } */
 /* { dg-additional-options "-fno-tree-scev-cprop" } */
 
@@ -49,6 +51,7 @@ main (void)
       a[i] = i;
     }
 
+#pragma GCC novector
   for (i=0; i<4; i++)
     {
       __asm__ volatile ("");
@@ -58,6 +61,7 @@ main (void)
       if (ret != (MAX * 4) - 4 + i)
 	abort ();
 
+#pragma GCC novector
       for (i=0; i<MAX*4; i++)
 	{
 	  __asm__ volatile ("");

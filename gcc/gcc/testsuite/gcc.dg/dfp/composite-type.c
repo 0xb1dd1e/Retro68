@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O -Wall -ftrack-macro-expansion=0" } */
+/* { dg-options "-std=gnu17 -fpermissive -O -Wall -ftrack-macro-expansion=0" } */
 
 /* C99 6.2.7: Compatible type and composite type.  */
 
@@ -53,3 +53,6 @@ int main()
 
   return 0;
 }
+
+/* The invalid function redeclarations might also trigger:
+   { dg-prune-output "-Warray-parameter" } */

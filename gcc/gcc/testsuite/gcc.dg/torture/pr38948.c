@@ -1,5 +1,4 @@
-/* { dg-options "-fno-tree-sra" } */
-/* { dg-options "-fno-tree-sra -march=v32" { target cris-*-* } } */
+/* { dg-options "-std=gnu17 -fno-tree-sra" } */
 typedef unsigned char byte;
 typedef unsigned int uint;
 typedef int bool;

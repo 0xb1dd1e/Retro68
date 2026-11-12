@@ -1,5 +1,6 @@
 /* { dg-do compile } */
 /* { dg-require-effective-target vect_double } */
+/* { dg-additional-options "-fno-math-errno" } */
 
 double x[256];
 
@@ -10,4 +11,4 @@ void foo(void)
     x[i] = __builtin_pow (x[i], 0.5);
 }
 
-/* { dg-final { scan-tree-dump "pattern recognized" "vect" { xfail spu*-*-* } } } */
+/* { dg-final { scan-tree-dump "pattern recognized" "vect" } } */

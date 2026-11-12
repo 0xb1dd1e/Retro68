@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 2004-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 2004-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -36,13 +36,16 @@ with Ada.Iterator_Interfaces;
 with Ada.Containers.Helpers;
 private with Ada.Finalization;
 private with Ada.Streams;
+private with Ada.Strings.Text_Buffers;
 
 generic
    type Element_Type (<>) is private;
 
    with function "=" (Left, Right : Element_Type) return Boolean is <>;
 
-package Ada.Containers.Indefinite_Multiway_Trees is
+package Ada.Containers.Indefinite_Multiway_Trees with
+  SPARK_Mode => Off
+is
    pragma Annotate (CodePeer, Skip_Analysis);
    pragma Preelaborate;
    pragma Remote_Types;
@@ -51,12 +54,11 @@ package Ada.Containers.Indefinite_Multiway_Trees is
      with Constant_Indexing => Constant_Reference,
           Variable_Indexing => Reference,
           Default_Iterator  => Iterate,
-          Iterator_Element  => Element_Type;
+          Iterator_Element  => Element_Type,
+          Preelaborable_Initialization;
 
-   pragma Preelaborable_Initialization (Tree);
-
-   type Cursor is private;
-   pragma Preelaborable_Initialization (Cursor);
+   type Cursor is private
+     with Preelaborable_Initialization;
 
    Empty_Tree : constant Tree;
 
@@ -105,12 +107,14 @@ package Ada.Containers.Indefinite_Multiway_Trees is
       Process   : not null access procedure (Element : in out Element_Type));
 
    type Constant_Reference_Type
-     (Element : not null access constant Element_Type) is private
-        with Implicit_Dereference => Element;
+     (Element : not null access constant Element_Type) is limited private
+   with
+      Implicit_Dereference => Element;
 
    type Reference_Type
-     (Element : not null access Element_Type) is private
-        with Implicit_Dereference => Element;
+     (Element : not null access Element_Type) is limited private
+   with
+      Implicit_Dereference => Element;
 
    function Constant_Reference
      (Container : aliased Tree;
@@ -346,7 +350,10 @@ private
       Root  : aliased Tree_Node_Type;
       TC    : aliased Tamper_Counts;
       Count : Count_Type := 0;
-   end record;
+   end record with Put_Image => Put_Image;
+
+   procedure Put_Image
+     (S : in out Ada.Strings.Text_Buffers.Root_Buffer_Type'Class; V : Tree);
 
    overriding procedure Adjust (Container : in out Tree);
 
@@ -433,10 +440,7 @@ private
 
    for Reference_Type'Write use Write;
 
-   --  Three operations are used to optimize in the expansion of "for ... of"
-   --  loops: the Next(Cursor) procedure in the visible part, and the following
-   --  Pseudo_Reference and Get_Element_Access functions. See Exp_Ch5 for
-   --  details.
+   --  See Ada.Containers.Vectors for documentation on the following
 
    function Pseudo_Reference
      (Container : aliased Tree'Class) return Reference_Control_Type;

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2006-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 2006-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -29,7 +29,6 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with Ada.Calendar;            use Ada.Calendar;
 with Ada.Calendar.Time_Zones; use Ada.Calendar.Time_Zones;
 
 package body Ada.Calendar.Formatting is
@@ -51,6 +50,15 @@ package body Ada.Calendar.Formatting is
    --  of string S at position Index is a digit. This catches invalid input
    --  such as 1983-*1-j3 u5:n7:k9 which should be 1983-01-03 05:07:09. Raise
    --  Constraint_Error if there is a mismatch.
+
+   procedure Split_Duration
+     (Seconds    : Duration;
+      Hour       : out Natural;
+      Minute     : out Minute_Number;
+      Second     : out Second_Number;
+      Sub_Second : out Second_Duration);
+   --  Version of Split that allows durations < 100 hours.
+   --  Will raise Time_Error if Seconds >= 100 hours.
 
    ----------------
    -- Check_Char --
@@ -91,8 +99,6 @@ package body Ada.Calendar.Formatting is
       Ss : Second_Duration;
       Le : Boolean;
 
-      pragma Unreferenced (Y, Mo, H, Mi);
-
    begin
       Split (Date, Y, Mo, D, H, Mi, Se, Ss, Le, Time_Zone);
       return D;
@@ -124,8 +130,6 @@ package body Ada.Calendar.Formatting is
       Ss : Second_Duration;
       Le : Boolean;
 
-      pragma Unreferenced (Y, Mo, D, Mi);
-
    begin
       Split (Date, Y, Mo, D, H, Mi, Se, Ss, Le, Time_Zone);
       return H;
@@ -140,7 +144,7 @@ package body Ada.Calendar.Formatting is
       Include_Time_Fraction : Boolean := False) return String
    is
       To_Char    : constant array (0 .. 9) of Character := "0123456789";
-      Hour       : Hour_Number;
+      Hour       : Natural;
       Minute     : Minute_Number;
       Second     : Second_Number;
       Sub_Second : Duration;
@@ -155,7 +159,7 @@ package body Ada.Calendar.Formatting is
       Result : String := "-00:00:00.00";
 
    begin
-      Split (abs (Elapsed_Time), Hour, Minute, Second, Sub_Second);
+      Split_Duration (abs Elapsed_Time, Hour, Minute, Second, Sub_Second);
 
       --  Hour processing, positions 2 and 3
 
@@ -282,8 +286,6 @@ package body Ada.Calendar.Formatting is
       Ss : Second_Duration;
       Le : Boolean;
 
-      pragma Unreferenced (Y, Mo, D, H);
-
    begin
       Split (Date, Y, Mo, D, H, Mi, Se, Ss, Le, Time_Zone);
       return Mi;
@@ -306,8 +308,6 @@ package body Ada.Calendar.Formatting is
       Ss : Second_Duration;
       Le : Boolean;
 
-      pragma Unreferenced (Y, D, H, Mi);
-
    begin
       Split (Date, Y, Mo, D, H, Mi, Se, Ss, Le, Time_Zone);
       return Mo;
@@ -326,8 +326,6 @@ package body Ada.Calendar.Formatting is
       Se : Second_Number;
       Ss : Second_Duration;
       Le : Boolean;
-
-      pragma Unreferenced (Y, Mo, D, H, Mi);
 
    begin
       Split (Date, Y, Mo, D, H, Mi, Se, Ss, Le);
@@ -361,6 +359,34 @@ package body Ada.Calendar.Formatting is
              Sub_Second;
    end Seconds_Of;
 
+   --------------------
+   -- Split_Duration --
+   --------------------
+
+   procedure Split_Duration
+     (Seconds    : Duration;
+      Hour       : out Natural;
+      Minute     : out Minute_Number;
+      Second     : out Second_Number;
+      Sub_Second : out Second_Duration)
+   is
+      Secs : Natural;
+   begin
+      --  Check that Seconds is below 100 hours
+
+      if Seconds >= 3600.0 * 100.0 then
+         raise Time_Error;
+      end if;
+
+      Secs := (if Seconds = 0.0 then 0 else Natural (Seconds - 0.5));
+
+      Sub_Second := Second_Duration (Seconds - Duration (Secs));
+      Hour       := Natural (Secs / 3_600);
+      Secs       := Secs mod 3_600;
+      Minute     := Minute_Number (Secs / 60);
+      Second     := Second_Number (Secs mod 60);
+   end Split_Duration;
+
    -----------
    -- Split --
    -----------
@@ -372,8 +398,7 @@ package body Ada.Calendar.Formatting is
       Second     : out Second_Number;
       Sub_Second : out Second_Duration)
    is
-      Secs : Natural;
-
+      Unchecked_Hour : Natural;
    begin
       --  Validity checks
 
@@ -381,23 +406,13 @@ package body Ada.Calendar.Formatting is
          raise Constraint_Error;
       end if;
 
-      Secs := (if Seconds = 0.0 then 0 else Natural (Seconds - 0.5));
+      Split_Duration (Seconds, Unchecked_Hour, Minute, Second, Sub_Second);
 
-      Sub_Second := Second_Duration (Seconds - Day_Duration (Secs));
-      Hour       := Hour_Number (Secs / 3_600);
-      Secs       := Secs mod 3_600;
-      Minute     := Minute_Number (Secs / 60);
-      Second     := Second_Number (Secs mod 60);
-
-      --  Validity checks
-
-      if not Hour'Valid
-        or else not Minute'Valid
-        or else not Second'Valid
-        or else not Sub_Second'Valid
-      then
+      if Unchecked_Hour > Hour_Number'Last then
          raise Time_Error;
       end if;
+
+      Hour := Unchecked_Hour;
    end Split;
 
    -----------
@@ -558,8 +573,6 @@ package body Ada.Calendar.Formatting is
       Ss : Second_Duration;
       Le : Boolean;
 
-      pragma Unreferenced (Y, Mo, D, H, Mi);
-
    begin
       Split (Date, Y, Mo, D, H, Mi, Se, Ss, Le);
       return Ss;
@@ -577,10 +590,6 @@ package body Ada.Calendar.Formatting is
       Leap_Second : Boolean := False;
       Time_Zone   : Time_Zones.Time_Offset := 0) return Time
    is
-      Adj_Year  : Year_Number  := Year;
-      Adj_Month : Month_Number := Month;
-      Adj_Day   : Day_Number   := Day;
-
       H  : constant Integer := 1;
       M  : constant Integer := 1;
       Se : constant Integer := 1;
@@ -599,32 +608,11 @@ package body Ada.Calendar.Formatting is
          raise Constraint_Error;
       end if;
 
-      --  A Seconds value of 86_400 denotes a new day. This case requires an
-      --  adjustment to the input values.
-
-      if Seconds = 86_400.0 then
-         if Day < Days_In_Month (Month)
-           or else (Is_Leap (Year)
-                      and then Month = 2)
-         then
-            Adj_Day := Day + 1;
-         else
-            Adj_Day := 1;
-
-            if Month < 12 then
-               Adj_Month := Month + 1;
-            else
-               Adj_Month := 1;
-               Adj_Year  := Year + 1;
-            end if;
-         end if;
-      end if;
-
       return
         Formatting_Operations.Time_Of
-          (Year         => Adj_Year,
-           Month        => Adj_Month,
-           Day          => Adj_Day,
+          (Year         => Year,
+           Month        => Month,
+           Day          => Day,
            Day_Secs     => Seconds,
            Hour         => H,
            Minute       => M,
@@ -789,7 +777,7 @@ package body Ada.Calendar.Formatting is
 
    function Value (Elapsed_Time : String) return Duration is
       D          : String (1 .. 11);
-      Hour       : Hour_Number;
+      Hour       : Natural;
       Minute     : Minute_Number;
       Second     : Second_Number;
       Sub_Second : Second_Duration := 0.0;
@@ -829,7 +817,7 @@ package body Ada.Calendar.Formatting is
 
       --  Value extraction
 
-      Hour   := Hour_Number   (Hour_Number'Value   (D (1 .. 2)));
+      Hour   := Natural       (Natural'Value       (D (1 .. 2)));
       Minute := Minute_Number (Minute_Number'Value (D (4 .. 5)));
       Second := Second_Number (Second_Number'Value (D (7 .. 8)));
 
@@ -849,9 +837,14 @@ package body Ada.Calendar.Formatting is
          raise Constraint_Error;
       end if;
 
-      return Seconds_Of (Hour, Minute, Second, Sub_Second);
+      return Duration (Hour * 3600)
+        + Duration (Minute * 60)
+        + Duration (Second)
+        + Sub_Second;
 
    exception
+      --  CE is mandated, but preserve trace if CE already.
+      when Constraint_Error => raise;
       when others => raise Constraint_Error;
    end Value;
 
@@ -871,8 +864,6 @@ package body Ada.Calendar.Formatting is
       Se : Second_Number;
       Ss : Second_Duration;
       Le : Boolean;
-
-      pragma Unreferenced (Mo, D, H, Mi);
 
    begin
       Split (Date, Y, Mo, D, H, Mi, Se, Ss, Le, Time_Zone);

@@ -1,11 +1,12 @@
-#objdump: -r 
-#as: -mabi=32 -march=mips1
+#objdump: -r
+#as: -mabi=32 -march=mips1 -mpdr
 #name: MIPS16 mips16-hilo-match
+#source: mips-hilo-match.s
 
 .*: +file format .*mips.*
 
 RELOCATION RECORDS FOR \[\.text\]:
-OFFSET   TYPE              VALUE 
+OFFSET +TYPE +VALUE
 00000010 R_MIPS_HI16       var4
 00000018 R_MIPS_LO16       var4
 00000008 R_MIPS_HI16       __var1
@@ -32,10 +33,7 @@ OFFSET   TYPE              VALUE
 00000086 R_MIPS16_LO16     hilo_match
 0000008a R_MIPS16_26       func1
 
-
 RELOCATION RECORDS FOR \[\.pdr\]:
-OFFSET   TYPE              VALUE 
+OFFSET +TYPE +VALUE
 00000000 R_MIPS_32         _pinit
 00000020 R_MIPS_32         pdelt
-
-

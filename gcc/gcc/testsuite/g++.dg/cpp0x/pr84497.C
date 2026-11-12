@@ -1,7 +1,9 @@
 // PR 84497 mismatch with thread constructor fn weakness
 // { dg-do compile { target c++11 } }
 // { dg-require-weak "" }
+// { dg-require-alias "" }
 // { dg-skip-if "No .weak" { { hppa*-*-hpux* } && { ! lp64 } } }
+// { dg-skip-if PR119369 { amdgcn-*-* } }
 
 struct Base
 {
@@ -33,6 +35,6 @@ extern thread_local Container container_obj;
 int main() { return !(&base_obj && &derived_obj && &container_obj);}
 #endif
 
-// { dg-final { scan-assembler ".weak\[ \t\]*_ZTH8base_obj" } }
-// { dg-final { scan-assembler ".weak\[ \t\]*_ZTH11derived_obj" } }
-// { dg-final { scan-assembler ".weak\[ \t\]*_ZTH13container_obj" } }
+// { dg-final { scan-assembler ".weak\[ \t\]*_?_ZTH8base_obj" } }
+// { dg-final { scan-assembler ".weak\[ \t\]*_?_ZTH11derived_obj" } }
+// { dg-final { scan-assembler ".weak\[ \t\]*_?_ZTH13container_obj" } }

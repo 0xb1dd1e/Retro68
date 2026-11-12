@@ -14,7 +14,10 @@ import (
 func setMimeInit(fn func()) (cleanup func()) {
 	once = sync.Once{}
 	testInitMime = fn
-	return func() { testInitMime = nil }
+	return func() {
+		testInitMime = nil
+		once = sync.Once{}
+	}
 }
 
 func clearMimeTypes() {
@@ -187,5 +190,32 @@ func BenchmarkExtensionsByType(b *testing.B) {
 				}
 			})
 		})
+	}
+}
+
+func TestExtensionsByType2(t *testing.T) {
+	cleanup := setMimeInit(func() {
+		clearMimeTypes()
+		// Initialize built-in types like in type.go before osInitMime.
+		setMimeTypes(builtinTypesLower, builtinTypesLower)
+	})
+	defer cleanup()
+
+	tests := []struct {
+		typ  string
+		want []string
+	}{
+		{typ: "image/jpeg", want: []string{".jpeg", ".jpg"}},
+	}
+
+	for _, tt := range tests {
+		got, err := ExtensionsByType(tt.typ)
+		if err != nil {
+			t.Errorf("ExtensionsByType(%q): %v", tt.typ, err)
+			continue
+		}
+		if !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("ExtensionsByType(%q) = %q; want %q", tt.typ, got, tt.want)
+		}
 	}
 }

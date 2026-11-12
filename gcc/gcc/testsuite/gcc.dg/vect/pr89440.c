@@ -1,4 +1,3 @@
-/* { dg-do run } */
 /* { dg-additional-options "-ffast-math" } */
 
 #include "tree-vect.h"
@@ -11,7 +10,7 @@ f (float x)
   float a = 0;
   for (i = 0; i < 4; ++i)
     {
-      for (j = 0; j < 4; ++j)
+      for (j = 0; j < 32; ++j)
 	{
 	  a += 1;
 	  x += a;
@@ -24,7 +23,7 @@ int
 main()
 {
   check_vect ();
-  if (f (1.0f) != 137.0f)
+  if (f (1.0f) != 8257.0f)
     abort ();
   return 0;
 }

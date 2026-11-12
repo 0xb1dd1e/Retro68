@@ -1,6 +1,6 @@
 // { dg-do compile }
-// { dg-options "-O2 -fstrict-aliasing" }
-// { dg-additional-options "-Wno-return-type" }
+// { dg-options "-O2 -fstrict-aliasing -Wno-return-type" }
+// { dg-skip-if "requires hosted libstdc++ for vector" { ! hostedlib } }
 
 // This caused an ICE during placement new.
 

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2013-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 2013-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -31,7 +31,7 @@ with Output;   use Output;
 with System;        use System;
 with System.OS_Lib; use System.OS_Lib;
 
-with Unchecked_Conversion;
+with Ada.Unchecked_Conversion;
 
 package body Set_Targ is
 
@@ -55,6 +55,7 @@ package body Set_Targ is
    S_Float_Words_BE             : constant Str := "Float_Words_BE";
    S_Int_Size                   : constant Str := "Int_Size";
    S_Long_Double_Size           : constant Str := "Long_Double_Size";
+   S_Long_Long_Long_Size        : constant Str := "Long_Long_Long_Size";
    S_Long_Long_Size             : constant Str := "Long_Long_Size";
    S_Long_Size                  : constant Str := "Long_Size";
    S_Maximum_Alignment          : constant Str := "Maximum_Alignment";
@@ -84,6 +85,7 @@ package body Set_Targ is
           S_Float_Words_BE             'Unrestricted_Access,
           S_Int_Size                   'Unrestricted_Access,
           S_Long_Double_Size           'Unrestricted_Access,
+          S_Long_Long_Long_Size        'Unrestricted_Access,
           S_Long_Long_Size             'Unrestricted_Access,
           S_Long_Size                  'Unrestricted_Access,
           S_Maximum_Alignment          'Unrestricted_Access,
@@ -111,6 +113,7 @@ package body Set_Targ is
           Float_Words_BE             'Address,
           Int_Size                   'Address,
           Long_Double_Size           'Address,
+          Long_Long_Long_Size        'Address,
           Long_Long_Size             'Address,
           Long_Size                  'Address,
           Maximum_Alignment          'Address,
@@ -306,7 +309,6 @@ package body Set_Targ is
             Write_Str ("pragma Float_Representation (");
 
             case Float_Rep is
-               when AAMP        => Write_Str ("AAMP");
                when IEEE_Binary => Write_Str ("IEEE");
             end case;
 
@@ -402,7 +404,7 @@ package body Set_Targ is
       --  Pointer to Nat or Pos value (it is harmless to treat Pos values and
       --  Nat values as Natural via Unchecked_Conversion).
 
-      function To_ANat is new Unchecked_Conversion (Address, ANat);
+      function To_ANat is new Ada.Unchecked_Conversion (Address, ANat);
 
       procedure AddC (C : Character);
       --  Add one character to buffer
@@ -529,7 +531,6 @@ package body Set_Targ is
             AddC (' ');
 
             case E.FLOAT_REP is
-               when AAMP        => AddC ('A');
                when IEEE_Binary => AddC ('I');
             end case;
 
@@ -565,7 +566,7 @@ package body Set_Targ is
       --  Pointer to Nat or Pos value (it is harmless to treat Pos values
       --  as Nat via Unchecked_Conversion).
 
-      function To_ANat is new Unchecked_Conversion (Address, ANat);
+      function To_ANat is new Ada.Unchecked_Conversion (Address, ANat);
 
       VP : ANat;
 
@@ -745,8 +746,15 @@ package body Set_Targ is
 
       for J in DTR'Range loop
          if not DTR (J) then
-            Fail ("missing entry for " & DTN (J).all & " in file "
-                  & File_Name);
+            --  Make an exception for Long_Long_Long_Size???
+
+            if DTN (J) = S_Long_Long_Long_Size'Unrestricted_Access then
+               Long_Long_Long_Size := Long_Long_Size;
+
+            else
+               Fail ("missing entry for " & DTN (J).all & " in file "
+                     & File_Name);
+            end if;
          end if;
       end loop;
 
@@ -784,9 +792,6 @@ package body Set_Targ is
             case Buffer (N) is
                when 'I'    =>
                   E.FLOAT_REP := IEEE_Binary;
-
-               when 'A'    =>
-                  E.FLOAT_REP := AAMP;
 
                when others =>
                   FailN ("bad float rep field for");
@@ -832,11 +837,11 @@ begin
 
       save_argc : Nat;
       pragma Import (C, save_argc);
-      --  Saved value of argc (number of arguments), imported from misc.c
+      --  Saved value of argc (number of arguments), imported from misc.cc
 
       save_argv : Arg_Array_Ptr;
       pragma Import (C, save_argv);
-      --  Saved value of argv (argument pointers), imported from misc.c
+      --  Saved value of argv (argument pointers), imported from misc.cc
 
       gnat_argc : Nat;
       gnat_argv : Arg_Array_Ptr;
@@ -870,7 +875,7 @@ begin
          argv := save_argv;
          argc := save_argc;
       else
-         --  Case of a non gcc compiler, e.g. gnat2why or gnat2scil
+         --  Case of a non-GCC compiler, e.g. gnat2why or gnat2scil
          argv := gnat_argv;
          argc := gnat_argc;
       end if;
@@ -934,10 +939,11 @@ begin
             Double_Scalar_Alignment    := Get_Double_Scalar_Alignment;
             Float_Words_BE             := Get_Float_Words_BE;
             Int_Size                   := Get_Int_Size;
+            Long_Long_Long_Size        := Get_Long_Long_Long_Size;
             Long_Long_Size             := Get_Long_Long_Size;
             Long_Size                  := Get_Long_Size;
             Maximum_Alignment          := Get_Maximum_Alignment;
-            Max_Unaligned_Field        := Get_Max_Unaligned_Field;
+            Max_Unaligned_Field        := 1;
             Pointer_Size               := Get_Pointer_Size;
             Short_Enums                := Get_Short_Enums;
             Short_Size                 := Get_Short_Size;

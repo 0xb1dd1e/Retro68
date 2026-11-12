@@ -82,28 +82,28 @@ version (linux_libc)
 
     enum IPPORT_USERRESERVED = 5000;
 
-    extern(D) bool IN_CLASSA(in_addr_t i) pure @safe { return (i & 0x80000000) == 0; }
+    extern(D) bool IN_CLASSA()(in_addr_t i) pure @safe { return (i & 0x80000000) == 0; }
     enum IN_CLASSA_NET    = 0xff000000;
     enum IN_CLASSA_NSHIFT = 24;
     enum IN_CLASSA_HOST   = 0xffffffff & ~IN_CLASSA_NET;
     enum IN_CLASSA_MAX    = 128;
 
-    extern(D) bool IN_CLASSB(in_addr_t i) pure @safe { return (i & 0xc0000000) == 0x80000000; }
+    extern(D) bool IN_CLASSB()(in_addr_t i) pure @safe { return (i & 0xc0000000) == 0x80000000; }
     enum IN_CLASSB_NET    = 0xffff0000;
     enum IN_CLASSB_NSHIFT = 16;
     enum IN_CLASSB_HOST   = 0xffffffff & ~IN_CLASSB_NET;
     enum IN_CLASSB_MAX    = 65536;
 
-    extern(D) bool IN_CLASSC(in_addr_t i) pure @safe { return (i & 0xe0000000) == 0xc0000000; }
+    extern(D) bool IN_CLASSC()(in_addr_t i) pure @safe { return (i & 0xe0000000) == 0xc0000000; }
     enum IN_CLASSC_NET    = 0xffffff00;
     enum IN_CLASSC_NSHIFT = 8;
     enum IN_CLASSC_HOST   = 0xffffffff & ~IN_CLASSC_NET;
 
-    extern(D) bool IN_CLASSD(in_addr_t i) pure @safe { return (i & 0xf0000000) == 0xe0000000; }
-    extern(D) bool IN_MULTICAST(in_addr_t i) { return IN_CLASSD(i); }
+    extern(D) bool IN_CLASSD()(in_addr_t i) pure @safe { return (i & 0xf0000000) == 0xe0000000; }
+    extern(D) bool IN_MULTICAST()(in_addr_t i) { return IN_CLASSD(i); }
 
-    extern(D) bool IN_EXPERIMENTAL(in_addr_t i) pure @safe { return (i & 0xe0000000) == 0xe0000000; }
-    extern(D) bool IN_BADCLASS(in_addr_t i) pure @safe { return (i & 0xf0000000) == 0xf0000000; }
+    extern(D) bool IN_EXPERIMENTAL()(in_addr_t i) pure @safe { return (i & 0xe0000000) == 0xe0000000; }
+    extern(D) bool IN_BADCLASS()(in_addr_t i) pure @safe { return (i & 0xf0000000) == 0xf0000000; }
 
     enum IN_LOOPBACKNET = 127;
 
@@ -115,33 +115,33 @@ version (linux_libc)
     enum IN6ADDR_ANY_INIT      = in6_addr.init;
     enum IN6ADDR_LOOPBACK_INIT = in6_addr([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
 
-    version (gnu_libc) static if (__USE_MISC)
+    version (gnu_libc) static if (_DEFAULT_SOURCE)
     {
         struct ip_mreq
         {
             in_addr imr_multiaddr;
             in_addr imr_interface;
-        };
+        }
 
         struct ip_mreq_source
         {
             in_addr imr_multiaddr;
             in_addr imr_interface;
             in_addr imr_sourceaddr;
-        };
+        }
 
         struct group_req
         {
             uint gr_interface;
             sockaddr_storage gr_group;
-        };
+        }
 
         struct group_source_req
         {
             uint gsr_interface;
             sockaddr_storage gsr_group;
             sockaddr_storage gsr_source;
-        };
+        }
 
         struct ip_msfilter
         {
@@ -150,7 +150,7 @@ version (linux_libc)
             uint imsf_fmode;
             uint imsf_numsrc;
             in_addr[1] imsf_slist;
-        };
+        }
 
         extern(D) size_t IP_MSFILTER_SIZE(int numsrc)
         {
@@ -164,7 +164,7 @@ version (linux_libc)
             uint gf_fmode;
             uint gf_numsrc;
             sockaddr_storage[1] gf_slist;
-        };
+        }
 
         extern(D) size_t GROUP_FILTER_SIZE(int numsrc) pure @safe
         {
@@ -174,25 +174,25 @@ version (linux_libc)
 
     extern(D) bool IN6_ARE_ADDR_EQUAL(in6_addr* a, in6_addr* b) pure @safe { return *a == *b; }
 
-    version (gnu_libc) static if (__USE_MISC)
+    version (gnu_libc) static if (_DEFAULT_SOURCE)
     {
         int bindresvport(int __sockfd, sockaddr_in* __sock_in);
         int bindresvport6(int __sockfd, sockaddr_in6* _);
     }
 
-    version (gnu_libc) static if (__USE_GNU)
+    version (gnu_libc) static if (_GNU_SOURCE)
     {
         struct in6_pktinfo
         {
             in6_addr ipi6_addr;
             uint ipi6_ifindex;
-        };
+        }
 
         struct ip6_mtuinfo
         {
             sockaddr_in6 ip6m_addr;
             uint ip6m_mtu;
-        };
+        }
 
         int inet6_opt_init(void* __extbuf, socklen_t __extlen);
         int inet6_opt_append(void* __extbuf, socklen_t __extlen, int __offset,
@@ -254,7 +254,7 @@ version (linux_libc)
     enum IP_DROP_SOURCE_MEMBERSHIP = 40;
     enum IP_MSFILTER               = 41;
 
-    version (gnu_libc) static if (__USE_MISC)
+    version (gnu_libc) static if (_DEFAULT_SOURCE)
     {
         enum MCAST_JOIN_GROUP         = 42;
         enum MCAST_BLOCK_SOURCE       = 43;
@@ -307,27 +307,27 @@ version (linux_libc)
     enum IP_DEFAULT_MULTICAST_LOOP = 1;
     enum IP_MAX_MEMBERSHIPS        = 20;
 
-    version (gnu_libc) static if (__USE_MISC)
+    version (gnu_libc) static if (_DEFAULT_SOURCE)
     {
         struct ip_opts
         {
             in_addr ip_dst;
             char[40] ip_opts = 0;
-        };
+        }
 
         struct ip_mreqn
         {
             in_addr imr_multiaddr;
             in_addr imr_address;
             int imr_ifindex;
-        };
+        }
 
         struct in_pktinfo
         {
             int ipi_ifindex;
             in_addr ipi_spec_dst;
             in_addr ipi_addr;
-        };
+        }
     }
 
     enum IPV6_ADDRFORM       = 1;

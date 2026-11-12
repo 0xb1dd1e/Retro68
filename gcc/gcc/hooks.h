@@ -1,5 +1,5 @@
 /* General-purpose hooks.
-   Copyright (C) 2002-2019 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify it
    under the terms of the GNU General Public License as published by the
@@ -27,12 +27,16 @@ extern bool hook_bool_void_false (void);
 extern bool hook_bool_void_true (void);
 extern bool hook_bool_bool_false (bool);
 extern bool hook_bool_bool_gcc_optionsp_false (bool, struct gcc_options *);
+extern bool hook_bool_dwcfi_dwcfioprndtyperef_false (dwarf_call_frame_info,
+						     dw_cfi_oprnd_type &);
+extern bool hook_bool_FILEptr_dwcfiptr_false (FILE *, dw_cfi_ref);
 extern bool hook_bool_const_int_const_int_true (const int, const int);
 extern bool hook_bool_mode_false (machine_mode);
 extern bool hook_bool_mode_true (machine_mode);
 extern bool hook_bool_mode_mode_true (machine_mode, machine_mode);
 extern bool hook_bool_mode_const_rtx_false (machine_mode, const_rtx);
 extern bool hook_bool_mode_const_rtx_true (machine_mode, const_rtx);
+extern bool hook_bool_mode_int_unsigned_false (machine_mode, int, unsigned);
 extern bool hook_bool_mode_rtx_false (machine_mode, rtx);
 extern bool hook_bool_mode_rtx_true (machine_mode, rtx);
 extern bool hook_bool_const_rtx_insn_const_rtx_insn_true (const rtx_insn *,
@@ -40,11 +44,12 @@ extern bool hook_bool_const_rtx_insn_const_rtx_insn_true (const rtx_insn *,
 extern bool hook_bool_mode_uhwi_false (machine_mode,
 				       unsigned HOST_WIDE_INT);
 extern bool hook_bool_puint64_puint64_true (poly_uint64, poly_uint64);
-extern bool hook_bool_insn_uint_mode_false (rtx_insn *, unsigned int,
+extern bool hook_bool_uint_uint_mode_false (unsigned int, unsigned int,
 					    machine_mode);
 extern bool hook_bool_uint_mode_true (unsigned int, machine_mode);
 extern bool hook_bool_tree_false (tree);
 extern bool hook_bool_const_tree_false (const_tree);
+extern bool hook_bool_const_tree_const_tree_true (const_tree, const_tree);
 extern bool hook_bool_tree_true (tree);
 extern bool hook_bool_const_tree_true (const_tree);
 extern bool hook_bool_gsiptr_false (gimple_stmt_iterator *);
@@ -82,12 +87,12 @@ extern void hook_void_FILEptr_constcharptr (FILE *, const char *);
 extern void hook_void_FILEptr_constcharptr_const_tree (FILE *, const char *,
 						       const_tree);
 extern bool hook_bool_FILEptr_rtx_false (FILE *, rtx);
-extern void hook_void_rtx_tree (rtx, tree);
 extern void hook_void_FILEptr_tree (FILE *, tree);
 extern void hook_void_tree (tree);
 extern void hook_void_tree_treeptr (tree, tree *);
 extern void hook_void_int_int (int, int);
 extern void hook_void_gcc_optionsp (struct gcc_options *);
+extern bool hook_bool_uint_true (unsigned int);
 extern bool hook_bool_uint_uintp_false (unsigned int, unsigned int *);
 
 extern int hook_int_uint_mode_1 (unsigned int, machine_mode);
@@ -106,9 +111,11 @@ extern HOST_WIDE_INT hook_hwi_void_0 (void);
 extern tree hook_tree_const_tree_null (const_tree);
 extern tree hook_tree_void_null (void);
 
+extern tree hook_tree_tree_bool_null (tree, bool);
 extern tree hook_tree_tree_tree_null (tree, tree);
 extern tree hook_tree_tree_tree_tree_null (tree, tree, tree);
 extern tree hook_tree_tree_int_treep_bool_null (tree, int, tree *, bool);
+extern tree hook_tree_treeptr_tree_tree_int_boolptr_null (tree *, tree, tree, int, bool *);
 
 extern unsigned hook_uint_void_0 (void);
 extern unsigned int hook_uint_mode_0 (machine_mode);
@@ -130,4 +137,8 @@ extern const char *hook_constcharptr_int_const_tree_const_tree_null (int, const_
 
 extern opt_machine_mode hook_optmode_mode_uhwi_none (machine_mode,
 						     unsigned HOST_WIDE_INT);
+
+extern bool hook_stringslice_locationtptr_true (string_slice, location_t *);
+extern bool hook_stringslice_consttree_stringslice_consttree_unreachable (string_slice, const_tree, string_slice, const_tree);
+
 #endif

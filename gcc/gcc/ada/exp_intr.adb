@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -23,39 +23,39 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with Atree;    use Atree;
-with Checks;   use Checks;
-with Einfo;    use Einfo;
-with Elists;   use Elists;
-with Expander; use Expander;
-with Exp_Atag; use Exp_Atag;
-with Exp_Ch4;  use Exp_Ch4;
-with Exp_Ch7;  use Exp_Ch7;
-with Exp_Ch11; use Exp_Ch11;
-with Exp_Code; use Exp_Code;
-with Exp_Fixd; use Exp_Fixd;
-with Exp_Util; use Exp_Util;
-with Freeze;   use Freeze;
-with Inline;   use Inline;
-with Nmake;    use Nmake;
-with Nlists;   use Nlists;
-with Opt;      use Opt;
-with Restrict; use Restrict;
-with Rident;   use Rident;
-with Rtsfind;  use Rtsfind;
-with Sem;      use Sem;
-with Sem_Aux;  use Sem_Aux;
-with Sem_Eval; use Sem_Eval;
-with Sem_Res;  use Sem_Res;
-with Sem_Type; use Sem_Type;
-with Sem_Util; use Sem_Util;
-with Sinfo;    use Sinfo;
-with Sinput;   use Sinput;
-with Snames;   use Snames;
-with Stand;    use Stand;
-with Tbuild;   use Tbuild;
-with Uintp;    use Uintp;
-with Urealp;   use Urealp;
+with Atree;          use Atree;
+with Checks;         use Checks;
+with Einfo.Entities; use Einfo.Entities;
+with Einfo.Utils;    use Einfo.Utils;
+with Elists;         use Elists;
+with Expander;       use Expander;
+with Exp_Atag;       use Exp_Atag;
+with Exp_Ch7;        use Exp_Ch7;
+with Exp_Ch11;       use Exp_Ch11;
+with Exp_Code;       use Exp_Code;
+with Exp_Fixd;       use Exp_Fixd;
+with Exp_Util;       use Exp_Util;
+with Freeze;         use Freeze;
+with Inline;         use Inline;
+with Nmake;          use Nmake;
+with Nlists;         use Nlists;
+with Opt;            use Opt;
+with Restrict;       use Restrict;
+with Rident;         use Rident;
+with Rtsfind;        use Rtsfind;
+with Sem;            use Sem;
+with Sem_Aux;        use Sem_Aux;
+with Sem_Eval;       use Sem_Eval;
+with Sem_Res;        use Sem_Res;
+with Sem_Type;       use Sem_Type;
+with Sem_Util;       use Sem_Util;
+with Sinfo.Nodes;    use Sinfo.Nodes;
+with Sinfo.Utils;    use Sinfo.Utils;
+with Sinput;         use Sinput;
+with Snames;         use Snames;
+with Stand;          use Stand;
+with Tbuild;         use Tbuild;
+with Uintp;          use Uintp;
 
 package body Exp_Intr is
 
@@ -66,9 +66,6 @@ package body Exp_Intr is
    procedure Expand_Binary_Operator_Call (N : Node_Id);
    --  Expand a call to an intrinsic arithmetic operator when the operand
    --  types or sizes are not identical.
-
-   procedure Expand_Is_Negative (N : Node_Id);
-   --  Expand a call to the intrinsic Is_Negative function
 
    procedure Expand_Dispatching_Constructor_Call (N : Node_Id);
    --  Expand a call to an instantiation of Generic_Dispatching_Constructor
@@ -100,15 +97,15 @@ package body Exp_Intr is
    --  N_Free_Statement and appropriate context.
 
    procedure Expand_To_Address (N : Node_Id);
+   --  Expand a call to corresponding function from System.Storage_Elements or
+   --  declared in an instance of System.Address_To_Access_Conversions.
+
+   procedure Expand_To_Integer (N : Node_Id);
+   --  Expand a call to corresponding function from System.Storage_Elements
+
    procedure Expand_To_Pointer (N : Node_Id);
    --  Expand a call to corresponding function, declared in an instance of
    --  System.Address_To_Access_Conversions.
-
-   procedure Expand_Source_Info (N : Node_Id; Nam : Name_Id);
-   --  Rewrite the node as the appropriate string literal or positive
-   --  constant. Nam is the name of one of the intrinsics declared in
-   --  GNAT.Source_Info; see g-souinf.ads for documentation of these
-   --  intrinsics.
 
    ---------------------
    -- Add_Source_Info --
@@ -138,7 +135,7 @@ package body Exp_Intr is
                Ent : Entity_Id := Current_Scope;
             begin
                while Present (Ent) loop
-                  exit when not Ekind_In (Ent, E_Block, E_Loop);
+                  exit when Ekind (Ent) not in E_Block | E_Loop;
                   Ent := Scope (Ent);
                end loop;
 
@@ -205,12 +202,16 @@ package body Exp_Intr is
          return;
       end if;
 
-      --  Use Unsigned_32 for sizes of 32 or below, else Unsigned_64
+      --  Use the appropriate type for the size
 
-      if Siz > 32 then
-         T3 := RTE (RE_Unsigned_64);
-      else
+      if Siz <= 32 then
          T3 := RTE (RE_Unsigned_32);
+
+      elsif Siz <= 64 then
+         T3 := RTE (RE_Unsigned_64);
+
+      else pragma Assert (Siz <= 128);
+         T3 := RTE (RE_Unsigned_128);
       end if;
 
       --  Copy operator node, and reset type and entity fields, for
@@ -274,6 +275,8 @@ package body Exp_Intr is
       Result_Typ : Entity_Id;
 
    begin
+      pragma Assert (Is_Class_Wide_Type (Etype (Entity (Name (N)))));
+
       --  Remove side effects from tag argument early, before rewriting
       --  the dispatching constructor call, as Remove_Side_Effects relies
       --  on Tag_Arg's Parent link properly attached to the tree (once the
@@ -322,7 +325,7 @@ package body Exp_Intr is
       Result_Typ := Class_Wide_Type (Etype (Act_Constr));
 
       --  Check that the accessibility level of the tag is no deeper than that
-      --  of the constructor function (unless CodePeer_Mode)
+      --  of the constructor function (unless CodePeer_Mode).
 
       if not CodePeer_Mode then
          Insert_Action (N,
@@ -332,7 +335,8 @@ package body Exp_Intr is
                  Left_Opnd  =>
                    Build_Get_Access_Level (Loc, New_Copy_Tree (Tag_Arg)),
                  Right_Opnd =>
-                   Make_Integer_Literal (Loc, Scope_Depth (Act_Constr))),
+                   Make_Integer_Literal
+                     (Loc, Scope_Depth_Default_0 (Act_Constr))),
 
              Then_Statements => New_List (
                Make_Raise_Statement (Loc,
@@ -409,6 +413,10 @@ package body Exp_Intr is
 
       Rewrite (N, Convert_To (Result_Typ, Cnstr_Call));
 
+      if Is_Interface (Result_Typ) then
+         Flag_Interface_Pointer_Displacement (N);
+      end if;
+
       --  Do not generate a run-time check on the built object if tag
       --  checks are suppressed for the result type or tagged type expansion
       --  is disabled or if CodePeer_Mode.
@@ -430,28 +438,21 @@ package body Exp_Intr is
       --  the tag in the table of ancestor tags.
 
       elsif not Is_Interface (Result_Typ) then
-         declare
-            Obj_Tag_Node : Node_Id := New_Copy_Tree (Tag_Arg);
-            CW_Test_Node : Node_Id;
-
-         begin
-            Build_CW_Membership (Loc,
-              Obj_Tag_Node => Obj_Tag_Node,
-              Typ_Tag_Node =>
-                New_Occurrence_Of (
-                   Node (First_Elmt (Access_Disp_Table (
-                                       Root_Type (Result_Typ)))), Loc),
-              Related_Nod => N,
-              New_Node    => CW_Test_Node);
-
-            Insert_Action (N,
-              Make_Implicit_If_Statement (N,
-                Condition =>
-                  Make_Op_Not (Loc, CW_Test_Node),
-                Then_Statements =>
-                  New_List (Make_Raise_Statement (Loc,
-                              New_Occurrence_Of (RTE (RE_Tag_Error), Loc)))));
-         end;
+         Insert_Action (N,
+           Make_Implicit_If_Statement (N,
+             Condition =>
+               Make_Op_Not (Loc,
+                 Make_Function_Call (Loc,
+                    Name => New_Occurrence_Of (RTE (RE_CW_Membership), Loc),
+                    Parameter_Associations => New_List (
+                      New_Copy_Tree (Tag_Arg),
+                      New_Occurrence_Of (
+                        Node (First_Elmt (Access_Disp_Table (
+                                            Root_Type (Result_Typ)))), Loc)))),
+             Then_Statements =>
+               New_List (
+                 Make_Raise_Statement (Loc,
+                   Name => New_Occurrence_Of (RTE (RE_Tag_Error), Loc)))));
 
       --  Call IW_Membership test if the Result_Type is an abstract interface
       --  to look for the tag in the table of interface tags.
@@ -525,7 +526,7 @@ package body Exp_Intr is
             if No (Choice_Parameter (P)) then
                E := Make_Temporary (Loc, 'E');
                Set_Choice_Parameter (P, E);
-               Set_Ekind (E, E_Variable);
+               Mutate_Ekind (E, E_Variable);
                Set_Etype (E, RTE (RE_Exception_Occurrence));
                Set_Scope (E, Current_Scope);
             end if;
@@ -634,14 +635,11 @@ package body Exp_Intr is
       elsif Nam = Name_Generic_Dispatching_Constructor then
          Expand_Dispatching_Constructor_Call (N);
 
-      elsif Nam_In (Nam, Name_Import_Address,
-                         Name_Import_Largest_Value,
-                         Name_Import_Value)
+      elsif Nam in Name_Import_Address
+                 | Name_Import_Largest_Value
+                 | Name_Import_Value
       then
          Expand_Import_Call (N);
-
-      elsif Nam = Name_Is_Negative then
-         Expand_Is_Negative (N);
 
       elsif Nam = Name_Rotate_Left then
          Expand_Shift (N, E, N_Op_Rotate_Left);
@@ -667,22 +665,25 @@ package body Exp_Intr is
       elsif Nam = Name_To_Address then
          Expand_To_Address (N);
 
+      elsif Nam = Name_To_Integer then
+         Expand_To_Integer (N);
+
       elsif Nam = Name_To_Pointer then
          Expand_To_Pointer (N);
 
-      elsif Nam_In (Nam, Name_File,
-                         Name_Line,
-                         Name_Source_Location,
-                         Name_Enclosing_Entity,
-                         Name_Compilation_ISO_Date,
-                         Name_Compilation_Date,
-                         Name_Compilation_Time)
+      elsif Nam in Name_File
+                 | Name_Line
+                 | Name_Source_Location
+                 | Name_Enclosing_Entity
+                 | Name_Compilation_ISO_Date
+                 | Name_Compilation_Date
+                 | Name_Compilation_Time
       then
          Expand_Source_Info (N, Nam);
 
-         --  If we have a renaming, expand the call to the original operation,
-         --  which must itself be intrinsic, since renaming requires matching
-         --  conventions and this has already been checked.
+      --  If we have a renaming, expand the call to the original operation,
+      --  which must itself be intrinsic, since renaming requires matching
+      --  conventions and this has already been checked.
 
       elsif Present (Alias (E)) then
          Expand_Intrinsic_Call (N, Alias (E));
@@ -690,67 +691,15 @@ package body Exp_Intr is
       elsif Nkind (N) in N_Binary_Op then
          Expand_Binary_Operator_Call (N);
 
-         --  The only other case is where an external name was specified, since
-         --  this is the only way that an otherwise unrecognized name could
-         --  escape the checking in Sem_Prag. Nothing needs to be done in such
-         --  a case, since we pass such a call to the back end unchanged.
+      --  The only other case is where an external name was specified, since
+      --  this is the only way that an otherwise unrecognized name could
+      --  escape the checking in Sem_Prag. Nothing needs to be done in such
+      --  a case, since we pass such a call to the back end unchanged.
 
       else
          null;
       end if;
    end Expand_Intrinsic_Call;
-
-   ------------------------
-   -- Expand_Is_Negative --
-   ------------------------
-
-   procedure Expand_Is_Negative (N : Node_Id) is
-      Loc   : constant Source_Ptr := Sloc (N);
-      Opnd  : constant Node_Id    := Relocate_Node (First_Actual (N));
-
-   begin
-
-      --  We replace the function call by the following expression
-
-      --    if Opnd < 0.0 then
-      --       True
-      --    else
-      --       if Opnd > 0.0 then
-      --          False;
-      --       else
-      --          Float_Unsigned!(Float (Opnd)) /= 0
-      --       end if;
-      --    end if;
-
-      Rewrite (N,
-        Make_If_Expression (Loc,
-          Expressions => New_List (
-            Make_Op_Lt (Loc,
-              Left_Opnd  => Duplicate_Subexpr (Opnd),
-              Right_Opnd => Make_Real_Literal (Loc, Ureal_0)),
-
-            New_Occurrence_Of (Standard_True, Loc),
-
-            Make_If_Expression (Loc,
-             Expressions => New_List (
-               Make_Op_Gt (Loc,
-                 Left_Opnd  => Duplicate_Subexpr_No_Checks (Opnd),
-                 Right_Opnd => Make_Real_Literal (Loc, Ureal_0)),
-
-               New_Occurrence_Of (Standard_False, Loc),
-
-                Make_Op_Ne (Loc,
-                  Left_Opnd =>
-                    Unchecked_Convert_To
-                      (RTE (RE_Float_Unsigned),
-                       Convert_To
-                         (Standard_Float,
-                          Duplicate_Subexpr_No_Checks (Opnd))),
-                  Right_Opnd =>
-                    Make_Integer_Literal (Loc, 0)))))));
-
-      Analyze_And_Resolve (N, Standard_Boolean);
-   end Expand_Is_Negative;
 
    ------------------
    -- Expand_Shift --
@@ -801,14 +750,9 @@ package body Exp_Intr is
          Rewrite (N, Snode);
          Set_Analyzed (N);
 
-         --  However, we do call the expander, so that the expansion for
-         --  rotates and shift_right_arithmetic happens if Modify_Tree_For_C
-         --  is set.
-
          if Expander_Active then
             Expand (N);
          end if;
-
       else
          --  If the context type is not the type of the operator, it is an
          --  inherited operator for a derived type. Wrap the node in a
@@ -860,7 +804,7 @@ package body Exp_Intr is
    ---------------------------
 
    procedure Expand_Unc_Conversion (N : Node_Id; E : Entity_Id) is
-      Func : constant Entity_Id  := Entity (Name (N));
+      Func : constant Entity_Id := Entity (Name (N));
       Conv : Node_Id;
       Ftyp : Entity_Id;
       Ttyp : Entity_Id;
@@ -911,12 +855,7 @@ package body Exp_Intr is
       end if;
 
       Rewrite (N, Unchecked_Convert_To (Ttyp, Conv));
-      Set_Etype (N, Ttyp);
-      Set_Analyzed (N);
-
-      if Nkind (N) = N_Unchecked_Type_Conversion then
-         Expand_N_Unchecked_Type_Conversion (N);
-      end if;
+      Analyze_And_Resolve (N, Ttyp);
    end Expand_Unc_Conversion;
 
    -----------------------------
@@ -988,9 +927,31 @@ package body Exp_Intr is
       --  are allowed, the generated code may lack block statements.
 
       if Needs_Fin then
-         Obj_Ref :=
-           Make_Explicit_Dereference (Loc,
-             Prefix => Duplicate_Subexpr_No_Checks (Arg));
+
+         --  Ada 2005 (AI-251): In case of abstract interface type we displace
+         --  the pointer to reference the base of the object to deallocate its
+         --  memory, unless we're targetting a VM, in which case no special
+         --  processing is required.
+
+         if Is_Interface (Directly_Designated_Type (Typ))
+           and then Tagged_Type_Expansion
+         then
+            Obj_Ref :=
+              Make_Explicit_Dereference (Loc,
+                Prefix =>
+                  Unchecked_Convert_To (Typ,
+                    Make_Function_Call (Loc,
+                      Name                   =>
+                        New_Occurrence_Of (RTE (RE_Base_Address), Loc),
+                      Parameter_Associations => New_List (
+                        Unchecked_Convert_To (RTE (RE_Address),
+                          Duplicate_Subexpr_No_Checks (Arg))))));
+
+         else
+            Obj_Ref :=
+              Make_Explicit_Dereference (Loc,
+                Prefix => Duplicate_Subexpr_No_Checks (Arg));
+         end if;
 
          --  If the designated type is tagged, the finalization call must
          --  dispatch because the designated type may not be the actual type
@@ -1193,7 +1154,7 @@ package body Exp_Intr is
 
          else
             Set_Procedure_To_Call
-              (Free_Nod, Find_Prim_Op (Etype (Pool), Name_Deallocate));
+              (Free_Nod, Find_Storage_Op (Etype (Pool), Name_Deallocate));
          end if;
       end if;
 
@@ -1210,9 +1171,8 @@ package body Exp_Intr is
 
          if Is_Class_Wide_Type (Desig_Typ)
            or else
-            (Is_Array_Type (Desig_Typ)
-              and then not Is_Constrained (Desig_Typ)
-              and then Is_Packed (Desig_Typ))
+            (Is_Packed_Array (Desig_Typ)
+              and then not Is_Constrained (Desig_Typ))
          then
             declare
                Deref    : constant Node_Id :=
@@ -1351,6 +1311,12 @@ package body Exp_Intr is
       Obj : Node_Id;
 
    begin
+      if Is_Modular_Integer_Type (Etype (Arg)) then
+         Rewrite (N, Unchecked_Convert_To (Etype (N), Arg));
+         Analyze (N);
+         return;
+      end if;
+
       Remove_Side_Effects (Arg);
 
       Obj := Make_Explicit_Dereference (Loc, Relocate_Node (Arg));
@@ -1368,6 +1334,18 @@ package body Exp_Intr is
 
       Analyze_And_Resolve (N, RTE (RE_Address));
    end Expand_To_Address;
+
+   -----------------------
+   -- Expand_To_Integer --
+   -----------------------
+
+   procedure Expand_To_Integer (N : Node_Id) is
+      Arg : constant Node_Id := First_Actual (N);
+
+   begin
+      Rewrite (N, Unchecked_Convert_To (Etype (N), Arg));
+      Analyze (N);
+   end Expand_To_Integer;
 
    -----------------------
    -- Expand_To_Pointer --

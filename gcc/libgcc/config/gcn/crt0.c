@@ -1,4 +1,4 @@
-/* Copyright (C) 2017-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2017-2026 Free Software Foundation, Inc.
 
    This file is free software; you can redistribute it and/or modify it
    under the terms of the GNU General Public License as published by the
@@ -19,5 +19,93 @@
    see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
    <http://www.gnu.org/licenses/>.  */
 
+typedef long long size_t;
+
 /* Provide an entry point symbol to silence a linker warning.  */
 void _start() {}
+
+
+#define PR119369_fixed 0
+
+
+/* Host/device compatibility: '__cxa_finalize'.  Dummy; if necessary,
+   overridden via libgomp 'target-cxa-dso-dtor.c'.  */
+
+#if PR119369_fixed
+extern void __GCC_offload___cxa_finalize (void *) __attribute__((weak));
+#else
+void __GCC_offload___cxa_finalize (void *) __attribute__((weak));
+
+void __attribute__((weak))
+__GCC_offload___cxa_finalize (void *dso_handle __attribute__((unused)))
+{
+}
+#endif
+
+/* There are no DSOs; this is the main program.  */
+static void * const __dso_handle = 0;
+
+
+#ifdef USE_NEWLIB_INITFINI
+
+extern void __libc_init_array (void) __attribute__((weak));
+extern void __libc_fini_array (void) __attribute__((weak));
+
+__attribute__((amdgpu_hsa_kernel ()))
+void _init_array()
+{
+  __libc_init_array ();
+}
+
+__attribute__((amdgpu_hsa_kernel ()))
+void _fini_array()
+{
+#if PR119369_fixed
+  if (__GCC_offload___cxa_finalize)
+#endif
+    __GCC_offload___cxa_finalize (__dso_handle);
+
+  __libc_fini_array ();
+}
+
+#endif
+
+/* These magic symbols are provided by the linker.  */
+extern void (*__preinit_array_start []) (void) __attribute__((weak));
+extern void (*__preinit_array_end []) (void) __attribute__((weak));
+extern void (*__init_array_start []) (void) __attribute__((weak));
+extern void (*__init_array_end []) (void) __attribute__((weak));
+extern void (*__fini_array_start []) (void) __attribute__((weak));
+extern void (*__fini_array_end []) (void) __attribute__((weak));
+
+__attribute__((amdgpu_hsa_kernel ()))
+void _init_array()
+{
+  /* Iterate over all the init routines.  */
+  size_t count;
+  size_t i;
+
+  count = __preinit_array_end - __preinit_array_start;
+  for (i = 0; i < count; i++)
+    __preinit_array_start[i] ();
+
+  count = __init_array_end - __init_array_start;
+  for (i = 0; i < count; i++)
+    __init_array_start[i] ();
+}
+
+__attribute__((amdgpu_hsa_kernel ()))
+void _fini_array()
+{
+#if PR119369_fixed
+  if (__GCC_offload___cxa_finalize)
+#endif
+    __GCC_offload___cxa_finalize (__dso_handle);
+
+  size_t count;
+  size_t i;
+
+  count = __fini_array_end - __fini_array_start;
+  for (i = count; i > 0; i--)
+    __fini_array_start[i-1] ();
+}

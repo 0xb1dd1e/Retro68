@@ -1,5 +1,5 @@
 /* runtime.cc -- D runtime functions called by generated code.
-   Copyright (C) 2006-2019 Free Software Foundation, Inc.
+   Copyright (C) 2006-2026 Free Software Foundation, Inc.
 
 GCC is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -34,8 +34,9 @@ along with GCC; see the file COPYING3.  If not see
    We represent them in the frontend here, however there's no guarantee that
    the compiler implementation actually matches the actual implementation.  */
 
-enum libcall_type
+enum d_libcall_type
 {
+  LCT_NORETURN,		    /* typeof(*null)	    */
   LCT_VOID,		    /* void		    */
   LCT_BYTE,		    /* byte		    */
   LCT_INT,		    /* int		    */
@@ -51,6 +52,7 @@ enum libcall_type
   LCT_ARRAY_VOID,	    /* void[]		    */
   LCT_ARRAY_SIZE_T,	    /* size_t[]		    */
   LCT_ARRAY_BYTE,	    /* byte[]		    */
+  LCT_IMMUTABLE_CHARPTR,    /* immutable(char*)	    */
   LCT_ARRAY_STRING,	    /* string[]		    */
   LCT_ARRAY_WSTRING,	    /* wstring[]	    */
   LCT_ARRAY_DSTRING,	    /* dstring[]	    */
@@ -81,13 +83,17 @@ static tree libcall_decls[LIBCALL_LAST];
    arrayOf() will return cached types if they have been requested before.  */
 
 static Type *
-get_libcall_type (libcall_type type)
+get_libcall_type (d_libcall_type type)
 {
   if (libcall_types[type])
     return libcall_types[type];
 
   switch (type)
     {
+    case LCT_NORETURN:
+      libcall_types[type] = Type::tnoreturn;
+      break;
+
     case LCT_VOID:
       libcall_types[type] = Type::tvoid;
       break;
@@ -149,55 +155,59 @@ get_libcall_type (libcall_type type)
       break;
 
     case LCT_CONST_TYPEINFO:
-      libcall_types[type] = Type::dtypeinfo->type->constOf ();
+      libcall_types[type] = dmd::constOf (Type::dtypeinfo->type);
       break;
 
     case LCT_CONST_CLASSINFO:
-      libcall_types[type] = Type::typeinfoclass->type->constOf ();
+      libcall_types[type] = dmd::constOf (Type::typeinfoclass->type);
       break;
 
     case LCT_ARRAY_VOID:
-      libcall_types[type] = Type::tvoid->arrayOf ();
+      libcall_types[type] = dmd::arrayOf (Type::tvoid);
       break;
 
     case LCT_ARRAY_SIZE_T:
-      libcall_types[type] = Type::tsize_t->arrayOf ();
+      libcall_types[type] = dmd::arrayOf (Type::tsize_t);
       break;
 
     case LCT_ARRAY_BYTE:
-      libcall_types[type] = Type::tint8->arrayOf ();
+      libcall_types[type] = dmd::arrayOf (Type::tint8);
       break;
 
     case LCT_ARRAY_STRING:
-      libcall_types[type] = Type::tstring->arrayOf ();
+      libcall_types[type] = dmd::arrayOf (Type::tstring);
       break;
 
     case LCT_ARRAY_WSTRING:
-      libcall_types[type] = Type::twstring->arrayOf ();
+      libcall_types[type] = dmd::arrayOf (Type::twstring);
       break;
 
     case LCT_ARRAY_DSTRING:
-      libcall_types[type] = Type::tdstring->arrayOf ();
+      libcall_types[type] = dmd::arrayOf (Type::tdstring);
       break;
 
     case LCT_ARRAYARRAY_BYTE:
-      libcall_types[type] = Type::tint8->arrayOf ()->arrayOf ();
+      libcall_types[type] = dmd::arrayOf (Type::tint8);
       break;
 
     case LCT_POINTER_ASSOCARRAY:
-      libcall_types[type] = get_libcall_type (LCT_ASSOCARRAY)->pointerTo ();
+      libcall_types[type] = dmd::pointerTo (get_libcall_type (LCT_ASSOCARRAY));
       break;
 
     case LCT_POINTER_VOIDPTR:
-      libcall_types[type] = Type::tvoidptr->arrayOf ();
+      libcall_types[type] = dmd::arrayOf (Type::tvoidptr);
       break;
 
     case LCT_ARRAYPTR_VOID:
-      libcall_types[type] = Type::tvoid->arrayOf ()->pointerTo ();
+      libcall_types[type] = dmd::pointerTo (dmd::arrayOf (Type::tvoid));
       break;
 
     case LCT_ARRAYPTR_BYTE:
-      libcall_types[type] = Type::tint8->arrayOf ()->pointerTo ();
+      libcall_types[type] = dmd::pointerTo (dmd::arrayOf (Type::tint8));
+      break;
+
+    case LCT_IMMUTABLE_CHARPTR:
+      libcall_types[type] = dmd::immutableOf (dmd::pointerTo (Type::tchar));
       break;
 
     default:
@@ -212,21 +222,21 @@ get_libcall_type (libcall_type type)
    the number of arguments, the types of which are provided in `...'.  */
 
 static tree
-build_libcall_decl (const char *name, libcall_type return_type,
+build_libcall_decl (const char *name, d_libcall_type return_type,
 		    int flags, int nparams, ...)
 {
   tree *args = XALLOCAVEC (tree, nparams);
   bool varargs = false;
   tree fntype;
 
-  /* Add parameter types, using 'void' as the last parameter type
+  /* Add parameter types, using `void' as the last parameter type
      to mean this function accepts a variable list of arguments.  */
   va_list ap;
   va_start (ap, nparams);
 
   for (int i = 0; i < nparams; i++)
     {
-      libcall_type ptype = (libcall_type) va_arg (ap, int);
+      d_libcall_type ptype = (d_libcall_type) va_arg (ap, int);
       Type *type = get_libcall_type (ptype);
 
       if (type == Type::tvoid)
@@ -291,24 +301,52 @@ get_libcall (libcall_fn libcall)
   return libcall_decls[libcall];
 }
 
-/* Generate a call to LIBCALL, returning the result as TYPE.  NARGS is the
-   number of call arguments, the expressions of which are provided in `...'.
+
+/* Subroutine of build_libcall; generate a call to LIBCALL.  NARGS is the
+   number of call arguments, the expressions of which are provided in ARGP.
    This does not perform conversions or promotions on the arguments.  */
 
-tree
-build_libcall (libcall_fn libcall, Type *type, int nargs, ...)
+static tree
+build_libcall_1 (libcall_fn libcall, int nargs, va_list argp)
 {
   /* Build the call expression to the runtime function.  */
   tree decl = get_libcall (libcall);
   tree *args = XALLOCAVEC (tree, nargs);
+
+  for (int i = 0; i < nargs; i++)
+    args[i] = va_arg (argp, tree);
+
+  return build_call_expr_loc_array (input_location, decl, nargs, args);
+}
+
+/* Generate a call to LIBCALL.  NARGS is the number of call arguments, the
+   expressions of which are provided in `...'.  */
+
+tree
+build_libcall (libcall_fn libcall, int nargs, ...)
+{
   va_list ap;
 
   va_start (ap, nargs);
-  for (int i = 0; i < nargs; i++)
-    args[i] = va_arg (ap, tree);
+
+  tree result = build_libcall_1 (libcall, nargs, ap);
   va_end (ap);
 
-  tree result = build_call_expr_loc_array (input_location, decl, nargs, args);
+  return result;
+}
+
+/* Generate a call to LIBCALL, returning the result as TYPE.  NARGS is the
+   number of call arguments, the expressions of which are provided in `...'.  */
+
+tree
+build_libcall (libcall_fn libcall, Type *type, int nargs, ...)
+{
+  va_list ap;
+
+  va_start (ap, nargs);
+
+  tree result = build_libcall_1 (libcall, nargs, ap);
+  va_end (ap);
 
   /* Assumes caller knows what it is doing.  */
   return convert (build_ctype (type), result);

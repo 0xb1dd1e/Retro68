@@ -7,7 +7,7 @@
 --                                  S p e c                                 --
 --                                                                          --
 --             Copyright (C) 1991-2017, Florida State University            --
---          Copyright (C) 1995-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1995-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -39,16 +39,21 @@
 --  Preelaborate. This package is designed to be a bottom-level (leaf) package.
 
 with Ada.Unchecked_Conversion;
+
 with Interfaces.C;
+
+with System.C_Time;
 with System.Linux;
 with System.OS_Constants;
+with System.OS_Locks;
 
 package System.OS_Interface is
    pragma Preelaborate;
 
-   pragma Linker_Options ("-lpthread");
    pragma Linker_Options ("-lrt");
    --  Needed for clock_getres with glibc versions prior to 2.17
+
+   pragma Linker_Options ("-lpthread");
 
    subtype int            is Interfaces.C.int;
    subtype char           is Interfaces.C.char;
@@ -129,7 +134,7 @@ package System.OS_Interface is
 
    type Signal_Set is array (Natural range <>) of Signal;
 
-   Unmasked : constant Signal_Set := (
+   Unmasked : constant Signal_Set := [
       SIGTRAP,
       --  To enable debugging on multithreaded applications, mark SIGTRAP to
       --  be kept unmasked.
@@ -145,9 +150,9 @@ package System.OS_Interface is
 
       SIGKILL, SIGSTOP
       --  These two signals actually can't be masked (POSIX won't allow it)
-      );
+      ];
 
-   Reserved : constant Signal_Set := (
+   Reserved : constant Signal_Set := [
       SIG32, SIG33, SIG34
       --  glibc POSIX threads implementation uses two (NPTL) or three
       --  (LinuxThreads) real-time signals for its own use (see SIGNAL(7)).
@@ -155,7 +160,7 @@ package System.OS_Interface is
       --  not permit these signals to be used by the public signal.h API.
       --  While LinuxThreads is mostly likely unused now, SIG34 is still
       --  reserved as this behavior is consistent with past GNAT releases.
-      );
+      ];
 
    type sigset_t is private;
 
@@ -223,25 +228,16 @@ package System.OS_Interface is
    -- Time --
    ----------
 
-   subtype time_t    is System.Linux.time_t;
-   subtype timespec  is System.Linux.timespec;
-   subtype timeval   is System.Linux.timeval;
    subtype clockid_t is System.Linux.clockid_t;
 
    function clock_gettime
-     (clock_id : clockid_t; tp : access timespec) return int;
+     (clock_id : clockid_t; tp : access C_Time.timespec) return int;
    pragma Import (C, clock_gettime, "clock_gettime");
 
    function clock_getres
      (clock_id : clockid_t;
-      res      : access timespec) return int;
+      res      : access C_Time.timespec) return int;
    pragma Import (C, clock_getres, "clock_getres");
-
-   function To_Duration (TS : timespec) return Duration;
-   pragma Inline (To_Duration);
-
-   function To_Timespec (D : Duration) return timespec;
-   pragma Inline (To_Timespec);
 
    function sysconf (name : int) return long;
    pragma Import (C, sysconf);
@@ -277,9 +273,9 @@ package System.OS_Interface is
    PR_GET_NAME : constant := 16;
 
    function prctl
-     (option                 : int;
-      arg2, arg3, arg4, arg5 : unsigned_long := 0) return int;
-   pragma Import (C, prctl);
+     (option : int;
+      arg    : unsigned_long) return int;
+   pragma Import (C_Variadic_1, prctl, "prctl");
 
    -------------
    -- Threads --
@@ -298,7 +294,7 @@ package System.OS_Interface is
    function To_pthread_t is
      new Ada.Unchecked_Conversion (unsigned_long, pthread_t);
 
-   type pthread_mutex_t      is limited private;
+   subtype pthread_mutex_t   is System.OS_Locks.pthread_mutex_t;
    type pthread_rwlock_t     is limited private;
    type pthread_cond_t       is limited private;
    type pthread_attr_t       is limited private;
@@ -313,6 +309,8 @@ package System.OS_Interface is
    -- Stack --
    -----------
 
+   subtype char_array is Interfaces.C.char_array;
+
    type stack_t is record
       ss_sp    : System.Address;
       ss_flags : int;
@@ -325,12 +323,12 @@ package System.OS_Interface is
       oss : access stack_t) return int;
    pragma Import (C, sigaltstack, "sigaltstack");
 
-   Alternate_Stack : aliased System.Address;
+   Alternate_Stack_Size : constant := 32 * 1024;
+   --  This must be in keeping with init.c:__gnat_alternate_stack
+
+   Alternate_Stack : aliased char_array (1 .. Alternate_Stack_Size);
    pragma Import (C, Alternate_Stack, "__gnat_alternate_stack");
    --  The alternate signal stack for stack overflows
-
-   Alternate_Stack_Size : constant := 16 * 1024;
-   --  This must be in keeping with init.c:__gnat_alternate_stack
 
    function Get_Stack_Base (thread : pthread_t) return Address;
    pragma Inline (Get_Stack_Base);
@@ -449,7 +447,7 @@ package System.OS_Interface is
    function pthread_cond_timedwait
      (cond    : access pthread_cond_t;
       mutex   : access pthread_mutex_t;
-      abstime : access timespec) return int;
+      abstime : access C_Time.timespec) return int;
    pragma Import (C, pthread_cond_timedwait, "pthread_cond_timedwait");
 
    --------------------------
@@ -633,8 +631,6 @@ private
 
    type pid_t is new int;
 
-   subtype char_array is Interfaces.C.char_array;
-
    type pthread_attr_t is record
       Data : char_array (1 .. OS_Constants.PTHREAD_ATTR_SIZE);
    end record;
@@ -649,15 +645,9 @@ private
 
    type pthread_mutexattr_t is record
       Data : char_array (1 .. OS_Constants.PTHREAD_MUTEXATTR_SIZE);
-   end  record;
+   end record;
    pragma Convention (C, pthread_mutexattr_t);
    for pthread_mutexattr_t'Alignment use Interfaces.C.int'Alignment;
-
-   type pthread_mutex_t is record
-      Data : char_array (1 .. OS_Constants.PTHREAD_MUTEX_SIZE);
-   end record;
-   pragma Convention (C, pthread_mutex_t);
-   for pthread_mutex_t'Alignment use Interfaces.C.unsigned_long'Alignment;
 
    type pthread_rwlockattr_t is record
       Data : char_array (1 .. OS_Constants.PTHREAD_RWLOCKATTR_SIZE);

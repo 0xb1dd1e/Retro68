@@ -1,6 +1,7 @@
 // { dg-do compile { target c++14 } }
+// { dg-additional-options "-Wno-deprecated-declarations" { target { c++20 } } }
 
-// Copyright (C) 2014-2019 Free Software Foundation, Inc.
+// Copyright (C) 2014-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -195,8 +196,12 @@ private:
   int i2;
 };
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+// Deprecated in C++26
 static_assert(is_trivial_v<int> && is_trivial<int>::value, "");
 static_assert(!is_trivial_v<NType> && !is_trivial<NType>::value, "");
+#pragma GCC diagnostic pop
 
 static_assert(is_trivially_copyable_v<int>
 	      && is_trivially_copyable<int>::value, "");
@@ -213,10 +218,13 @@ static_assert(is_pod_v<int>
 static_assert(!is_pod_v<NType>
 	      && !is_pod<NType>::value, "");
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 static_assert(is_literal_type_v<int>
 	      && is_literal_type<int>::value, "");
 static_assert(!is_literal_type_v<NType>
 	      && !is_literal_type<NType>::value, "");
+#pragma GCC diagnostic pop
 
 static_assert(is_empty_v<EmptyFinal>
 	      && is_empty<EmptyFinal>::value, "");

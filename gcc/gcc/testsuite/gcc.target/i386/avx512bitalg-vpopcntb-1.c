@@ -1,7 +1,6 @@
 /* { dg-do run } */
-/* { dg-options "-O2 -mavx512bitalg -mavx512bw" } */
+/* { dg-options "-O2 -mavx512bitalg" } */
 /* { dg-require-effective-target avx512bitalg } */
-/* { dg-require-effective-target avx512bw } */
 
 #define AVX512BITALG
 #define SIZE (AVX512F_LEN / 8)
@@ -41,7 +40,7 @@ TEST (void)
   }
 
   res1.x = INTRINSIC (_popcnt_epi8)       (src.x);
-  res2.x = INTRINSIC (_mask_popcnt_epi8)  (src.x, mask, src0.x);
+  res2.x = INTRINSIC (_mask_popcnt_epi8)  (src0.x, mask, src.x);
   res3.x = INTRINSIC (_maskz_popcnt_epi8) (mask, src.x);
 
   if (UNION_CHECK (AVX512F_LEN, i_b) (res1, res_ref))

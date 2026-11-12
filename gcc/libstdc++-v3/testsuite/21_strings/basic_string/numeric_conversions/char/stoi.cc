@@ -1,9 +1,8 @@
 // { dg-do run { target c++11 } }
-// { dg-require-string-conversions "" }
 
 // 2008-06-15  Paolo Carlini  <paolo.carlini@oracle.com>
 
-// Copyright (C) 2008-2019 Free Software Foundation, Inc.
+// Copyright (C) 2008-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -36,9 +35,9 @@ test01()
   try
     {
       string one;
-      stoi(one);      
+      stoi(one);
     }
-  catch(std::invalid_argument)
+  catch(const std::invalid_argument&)
     {
       test = true;
     }
@@ -51,9 +50,9 @@ test01()
   try
     {
       string one("a");
-      stoi(one);      
+      stoi(one);
     }
-  catch(std::invalid_argument)
+  catch(const std::invalid_argument&)
     {
       test = true;
     }
@@ -66,7 +65,7 @@ test01()
   try
     {
       string one("a");
-      i1 = stoi(one, 0, 16);      
+      i1 = stoi(one, 0, 16);
     }
   catch(...)
     {
@@ -79,7 +78,7 @@ test01()
   try
     {
       string one("78");
-      i1 = stoi(one, &idx1, 8);      
+      i1 = stoi(one, &idx1, 8);
     }
   catch(...)
     {
@@ -87,12 +86,12 @@ test01()
     }
   VERIFY( test );
   VERIFY( i1 == 7 );
-  VERIFY( idx1 = 1 );
+  VERIFY( idx1 == 1 );
 
   try
     {
       string one("10112");
-      i1 = stoi(one, &idx1, 2);      
+      i1 = stoi(one, &idx1, 2);
     }
   catch(...)
     {
@@ -105,7 +104,7 @@ test01()
   try
     {
       string one("0XE");
-      i1 = stoi(one, &idx1, 0);      
+      i1 = stoi(one, &idx1, 0);
     }
   catch(...)
     {
@@ -121,7 +120,7 @@ test01()
       string one(1000, '9');
       i1 = stoi(one);
     }
-  catch(std::out_of_range)
+  catch(const std::out_of_range&)
     {
       test = true;
     }
@@ -166,7 +165,7 @@ test01()
       string one(to_string(ll0));
       i1 = stoi(one);
     }
-  catch(std::out_of_range)
+  catch(const std::out_of_range&)
     {
       test = true;
     }
@@ -184,7 +183,7 @@ test01()
       string one(to_string(ll1));
       i1 = stoi(one);
     }
-  catch(std::out_of_range)
+  catch(const std::out_of_range&)
     {
       test = true;
     }

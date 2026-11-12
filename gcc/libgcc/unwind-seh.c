@@ -1,5 +1,5 @@
 /* Structured Exception Handling (SEH) runtime interface routines.
-   Copyright (C) 2010-2019 Free Software Foundation, Inc.
+   Copyright (C) 2010-2026 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -395,9 +395,9 @@ _Unwind_Reason_Code
 _Unwind_Resume_or_Rethrow (struct _Unwind_Exception *exc)
 {
   if (exc->private_[0] == 0)
-    _Unwind_RaiseException (exc);
-  else
-    _Unwind_ForcedUnwind_Phase2 (exc);
+    return _Unwind_RaiseException (exc);
+
+  _Unwind_ForcedUnwind_Phase2 (exc);
   abort ();
 }
 
@@ -465,6 +465,11 @@ _Unwind_Backtrace(_Unwind_Trace_Fn trace,
 			    gcc_context.disp->FunctionEntry, &ms_context,
 			    &gcc_context.disp->HandlerData,
 			    &gcc_context.disp->EstablisherFrame, NULL);
+
+      /* Set values that the callback can inspect via _Unwind_GetIP
+       * and _Unwind_GetCFA. */
+      gcc_context.ra = ms_context.Rip;
+      gcc_context.cfa = ms_context.Rsp;
 
       /* Call trace function.  */
       if (trace (&gcc_context, trace_argument) != _URC_NO_REASON)

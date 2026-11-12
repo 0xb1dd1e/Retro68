@@ -1,5 +1,5 @@
 /* BFD back-end for binary objects.
-   Copyright (C) 1994-2018 Free Software Foundation, Inc.
+   Copyright (C) 1994-2026 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Cygnus Support, <ian@cygnus.com>
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -19,10 +19,10 @@
    Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston,
    MA 02110-1301, USA.  */
 
-/* This is a BFD backend which may be used to write binary objects.
-   It may only be used for output, not input.  The intention is that
-   this may be used as an output format for objcopy in order to
-   generate raw binary data.
+/* This is a BFD backend which may be used to read or write binary
+   objects.  Historically, it was used as an output format for objcopy
+   in order to generate raw binary data, but is now used for other
+   purposes as well.
 
    This is very simple.  The only complication is that the real data
    will start at some address X, and in some cases we will not want to
@@ -41,19 +41,21 @@
    a start symbol, an end symbol, and an absolute length symbol.  */
 #define BIN_SYMS 3
 
+char *bfd_binary_symbol_prefix = NULL;
+
 /* Create a binary object.  Invoked via bfd_set_format.  */
 
-static bfd_boolean
+static bool
 binary_mkobject (bfd *abfd ATTRIBUTE_UNUSED)
 {
-  return TRUE;
+  return true;
 }
 
 /* Any file may be considered to be a binary file, provided the target
    was not defaulted.  That is, it must be explicitly specified as
    being binary.  */
 
-static const bfd_target *
+static bfd_cleanup
 binary_object_p (bfd *abfd)
 {
   struct stat statbuf;
@@ -86,7 +88,7 @@ binary_object_p (bfd *abfd)
 
   abfd->tdata.any = (void *) sec;
 
-  return abfd->xvec;
+  return _bfd_no_cleanup;
 }
 
 #define binary_close_and_cleanup     _bfd_generic_close_and_cleanup
@@ -95,17 +97,17 @@ binary_object_p (bfd *abfd)
 
 /* Get contents of the only section.  */
 
-static bfd_boolean
+static bool
 binary_get_section_contents (bfd *abfd,
-			     asection *section ATTRIBUTE_UNUSED,
+			     asection *section,
 			     void * location,
 			     file_ptr offset,
 			     bfd_size_type count)
 {
-  if (bfd_seek (abfd, offset, SEEK_SET) != 0
-      || bfd_bread (location, count, abfd) != count)
-    return FALSE;
-  return TRUE;
+  if (bfd_seek (abfd, section->filepos + offset, SEEK_SET) != 0
+      || bfd_read (location, count, abfd) != count)
+    return false;
+  return true;
 }
 
 /* Return the amount of memory needed to read the symbol table.  */
@@ -122,18 +124,25 @@ static char *
 mangle_name (bfd *abfd, char *suffix)
 {
   bfd_size_type size;
+  const char *prefix;
+  const char *prefix_amend = "";
   char *buf;
   char *p;
 
-  size = (strlen (bfd_get_filename (abfd))
-	  + strlen (suffix)
-	  + sizeof "_binary__");
+  prefix = bfd_binary_symbol_prefix;
+  if (prefix == NULL)
+    {
+      prefix = "_binary_";
+      prefix_amend = bfd_get_filename (abfd);
+    }
+
+  size = strlen (prefix) + strlen (prefix_amend) + strlen (suffix) + 2;
 
   buf = (char *) bfd_alloc (abfd, size);
   if (buf == NULL)
     return "";
 
-  sprintf (buf, "_binary_%s_%s", bfd_get_filename (abfd), suffix);
+  sprintf (buf, "%s%s_%s", prefix, prefix_amend, suffix);
 
   /* Change any non-alphanumeric characters to underscores.  */
   for (p = buf; *p; p++)
@@ -151,7 +160,7 @@ binary_canonicalize_symtab (bfd *abfd, asymbol **alocation)
   asection *sec = (asection *) abfd->tdata.any;
   asymbol *syms;
   unsigned int i;
-  bfd_size_type amt = BIN_SYMS * sizeof (asymbol);
+  size_t amt = BIN_SYMS * sizeof (asymbol);
 
   syms = (asymbol *) bfd_alloc (abfd, amt);
   if (syms == NULL)
@@ -206,6 +215,7 @@ binary_get_symbol_info (bfd *ignore_abfd ATTRIBUTE_UNUSED,
 #define binary_bfd_is_local_label_name	    bfd_generic_is_local_label_name
 #define binary_get_lineno		   _bfd_nosymbols_get_lineno
 #define binary_find_nearest_line	   _bfd_nosymbols_find_nearest_line
+#define binary_find_nearest_line_with_alt  _bfd_nosymbols_find_nearest_line_with_alt
 #define binary_find_line		   _bfd_nosymbols_find_line
 #define binary_find_inliner_info	   _bfd_nosymbols_find_inliner_info
 #define binary_bfd_make_debug_symbol	   _bfd_nosymbols_bfd_make_debug_symbol
@@ -218,7 +228,7 @@ binary_get_symbol_info (bfd *ignore_abfd ATTRIBUTE_UNUSED,
 
 /* Write section contents of a binary file.  */
 
-static bfd_boolean
+static bool
 binary_set_section_contents (bfd *abfd,
 			     asection *sec,
 			     const void * data,
@@ -226,19 +236,18 @@ binary_set_section_contents (bfd *abfd,
 			     bfd_size_type size)
 {
   if (size == 0)
-    return TRUE;
+    return true;
 
   if (! abfd->output_has_begun)
     {
-      unsigned int opb;
-      bfd_boolean found_low;
+      bool found_low;
       bfd_vma low;
       asection *s;
 
       /* The lowest section LMA sets the virtual address of the start
 	 of the file.  We use this to set the file position of all the
 	 sections.  */
-      found_low = FALSE;
+      found_low = false;
       low = 0;
       for (s = abfd->sections; s != NULL; s = s->next)
 	if (((s->flags
@@ -248,12 +257,13 @@ binary_set_section_contents (bfd *abfd,
 	    && (! found_low || s->lma < low))
 	  {
 	    low = s->lma;
-	    found_low = TRUE;
+	    found_low = true;
 	  }
 
-      opb = bfd_octets_per_byte (abfd);
       for (s = abfd->sections; s != NULL; s = s->next)
 	{
+	  unsigned int opb = bfd_octets_per_byte (abfd, s);
+
 	  s->filepos = (s->lma - low) * opb;
 
 	  /* Skip following warning check for sections that will not
@@ -278,35 +288,27 @@ binary_set_section_contents (bfd *abfd,
 	       s);
 	}
 
-      abfd->output_has_begun = TRUE;
+      abfd->output_has_begun = true;
     }
 
   /* We don't want to output anything for a section that is neither
      loaded nor allocated.  The contents of such a section are not
      meaningful in the binary format.  */
   if ((sec->flags & (SEC_LOAD | SEC_ALLOC)) == 0)
-    return TRUE;
+    return true;
   if ((sec->flags & SEC_NEVER_LOAD) != 0)
-    return TRUE;
+    return true;
 
   return _bfd_generic_set_section_contents (abfd, sec, data, offset, size);
 }
 
-/* No space is required for header information.  */
-
-static int
-binary_sizeof_headers (bfd *abfd ATTRIBUTE_UNUSED,
-		       struct bfd_link_info *info ATTRIBUTE_UNUSED)
-{
-  return 0;
-}
-
+#define binary_sizeof_headers			   _bfd_nolink_sizeof_headers
 #define binary_bfd_get_relocated_section_contents  bfd_generic_get_relocated_section_contents
 #define binary_bfd_relax_section		   bfd_generic_relax_section
 #define binary_bfd_gc_sections			   bfd_generic_gc_sections
 #define binary_bfd_lookup_section_flags		   bfd_generic_lookup_section_flags
-#define binary_bfd_merge_sections		   bfd_generic_merge_sections
 #define binary_bfd_is_group_section		   bfd_generic_is_group_section
+#define binary_bfd_group_name			   bfd_generic_group_name
 #define binary_bfd_discard_group		   bfd_generic_discard_group
 #define binary_section_already_linked		  _bfd_generic_section_already_linked
 #define binary_bfd_define_common_symbol		   bfd_generic_define_common_symbol
@@ -318,7 +320,6 @@ binary_sizeof_headers (bfd *abfd ATTRIBUTE_UNUSED,
 #define binary_bfd_link_add_symbols		  _bfd_generic_link_add_symbols
 #define binary_bfd_final_link			  _bfd_generic_final_link
 #define binary_bfd_link_split_section		  _bfd_generic_link_split_section
-#define binary_get_section_contents_in_window	  _bfd_generic_get_section_contents_in_window
 #define binary_bfd_link_check_relocs		  _bfd_generic_link_check_relocs
 
 const bfd_target binary_vec =
@@ -328,12 +329,14 @@ const bfd_target binary_vec =
   BFD_ENDIAN_UNKNOWN,		/* byteorder */
   BFD_ENDIAN_UNKNOWN,		/* header_byteorder */
   EXEC_P,			/* object_flags */
-  (SEC_ALLOC | SEC_LOAD | SEC_READONLY | SEC_CODE | SEC_DATA
-   | SEC_ROM | SEC_HAS_CONTENTS), /* section_flags */
+  (SEC_CODE | SEC_DATA | SEC_ROM | SEC_HAS_CONTENTS
+   | SEC_ALLOC | SEC_LOAD),	/* section_flags */
   0,				/* symbol_leading_char */
   ' ',				/* ar_pad_char */
   16,				/* ar_max_namelen */
   255,				/* match priority.  */
+  TARGET_KEEP_UNUSED_SECTION_SYMBOLS, /* keep unused section symbols.  */
+  TARGET_MERGE_SECTIONS,
   bfd_getb64, bfd_getb_signed_64, bfd_putb64,
   bfd_getb32, bfd_getb_signed_32, bfd_putb32,
   bfd_getb16, bfd_getb_signed_16, bfd_putb16,	/* data */

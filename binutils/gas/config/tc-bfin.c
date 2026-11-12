@@ -1,5 +1,5 @@
 /* tc-bfin.c -- Assembler for the ADI Blackfin.
-   Copyright (C) 2005-2018 Free Software Foundation, Inc.
+   Copyright (C) 2005-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -19,7 +19,6 @@
    02110-1301, USA.  */
 
 #include "as.h"
-#include "struc-symbol.h"
 #include "bfin-defs.h"
 #include "obstack.h"
 #include "safe-ctype.h"
@@ -53,7 +52,7 @@ FILE *errorf;
 #endif
 
 static flagword bfin_flags = DEFAULT_FLAGS | DEFAULT_FDPIC;
-static const char *bfin_pic_flag = DEFAULT_FDPIC ? "-mfdpic" : (const char *)0;
+static const char *bfin_pic_flag = DEFAULT_FDPIC ? "-mfdpic" : NULL;
 
 /* Blackfin specific function to handle FD-PIC pointer initializations.  */
 
@@ -107,16 +106,6 @@ bfin_pic_ptr (int nbytes)
   demand_empty_rest_of_line ();
 }
 
-static void
-bfin_s_bss (int ignore ATTRIBUTE_UNUSED)
-{
-  int temp;
-
-  temp = get_absolute_expression ();
-  subseg_set (bss_section, (subsegT) temp);
-  demand_empty_rest_of_line ();
-}
-
 const pseudo_typeS md_pseudo_table[] = {
   {"align", s_align_bytes, 0},
   {"byte2", cons, 2},
@@ -129,7 +118,6 @@ const pseudo_typeS md_pseudo_table[] = {
   {"p", s_ignore, 0},
   {"pdata", s_ignore, 0},
   {"var", s_ignore, 0},
-  {"bss", bfin_s_bss, 0},
   {0, 0, 0}
 };
 
@@ -326,13 +314,13 @@ struct bfin_cpu bfin_cpus[] =
 };
 
 /* Define bfin-specific command-line options (there are none). */
-const char *md_shortopts = "";
+const char md_shortopts[] = "";
 
 #define OPTION_FDPIC		(OPTION_MD_BASE)
 #define OPTION_NOPIC		(OPTION_MD_BASE + 1)
 #define OPTION_MCPU		(OPTION_MD_BASE + 2)
 
-struct option md_longopts[] =
+const struct option md_longopts[] =
 {
   { "mcpu",		required_argument,	NULL, OPTION_MCPU	},
   { "mfdpic",		no_argument,		NULL, OPTION_FDPIC      },
@@ -341,7 +329,7 @@ struct option md_longopts[] =
   { NULL,		no_argument,		NULL, 0                 },
 };
 
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 
 int
@@ -626,7 +614,7 @@ md_operand (expressionS * expressionP)
 symbolS *
 md_undefined_symbol (char *name ATTRIBUTE_UNUSED)
 {
-  return (symbolS *) 0;
+  return NULL;
 }
 
 int
@@ -701,7 +689,7 @@ md_apply_fix (fixS *fixP, valueT *valueP, segT seg ATTRIBUTE_UNUSED)
 
     case BFD_RELOC_BFIN_16_LOW:
     case BFD_RELOC_BFIN_16_HIGH:
-      fixP->fx_done = FALSE;
+      fixP->fx_done = false;
       break;
 
     case BFD_RELOC_BFIN_24_PCREL_JUMP_L:
@@ -770,7 +758,7 @@ md_apply_fix (fixS *fixP, valueT *valueP, segT seg ATTRIBUTE_UNUSED)
     case BFD_RELOC_BFIN_FUNCDESC:
     case BFD_RELOC_VTABLE_INHERIT:
     case BFD_RELOC_VTABLE_ENTRY:
-      fixP->fx_done = FALSE;
+      fixP->fx_done = false;
       break;
 
     default:
@@ -782,7 +770,7 @@ md_apply_fix (fixS *fixP, valueT *valueP, segT seg ATTRIBUTE_UNUSED)
     }
 
   if (!fixP->fx_addsy)
-    fixP->fx_done = TRUE;
+    fixP->fx_done = true;
 
 }
 
@@ -790,7 +778,7 @@ md_apply_fix (fixS *fixP, valueT *valueP, segT seg ATTRIBUTE_UNUSED)
 valueT
 md_section_align (segT segment, valueT size)
 {
-  int boundary = bfd_get_section_alignment (stdoutput, segment);
+  int boundary = bfd_section_alignment (segment);
   return ((size + (1 << boundary) - 1) & -(1 << boundary));
 }
 
@@ -798,7 +786,7 @@ md_section_align (segT segment, valueT size)
 const char *
 md_atof (int type, char * litP, int * sizeP)
 {
-  return ieee_md_atof (type, litP, sizeP, FALSE);
+  return ieee_md_atof (type, litP, sizeP, false);
 }
 
 
@@ -810,23 +798,20 @@ tc_gen_reloc (asection *seg ATTRIBUTE_UNUSED, fixS *fixp)
 {
   arelent *reloc;
 
-  reloc		      = XNEW (arelent);
-  reloc->sym_ptr_ptr  = XNEW (asymbol *);
+  reloc = notes_alloc (sizeof (arelent));
+  reloc->sym_ptr_ptr = notes_alloc (sizeof (asymbol *));
   *reloc->sym_ptr_ptr = symbol_get_bfdsym (fixp->fx_addsy);
-  reloc->address      = fixp->fx_frag->fr_address + fixp->fx_where;
+  reloc->address = fixp->fx_frag->fr_address + fixp->fx_where;
 
   reloc->addend = fixp->fx_offset;
   reloc->howto = bfd_reloc_type_lookup (stdoutput, fixp->fx_r_type);
 
-  if (reloc->howto == (reloc_howto_type *) NULL)
+  if (reloc->howto == NULL)
     {
       as_bad_where (fixp->fx_file, fixp->fx_line,
 		    /* xgettext:c-format.  */
 		    _("reloc %d not supported by object file format"),
 		    (int) fixp->fx_r_type);
-
-      xfree (reloc);
-
       return NULL;
     }
 
@@ -839,7 +824,7 @@ tc_gen_reloc (asection *seg ATTRIBUTE_UNUSED, fixS *fixp)
 long
 md_pcrel_from_section (fixS *fixP, segT sec)
 {
-  if (fixP->fx_addsy != (symbolS *) NULL
+  if (fixP->fx_addsy != NULL
       && (!S_IS_DEFINED (fixP->fx_addsy)
       || S_GET_SEGMENT (fixP->fx_addsy) != sec))
     {
@@ -853,7 +838,7 @@ md_pcrel_from_section (fixS *fixP, segT sec)
 /* Return true if the fix can be handled by GAS, false if it must
    be passed through to the linker.  */
 
-bfd_boolean
+bool
 bfin_fix_adjustable (fixS *fixP)
 {
   switch (fixP->fx_r_type)
@@ -952,7 +937,7 @@ Expr_Node_Create (Expr_Node_Type type,
 {
 
 
-  Expr_Node *node = (Expr_Node *) allocate (sizeof (Expr_Node));
+  Expr_Node *node = allocate (sizeof (Expr_Node));
   node->type = type;
   node->value = value;
   node->Left_Child = Left_Child;
@@ -1872,8 +1857,8 @@ bfin_gen_loop (Expr_Node *exp, REG_T reg, int rop, REG_T preg)
   symbolS *sym;
 
   loopsym = exp->value.s_value;
-  lbeginsym = (char *) xmalloc (strlen (loopsym) + strlen ("__BEGIN") + 5);
-  lendsym = (char *) xmalloc (strlen (loopsym) + strlen ("__END") + 5);
+  lbeginsym = xmalloc (strlen (loopsym) + strlen ("__BEGIN") + 5);
+  lendsym = xmalloc (strlen (loopsym) + strlen ("__END") + 5);
 
   lbeginsym[0] = 0;
   lendsym[0] = 0;
@@ -1917,7 +1902,7 @@ bfin_loop_beginend (Expr_Node *exp, int begin)
   const char *suffix = begin ? "__BEGIN" : "__END";
 
   loopsym = exp->value.s_value;
-  label_name = (char *) xmalloc (strlen (loopsym) + strlen (suffix) + 5);
+  label_name = xmalloc (strlen (loopsym) + strlen (suffix) + 5);
 
   label_name[0] = 0;
 
@@ -1930,10 +1915,12 @@ bfin_loop_beginend (Expr_Node *exp, int begin)
   /* LOOP_END follows the last instruction in the loop.
      Adjust label address.  */
   if (!begin)
-    ((struct local_symbol *) linelabel)->lsy_value -= last_insn_size;
+    *symbol_X_add_number (linelabel) -= last_insn_size;
+
+  free (label_name);
 }
 
-bfd_boolean
+bool
 bfin_eol_in_insn (char *line)
 {
    /* Allow a new-line to appear in the middle of a multi-issue instruction.  */
@@ -1941,36 +1928,37 @@ bfin_eol_in_insn (char *line)
    char *temp = line;
 
   if (*line != '\n')
-    return FALSE;
+    return false;
 
   /* A semi-colon followed by a newline is always the end of a line.  */
   if (line[-1] == ';')
-    return FALSE;
+    return false;
 
   if (line[-1] == '|')
-    return TRUE;
+    return true;
 
   /* If the || is on the next line, there might be leading whitespace.  */
   temp++;
-  while (*temp == ' ' || *temp == '\t') temp++;
+  while (is_whitespace (*temp))
+    temp++;
 
   if (*temp == '|')
-    return TRUE;
+    return true;
 
-  return FALSE;
+  return false;
 }
 
-bfd_boolean
+bool
 bfin_start_label (char *s)
 {
   while (*s != 0)
     {
       if (*s == '(' || *s == '[')
-	return FALSE;
+	return false;
       s++;
     }
 
-  return TRUE;
+  return true;
 }
 
 int
@@ -1978,7 +1966,7 @@ bfin_force_relocation (struct fix *fixp)
 {
   if (fixp->fx_r_type ==BFD_RELOC_BFIN_16_LOW
       || fixp->fx_r_type == BFD_RELOC_BFIN_16_HIGH)
-    return TRUE;
+    return true;
 
   return generic_force_reloc (fixp);
 }

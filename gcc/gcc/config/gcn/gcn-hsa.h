@@ -1,4 +1,4 @@
-/* Copyright (C) 2016-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2016-2026 Free Software Foundation, Inc.
 
    This file is free software; you can redistribute it and/or modify it under
    the terms of the GNU General Public License as published by the Free
@@ -18,8 +18,8 @@
  #error elf.h included before elfos.h
 #endif
 
-#define TEXT_SECTION_ASM_OP "\t.section\t.text"
-#define BSS_SECTION_ASM_OP  "\t.section\t.bss"
+#define TEXT_SECTION_ASM_OP "\t.text"
+#define BSS_SECTION_ASM_OP  "\t.bss"
 #define GLOBAL_ASM_OP       "\t.globl\t"
 #define DATA_SECTION_ASM_OP "\t.data\t"
 #define SET_ASM_OP          "\t.set\t"
@@ -46,6 +46,10 @@
 #define ASM_OUTPUT_LABEL(FILE,NAME) \
   do { assemble_name (FILE, NAME); fputs (":\n", FILE); } while (0)
 
+/* Used in lieu of '../elfos.h:ASM_WEAKEN_LABEL'.  */
+#define ASM_WEAKEN_DECL(STREAM, DECL, NAME, VALUE) \
+  gcn_asm_weaken_decl ((STREAM), (DECL), (NAME), (VALUE))
+
 #define ASM_OUTPUT_LABELREF(FILE, NAME) \
   asm_fprintf (FILE, "%U%s", default_strip_name_encoding (NAME))
 
@@ -71,37 +75,28 @@ extern unsigned int gcn_local_sym_hash (const char *name);
 #define ASM_APP_ON  ""
 #define ASM_APP_OFF ""
 
-/* Avoid the default in ../../gcc.c, which adds "-pthread", which is not
+/* Avoid the default in ../../gcc.cc, which adds "-pthread", which is not
    supported for gcn.  */
 #define GOMP_SELF_SPECS ""
 
+#include "gcn-device-macros.h"
+
 /* Use LLVM assembler and linker options.  */
-#define ASM_SPEC  "-triple=amdgcn--amdhsa "	     \
-		  "%:last_arg(%{march=*:-mcpu=%*}) " \
+#define ASM_SPEC  "-triple=amdgcn--amdhsa "  \
+		  "%{march=*:-mcpu=%*} " \
+		  ABI_VERSION_OPT \
+		  XNACKOPT \
+		  SRAMOPT \
+		  WAVE64OPT \
+		  CUMODEOPT \
 		  "-filetype=obj"
-/* Add -mlocal-symbol-id=<source-file-basename> unless the user (or mkoffload)
-   passes the option explicitly on the command line.  The option also causes
-   several dump-matching tests to fail in the testsuite, so the option is not
-   added when or tree dump/compare-debug options used in the testsuite are
-   present.
-   This has the potential for surprise, but a user can still use an explicit
-   -mlocal-symbol-id=<whatever> option manually together with -fdump-tree or
-   -fcompare-debug options.  */
-#define CC1_SPEC "%{!mlocal-symbol-id=*:%{!fdump-tree-*:"	\
-		 "%{!fdump-ipa-*:%{!fcompare-debug*:-mlocal-symbol-id=%b}}}}"
-#define LINK_SPEC "--pie"
+#define LINK_SPEC "--pie --export-dynamic"
 #define LIB_SPEC  "-lc"
 
 /* Provides a _start symbol to keep the linker happy.  */
 #define STARTFILE_SPEC "crt0.o%s"
 #define ENDFILE_SPEC   ""
 #define STANDARD_STARTFILE_PREFIX_2 ""
-
-/* The LLVM assembler rejects multiple -mcpu options, so we must drop
-   all but the last.  */
-extern const char *last_arg_spec_function (int argc, const char **argv);
-#define EXTRA_SPEC_FUNCTIONS	\
-    { "last_arg", last_arg_spec_function },
 
 #undef LOCAL_INCLUDE_DIR
 
@@ -113,3 +108,4 @@ extern const char *last_arg_spec_function (int argc, const char **argv);
 #define DWARF2_DEBUGGING_INFO      1
 #define DWARF2_ASM_LINE_DEBUG_INFO 1
 #define EH_FRAME_THROUGH_COLLECT2  1
+#define DEBUGGER_REGNO(REGNO) gcn_dwarf_register_number (REGNO)

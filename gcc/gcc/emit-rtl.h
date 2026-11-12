@@ -1,5 +1,5 @@
-/* Exported functions from emit-rtl.c
-   Copyright (C) 2004-2019 Free Software Foundation, Inc.
+/* Exported functions from emit-rtl.cc
+   Copyright (C) 2004-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -20,20 +20,22 @@ along with GCC; see the file COPYING3.  If not see
 #ifndef GCC_EMIT_RTL_H
 #define GCC_EMIT_RTL_H
 
-struct temp_slot;
-typedef struct temp_slot *temp_slot_p;
+class temp_slot;
+typedef class temp_slot *temp_slot_p;
+class predefined_function_abi;
+namespace rtl_ssa { class function_info; }
 
 /* Information mainlined about RTL representation of incoming arguments.  */
 struct GTY(()) incoming_args {
   /* Number of bytes of args popped by function being compiled on its return.
      Zero if no bytes are to be popped.
      May affect compilation of return insn or of function epilogue.  */
-  poly_int64_pod pops_args;
+  poly_int64 pops_args;
 
   /* If function's args have a fixed size, this is that size, in bytes.
      Otherwise, it is -1.
      May affect compilation of return insn or of function epilogue.  */
-  poly_int64_pod size;
+  poly_int64 size;
 
   /* # bytes the prologue should push and pretend that the caller pushed them.
      The prologue must do this, but only if parms can be passed in
@@ -64,11 +66,21 @@ struct GTY(()) rtl_data {
   struct function_subsections subsections;
   struct rtl_eh eh;
 
-  /* For function.c  */
+  /* The ABI of the function, i.e. the interface it presents to its callers.
+     This is the ABI that should be queried to see which registers the
+     function needs to save before it uses them.
+
+     Other functions (including those called by this function) might use
+     different ABIs.  */
+  const predefined_function_abi *GTY((skip)) abi;
+
+  rtl_ssa::function_info *GTY((skip)) ssa;
+
+  /* For function.cc  */
 
   /* # of bytes of outgoing arguments.  If ACCUMULATE_OUTGOING_ARGS is
      defined, the needed space is pushed by the prologue.  */
-  poly_int64_pod outgoing_args_size;
+  poly_int64 outgoing_args_size;
 
   /* If nonzero, an RTL expression for the location at which the current
      function returns its result.  If the current function returns its
@@ -110,7 +122,7 @@ struct GTY(()) rtl_data {
   vec<rtx, va_gc> *x_stack_slot_list;
 
   /* List of empty areas in the stack frame.  */
-  struct frame_space *frame_space_list;
+  class frame_space *frame_space_list;
 
   /* Place after which to insert the tail_recursion_label if we need one.  */
   rtx_note *x_stack_check_probe_note;
@@ -127,7 +139,10 @@ struct GTY(()) rtl_data {
   /* Offset to end of allocated area of stack frame.
      If stack grows down, this is the address of the last stack slot allocated.
      If stack grows up, this is the address for the next slot.  */
-  poly_int64_pod x_frame_offset;
+  poly_int64 x_frame_offset;
+
+  /* The function's FUNCTION_BEG note.  */
+  rtx_insn *x_function_beg_insn;
 
   /* Insn after which register parms and SAVE_EXPRs are born, if nonopt.  */
   rtx_insn *x_parm_birth_insn;
@@ -136,7 +151,7 @@ struct GTY(()) rtl_data {
   vec<temp_slot_p, va_gc> *x_used_temp_slots;
 
   /* List of available temp slots.  */
-  struct temp_slot *x_avail_temp_slots;
+  class temp_slot *x_avail_temp_slots;
 
   /* Current nesting level for temporaries.  */
   int x_temp_slot_level;
@@ -163,6 +178,12 @@ struct GTY(()) rtl_data {
      3. Alignment of non-local stack variables but might be spilled in
         local stack.  */
   unsigned int stack_alignment_estimated;
+
+  /* How many NOP insns to place at each function entry by default.  */
+  unsigned short patch_area_size;
+
+  /* How far the real asm entry point is into this area.  */
+  unsigned short patch_area_entry;
 
   /* For reorg.  */
 
@@ -214,7 +235,7 @@ struct GTY(()) rtl_data {
   bool arg_pointer_save_area_init;
 
   /* Nonzero if current function must be given a frame pointer.
-     Set in reload1.c or lra-eliminations.c if anything is allocated
+     Set in reload1.cc or lra-eliminations.cc if anything is allocated
      on the stack there.  */
   bool frame_pointer_needed;
 
@@ -266,6 +287,9 @@ struct GTY(()) rtl_data {
      pass_stack_ptr_mod has run.  */
   bool sp_is_unchanging;
 
+  /* True if the stack pointer is clobbered by asm statement.  */
+  bool sp_is_clobbered_by_asm;
+
   /* Nonzero if function being compiled doesn't contain any calls
      (ignoring the prologue and epilogue).  This is set prior to
      register allocation in IRA and is valid for the remaining
@@ -292,6 +316,9 @@ struct GTY(()) rtl_data {
      sets them.  */
   HARD_REG_SET asm_clobbers;
 
+  /* All hard registers that need to be zeroed at the return of the routine.  */
+  HARD_REG_SET must_be_zero_on_return;
+
   /* The highest address seen during shorten_branches.  */
   int max_insn_address;
 };
@@ -299,6 +326,7 @@ struct GTY(()) rtl_data {
 #define return_label (crtl->x_return_label)
 #define naked_return_label (crtl->x_naked_return_label)
 #define stack_slot_list (crtl->x_stack_slot_list)
+#define function_beg_insn (crtl->x_function_beg_insn)
 #define parm_birth_insn (crtl->x_parm_birth_insn)
 #define frame_offset (crtl->x_frame_offset)
 #define stack_check_probe_note (crtl->x_stack_check_probe_note)
@@ -319,7 +347,7 @@ extern GTY(()) struct rtl_data x_rtl;
 #define crtl (&x_rtl)
 
 /* Return whether two MEM_ATTRs are equal.  */
-bool mem_attrs_eq_p (const struct mem_attrs *, const struct mem_attrs *);
+bool mem_attrs_eq_p (const class mem_attrs *, const class mem_attrs *);
 
 /* Set the alias set of MEM to SET.  */
 extern void set_mem_alias_set (rtx, alias_set_type);
@@ -369,14 +397,14 @@ extern void set_reg_attrs_from_value (rtx, rtx);
 extern void set_reg_attrs_for_parm (rtx, rtx);
 extern void set_reg_attrs_for_decl_rtl (tree t, rtx x);
 extern void adjust_reg_mode (rtx, machine_mode);
-extern int mem_expr_equal_p (const_tree, const_tree);
+extern bool mem_expr_equal_p (const_tree, const_tree);
 extern rtx gen_int_shift_amount (machine_mode, poly_int64);
 
 extern bool need_atomic_barrier_p (enum memmodel, bool);
 
 /* Return the current sequence.  */
 
-static inline struct sequence_stack *
+inline struct sequence_stack *
 get_current_sequence (void)
 {
   return &crtl->emit.seq;
@@ -384,7 +412,7 @@ get_current_sequence (void)
 
 /* Return the outermost sequence.  */
 
-static inline struct sequence_stack *
+inline struct sequence_stack *
 get_topmost_sequence (void)
 {
   struct sequence_stack *seq, *top;
@@ -400,7 +428,7 @@ get_topmost_sequence (void)
 
 /* Return the first insn of the current sequence or current function.  */
 
-static inline rtx_insn *
+inline rtx_insn *
 get_insns (void)
 {
   return get_current_sequence ()->first;
@@ -408,7 +436,7 @@ get_insns (void)
 
 /* Specify a new insn as the first in the chain.  */
 
-static inline void
+inline void
 set_first_insn (rtx_insn *insn)
 {
   gcc_checking_assert (!insn || !PREV_INSN (insn));
@@ -417,7 +445,7 @@ set_first_insn (rtx_insn *insn)
 
 /* Return the last insn emitted in current sequence or current function.  */
 
-static inline rtx_insn *
+inline rtx_insn *
 get_last_insn (void)
 {
   return get_current_sequence ()->last;
@@ -425,7 +453,7 @@ get_last_insn (void)
 
 /* Specify a new insn as the last in the chain.  */
 
-static inline void
+inline void
 set_last_insn (rtx_insn *insn)
 {
   gcc_checking_assert (!insn || !NEXT_INSN (insn));
@@ -434,7 +462,7 @@ set_last_insn (rtx_insn *insn)
 
 /* Return a number larger than any instruction's uid in this function.  */
 
-static inline int
+inline int
 get_max_uid (void)
 {
   return crtl->emit.x_cur_insn_uid;
@@ -494,6 +522,28 @@ extern rtx adjust_address_1 (rtx, machine_mode, poly_int64, int, int,
 			     int, poly_int64);
 extern rtx adjust_automodify_address_1 (rtx, machine_mode, rtx,
 					poly_int64, int);
+
+/* Class wrapping emit_autoinc which allows derived classes to control
+   how reload pseudos are created.  */
+struct address_reload_context
+{
+  /* Can be overriden by derived classes.  */
+  virtual rtx get_reload_reg () const { return gen_reg_rtx (Pmode); }
+
+  /* Emit insns to reload VALUE into a new register.  VALUE is an
+     auto-increment or auto-decrement RTX whose operand is a register or
+     memory location; so reloading involves incrementing that location.
+
+     AMOUNT is the number to increment or decrement by (always
+     positive and ignored for POST_MODIFY/PRE_MODIFY).
+
+     Return a pseudo containing the result.  */
+  rtx emit_autoinc (rtx value, poly_int64 amount);
+};
+
+/* Return a memory reference like MEM, but with the address reloaded into a
+   pseudo register.  */
+extern rtx force_reload_address (rtx mem);
 
 /* Return a memory reference like MEMREF, but whose address is changed by
    adding OFFSET, an RTX, to it.  POW2 is the highest power of two factor

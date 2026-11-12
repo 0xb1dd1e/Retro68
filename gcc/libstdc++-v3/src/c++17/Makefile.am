@@ -1,6 +1,6 @@
 ## Makefile for the C++17 sources of the GNU C++ Standard library.
 ##
-## Copyright (C) 1997-2019 Free Software Foundation, Inc.
+## Copyright (C) 1997-2026 Free Software Foundation, Inc.
 ##
 ## This file is part of the libstdc++ version 3 distribution.
 ## Process this file with automake to produce Makefile.in.
@@ -50,6 +50,8 @@ inst_sources =
 endif
 
 sources = \
+	floating_from_chars.cc \
+	floating_to_chars.cc \
 	fs_dir.cc \
 	fs_ops.cc \
 	fs_path.cc \
@@ -58,7 +60,30 @@ sources = \
 
 vpath % $(top_srcdir)/src/c++17
 
+if GLIBCXX_HOSTED
 libc__17convenience_la_SOURCES = $(sources)  $(inst_sources)
+else
+libc__17convenience_la_SOURCES =
+endif
+
+if ENABLE_DUAL_ABI
+# These files should be rebuilt if the .cc prerequisite changes.
+cow-string-inst.lo cow-string-inst.o: string-inst.cc
+cow-fs_dir.lo cow-fs_dir.o: fs_dir.cc
+cow-fs_ops.lo cow-fs_ops.o: fs_ops.cc
+cow-fs_path.lo cow-fs_path.o: fs_path.cc
+endif
+
+if GLIBCXX_LDBL_ALT128_COMPAT
+floating_from_chars.lo: floating_from_chars.cc
+	$(LTCXXCOMPILE) -mabi=ibmlongdouble $(LONG_DOUBLE_128_FLAGS) -c $<
+floating_from_chars.o: floating_from_chars.cc
+	$(CXXCOMPILE) -mabi=ibmlongdouble $(LONG_DOUBLE_128_FLAGS) -c $<
+floating_to_chars.lo: floating_to_chars.cc
+	$(LTCXXCOMPILE) -mabi=ibmlongdouble $(LONG_DOUBLE_128_FLAGS) -c $<
+floating_to_chars.o: floating_to_chars.cc
+	$(CXXCOMPILE) -mabi=ibmlongdouble $(LONG_DOUBLE_128_FLAGS) -c $<
+endif
 
 # AM_CXXFLAGS needs to be in each subdirectory so that it can be
 # modified in a per-library or per-sub-library way.  Need to manually
@@ -66,7 +91,7 @@ libc__17convenience_la_SOURCES = $(sources)  $(inst_sources)
 # OPTIMIZE_CXXFLAGS on the compile line so that -O2 can be overridden
 # as the occasion calls for it.
 AM_CXXFLAGS = \
-	-std=gnu++17 \
+	-std=gnu++17 -nostdinc++ \
 	$(glibcxx_lt_pic_flag) $(glibcxx_compiler_shared_flag) \
 	$(XTEMPLATE_FLAGS) $(VTV_CXXFLAGS) \
 	$(WARN_CXXFLAGS) $(OPTIMIZE_CXXFLAGS) $(CONFIG_CXXFLAGS) \

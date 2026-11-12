@@ -1,6 +1,6 @@
 // -*- C++ -*- Libstdc++ version details header.
 
-// Copyright (C) 2018-2019 Free Software Foundation, Inc.
+// Copyright (C) 2018-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -23,145 +23,52 @@
 // <http://www.gnu.org/licenses/>.
 
 /** @file version
- *  This is a Standard C++ Library file.  You should @c \#include this file
- *  in your programs, rather than any of the @a *.h implementation files.
+ *  This is a Standard C++ Library header.  You should `#include` this header
+ *  in your programs, rather than any of the `*.h` implementation files.
+ *
+ * The `<version>` header defines feature test macros that describe the
+ * supported features of the C++ standard library implementation being used.
+ * The macros that are defined, and their values, depend on compiler flags
+ * (usually `-std`, but others such as `-fcoroutines` and `-fno-aligned-new`
+ * can affect them).
+ *
+ * These macros can be used to conditionally enable or disable code:
+ *
+ * ```
+ * #include <version>
+ * #ifdef __cpp_lib_expected
+ *   // std::expected is supported
+ * #endif
+ * ```
+ *
+ * The macro values indicate different levels of support, for example
+ * `__cpp_lib_expected == 202202L` means only the original feature set of
+ * `std::expected` is supported, while `__cpp_lib_expected == 202211L` means
+ * that the monadic functions such as `std::expected::and_then` are also
+ * supported.
+ *
+ * The list of macros defined in `<version>` and their meanings is given in
+ * the C++ standard committee's SD-6 document:
+ * https://isocpp.org/std/standing-documents/sd-6-sg10-feature-test-recommendations
+ *
+ * `<version>` may also define non-standard, implementation-specific macros,
+ * such as libstdc++'s `_GLIBCXX_RELEASE`.  However, the standard feature
+ * test macros should be preferred over depending on specific versions of any
+ * particular implementation.
+ *
+ * The `<version>` header was introduced in C++20, but libstdc++ provides it
+ * unconditionally. As documented in SD-6, some macros correspond to features
+ * in C++17 and earlier standards.
  */
 
 #ifndef _GLIBCXX_VERSION_INCLUDED
 #define _GLIBCXX_VERSION_INCLUDED
 
+#ifdef _GLIBCXX_SYSHDR
 #pragma GCC system_header
-
-#include <bits/c++config.h>
-
-// c++03
-#define __cpp_lib_incomplete_container_elements 201505
-
-#if !defined(__STRICT_ANSI__)
-// gnu++03
-# define __cpp_lib_uncaught_exceptions 201411L
 #endif
 
-#if __cplusplus >= 201103L
-// c++11
-#define __cpp_lib_allocator_is_always_equal 201411
-#define __cpp_lib_allocator_traits_is_always_equal 201411
-#define __cpp_lib_is_null_pointer 201309
-#define __cpp_lib_result_of_sfinae 201210
-#define __cpp_lib_shared_ptr_arrays 201611L
-
-#if !defined(__STRICT_ANSI__)
-// gnu++11
-# define __cpp_lib_enable_shared_from_this 201603
-# define __cpp_lib_is_swappable 201603
-# define __cpp_lib_void_t 201411
-#endif
-
-// For C++11 and later we support ISO/IEC 29124 Mathematical Special Functions
-#define __STDCPP_MATH_SPEC_FUNCS__ 201003L
-
-#if __cplusplus >= 201402L
-// c++14
-#define __cpp_lib_chrono_udls 201304
-#define __cpp_lib_complex_udls 201309
-#define __cpp_lib_exchange_function 201304
-#define __cpp_lib_generic_associative_lookup 201304
-#define __cpp_lib_integer_sequence 201304
-#define __cpp_lib_integral_constant_callable 201304
-#define __cpp_lib_is_final 201402L
-#define __cpp_lib_make_reverse_iterator 201402
-#define __cpp_lib_make_unique 201304
-#ifndef _GLIBCXX_DEBUG // PR libstdc++/70303
-# define __cpp_lib_null_iterators 201304L
-#endif
-#define __cpp_lib_quoted_string_io 201304
-#define __cpp_lib_robust_nonmodifying_seq_ops 201304
-#ifdef _GLIBCXX_HAS_GTHREADS
-# define __cpp_lib_shared_timed_mutex 201402
-#endif
-#define __cpp_lib_string_udls 201304
-#define __cpp_lib_transformation_trait_aliases 201304
-#define __cpp_lib_transparent_operators 201510
-#define __cpp_lib_tuple_element_t 201402L
-#define __cpp_lib_tuples_by_type 201304
-
-#if __cplusplus >= 201703L
-// c++17
-#define __cpp_lib_addressof_constexpr 201603
-#define __cpp_lib_any 201606L
-#define __cpp_lib_apply 201603
-#define __cpp_lib_array_constexpr 201603
-#define __cpp_lib_as_const 201510
-#define __cpp_lib_atomic_is_always_lock_free 201603
-#define __cpp_lib_bool_constant 201505
-#define __cpp_lib_boyer_moore_searcher 201603
-#define __cpp_lib_byte 201603
-#define __cpp_lib_chrono 201611
-#define __cpp_lib_clamp 201603
-#define __cpp_lib_constexpr_char_traits 201611
-#define __cpp_lib_enable_shared_from_this 201603
-#define __cpp_lib_filesystem 201703
-#define __cpp_lib_gcd 201606
-#define __cpp_lib_gcd_lcm 201606
-#ifdef _GLIBCXX_HAVE_BUILTIN_HAS_UNIQ_OBJ_REP
-# define __cpp_lib_has_unique_object_representations 201606
-#endif
-#define __cpp_lib_hypot 201603
-#define __cpp_lib_invoke 201411
-#ifdef _GLIBCXX_HAVE_BUILTIN_IS_AGGREGATE
-# define __cpp_lib_is_aggregate 201703
-#endif
-#define __cpp_lib_is_invocable 201703
-#define __cpp_lib_is_swappable 201603
-#ifdef _GLIBCXX_HAVE_BUILTIN_LAUNDER
-# define __cpp_lib_launder 201606
-#endif
-#define __cpp_lib_lcm 201606
-#define __cpp_lib_logical_traits 201510
-#define __cpp_lib_make_from_tuple 201606
-#define __cpp_lib_map_insertion 201411
-#define __cpp_lib_map_try_emplace 201411
-#define __cpp_lib_math_special_functions 201603L
-#ifdef _GLIBCXX_HAS_GTHREADS
-# define __cpp_lib_memory_resource 201603
-#else
-# define __cpp_lib_memory_resource 1
-#endif
-#define __cpp_lib_node_extract 201606
-#define __cpp_lib_nonmember_container_access 201411
-#define __cpp_lib_not_fn 201603
-#define __cpp_lib_optional 201606L
-#define __cpp_lib_raw_memory_algorithms 201606L
-#define __cpp_lib_sample 201603
-#ifdef _GLIBCXX_HAS_GTHREADS
-# define __cpp_lib_scoped_lock 201703
-# define __cpp_lib_shared_mutex 201505
-#endif
-#define __cpp_lib_shared_ptr_weak_type 201606
-#define __cpp_lib_string_view 201603
-#define __cpp_lib_type_trait_variable_templates 201510L
-#define __cpp_lib_uncaught_exceptions 201411L
-#define __cpp_lib_unordered_map_insertion 201411
-#define __cpp_lib_unordered_map_try_emplace 201411
-#define __cpp_lib_variant 201606L
-#define __cpp_lib_void_t 201411
-#define __cpp_lib_parallel_algorithm 201603L
-
-#if __cplusplus > 201703L
-// c++2a
-#define __cpp_lib_bounded_array_traits 201902L
-#if __cpp_impl_destroying_delete
-# define __cpp_lib_destroying_delete 201806L
-#endif
-#define __cpp_lib_erase_if 201900L
-#define __cpp_lib_interpolate 201902L
-#ifdef _GLIBCXX_HAVE_BUILTIN_IS_CONSTANT_EVALUATED
-# define __cpp_lib_is_constant_evaluated 201811L
-#endif
-#define __cpp_lib_list_remove_return_type 201806L
-#endif // C++2a
-#endif // C++17
-#endif // C++14
-#endif // C++11
+#define __glibcxx_want_all
+#include <bits/version.h>
 
 #endif // _GLIBCXX_VERSION_INCLUDED

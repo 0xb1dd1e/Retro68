@@ -1,6 +1,6 @@
 ! { dg-do run }
 ! { dg-options "-fcray-pointer" }
-
+! { dg-additional-options "-Wno-deprecated-openmp" }
   use omp_lib
   integer :: a, b, c, p
   logical :: l
@@ -26,7 +26,7 @@
   l = l .or. p .ne. 3
 !$omp end parallel
 
-  if (l) STOP 1
+  if (l) stop 1
 
   l = .false.
 !$omp parallel num_threads (2) reduction (.or.:l) default (private)
@@ -41,6 +41,6 @@
   l = l .or. p .ne. 3 * omp_get_thread_num () + 5
 !$omp end parallel
 
-  if (l) STOP 2
+  if (l) stop 2
 
 end

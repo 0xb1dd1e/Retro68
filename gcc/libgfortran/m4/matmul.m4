@@ -1,5 +1,5 @@
 `/* Implementation of the MATMUL intrinsic
-   Copyright (C) 2002-2019 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
    Contributed by Paul Brook <paul@nowt.org>
 
 This file is part of the GNU Fortran runtime library (libgfortran).
@@ -28,6 +28,9 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #include <assert.h>'
 
 include(iparm.m4)dnl
+ifelse(index(rtype_name,`GFC_INTEGER'),`0',dnl
+define(`rtype_name',patsubst(rtype_name,`GFC_INTEGER',`GFC_UINTEGER'))dnl
+define(`rtype',patsubst(rtype,`gfc_array_i',`gfc_array_m')))dnl
 
 `#if defined (HAVE_'rtype_name`)
 
@@ -36,10 +39,10 @@ include(iparm.m4)dnl
    matrices.  */
 
 typedef void (*blas_call)(const char *, const char *, const int *, const int *,
-                          const int *, const 'rtype_name` *, const 'rtype_name` *,
-                          const int *, const 'rtype_name` *, const int *,
-                          const 'rtype_name` *, 'rtype_name` *, const int *,
-                          int, int);
+			  const int *, const 'rtype_name` *, const 'rtype_name` *,
+			  const int *, const 'rtype_name` *, const int *,
+			  const 'rtype_name` *, 'rtype_name` *, const int *,
+			  int, int);
 
 /* The order of loops is different in the case of plain matrix
    multiplication C=MATMUL(A,B), and in the frequent special case where
@@ -70,7 +73,7 @@ typedef void (*blas_call)(const char *, const char *, const int *, const int *,
    see if there is a way to perform the matrix multiplication by a call
    to the BLAS gemm function.  */
 
-extern void matmul_'rtype_code` ('rtype` * const restrict retarray, 
+extern void matmul_'rtype_code` ('rtype` * const restrict retarray,
 	'rtype` * const restrict a, 'rtype` * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm);
 export_proto(matmul_'rtype_code`);
@@ -82,7 +85,7 @@ export_proto(matmul_'rtype_code`);
 #ifdef HAVE_AVX
 'define(`matmul_name',`matmul_'rtype_code`_avx')dnl
 `static void
-'matmul_name` ('rtype` * const restrict retarray, 
+'matmul_name` ('rtype` * const restrict retarray,
 	'rtype` * const restrict a, 'rtype` * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm) __attribute__((__target__("avx")));
 static' include(matmul_internal.m4)dnl
@@ -91,7 +94,7 @@ static' include(matmul_internal.m4)dnl
 #ifdef HAVE_AVX2
 'define(`matmul_name',`matmul_'rtype_code`_avx2')dnl
 `static void
-'matmul_name` ('rtype` * const restrict retarray, 
+'matmul_name` ('rtype` * const restrict retarray,
 	'rtype` * const restrict a, 'rtype` * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm) __attribute__((__target__("avx2,fma")));
 static' include(matmul_internal.m4)dnl
@@ -100,7 +103,7 @@ static' include(matmul_internal.m4)dnl
 #ifdef HAVE_AVX512F
 'define(`matmul_name',`matmul_'rtype_code`_avx512f')dnl
 `static void
-'matmul_name` ('rtype` * const restrict retarray, 
+'matmul_name` ('rtype` * const restrict retarray,
 	'rtype` * const restrict a, 'rtype` * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm) __attribute__((__target__("avx512f")));
 static' include(matmul_internal.m4)dnl
@@ -111,7 +114,7 @@ static' include(matmul_internal.m4)dnl
 #if defined(HAVE_AVX) && defined(HAVE_FMA3) && defined(HAVE_AVX128)
 'define(`matmul_name',`matmul_'rtype_code`_avx128_fma3')dnl
 `void
-'matmul_name` ('rtype` * const restrict retarray, 
+'matmul_name` ('rtype` * const restrict retarray,
 	'rtype` * const restrict a, 'rtype` * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm) __attribute__((__target__("avx,fma")));
 internal_proto('matmul_name`);
@@ -120,7 +123,7 @@ internal_proto('matmul_name`);
 #if defined(HAVE_AVX) && defined(HAVE_FMA4) && defined(HAVE_AVX128)
 'define(`matmul_name',`matmul_'rtype_code`_avx128_fma4')dnl
 `void
-'matmul_name` ('rtype` * const restrict retarray, 
+'matmul_name` ('rtype` * const restrict retarray,
 	'rtype` * const restrict a, 'rtype` * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm) __attribute__((__target__("avx,fma4")));
 internal_proto('matmul_name`);
@@ -134,16 +137,15 @@ internal_proto('matmul_name`);
 
 /* Currently, this is i386 only.  Adjust for other architectures.  */
 
-#include <config/i386/cpuinfo.h>
-void matmul_'rtype_code` ('rtype` * const restrict retarray, 
+void matmul_'rtype_code` ('rtype` * const restrict retarray,
 	'rtype` * const restrict a, 'rtype` * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm)
 {
-  static void (*matmul_p) ('rtype` * const restrict retarray, 
+  static void (*matmul_p) ('rtype` * const restrict retarray,
 	'rtype` * const restrict a, 'rtype` * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm);
 
-  void (*matmul_fn) ('rtype` * const restrict retarray, 
+  void (*matmul_fn) ('rtype` * const restrict retarray,
 	'rtype` * const restrict a, 'rtype` * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm);
 
@@ -151,11 +153,11 @@ void matmul_'rtype_code` ('rtype` * const restrict retarray,
   if (matmul_fn == NULL)
     {
       matmul_fn = matmul_'rtype_code`_vanilla;
-      if (__cpu_model.__cpu_vendor == VENDOR_INTEL)
+      if (__builtin_cpu_is ("intel"))
 	{
           /* Run down the available processors in order of preference.  */
 #ifdef HAVE_AVX512F
-      	  if (__cpu_model.__cpu_features[0] & (1 << FEATURE_AVX512F))
+	  if (__builtin_cpu_supports ("avx512f"))
 	    {
 	      matmul_fn = matmul_'rtype_code`_avx512f;
 	      goto store;
@@ -164,8 +166,8 @@ void matmul_'rtype_code` ('rtype` * const restrict retarray,
 #endif  /* HAVE_AVX512F */
 
 #ifdef HAVE_AVX2
-      	  if ((__cpu_model.__cpu_features[0] & (1 << FEATURE_AVX2))
-	     && (__cpu_model.__cpu_features[0] & (1 << FEATURE_FMA)))
+	  if (__builtin_cpu_supports ("avx2")
+	      && __builtin_cpu_supports ("fma"))
 	    {
 	      matmul_fn = matmul_'rtype_code`_avx2;
 	      goto store;
@@ -174,26 +176,26 @@ void matmul_'rtype_code` ('rtype` * const restrict retarray,
 #endif
 
 #ifdef HAVE_AVX
-      	  if (__cpu_model.__cpu_features[0] & (1 << FEATURE_AVX))
+	  if (__builtin_cpu_supports ("avx"))
  	    {
               matmul_fn = matmul_'rtype_code`_avx;
 	      goto store;
 	    }
 #endif  /* HAVE_AVX */
         }
-    else if (__cpu_model.__cpu_vendor == VENDOR_AMD)
+    else if (__builtin_cpu_is ("amd"))
       {
 #if defined(HAVE_AVX) && defined(HAVE_FMA3) && defined(HAVE_AVX128)
-        if ((__cpu_model.__cpu_features[0] & (1 << FEATURE_AVX))
-	    && (__cpu_model.__cpu_features[0] & (1 << FEATURE_FMA)))
+	if (__builtin_cpu_supports ("avx")
+	    && __builtin_cpu_supports ("fma"))
 	  {
             matmul_fn = matmul_'rtype_code`_avx128_fma3;
 	    goto store;
 	  }
 #endif
 #if defined(HAVE_AVX) && defined(HAVE_FMA4) && defined(HAVE_AVX128)
-        if ((__cpu_model.__cpu_features[0] & (1 << FEATURE_AVX))
-	     && (__cpu_model.__cpu_features[0] & (1 << FEATURE_FMA4)))
+	if (__builtin_cpu_supports ("avx")
+	    && __builtin_cpu_supports ("fma4"))
 	  {
             matmul_fn = matmul_'rtype_code`_avx128_fma4;
 	    goto store;

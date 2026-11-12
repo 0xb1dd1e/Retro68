@@ -19,14 +19,13 @@ program main
         end do
       !$acc end parallel
     end do
-  !$acc end data
 
   call acc_wait_all_async (nprocs + 1)
-
   call acc_wait (nprocs + 1)
+  !$acc end data
 
-  if (acc_async_test (1) .neqv. .TRUE.) call abort
-  if (acc_async_test (2) .neqv. .TRUE.) call abort
-  if (acc_async_test (nprocs + 1) .neqv. .TRUE.) call abort
+  if (acc_async_test (1) .neqv. .TRUE.) stop 1
+  if (acc_async_test (2) .neqv. .TRUE.) stop 2
+  if (acc_async_test (nprocs + 1) .neqv. .TRUE.) stop 3
 
 end program

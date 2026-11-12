@@ -1,5 +1,4 @@
 /* { dg-require-effective-target vect_int } */
-/* { dg-additional-options "-fno-early-inlining" } */
 
 #include <stdarg.h>
 #include "tree-vect.h"
@@ -11,7 +10,7 @@ short Y[N] __attribute__ ((__aligned__(__BIGGEST_ALIGNMENT__)));
 int result[N];
 
 /* short->int widening-mult */
-int
+int __attribute__((noipa))
 foo1(int len) {
   int i;
 
@@ -35,6 +34,7 @@ int main (void)
 
   foo1 (N);
 
+#pragma GCC novector
   for (i=0; i<N; i++) {
     if (result[i] != X[i] * Y[i])
       abort ();
@@ -44,5 +44,5 @@ int main (void)
 }
 
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect" { target vect_widen_mult_hi_to_si } } }*/
-/* { dg-final { scan-tree-dump-times "vectorizing stmts using SLP" 1 "vect" { target vect_widen_mult_hi_to_si } } } */
+/* { dg-final { scan-tree-dump "vectorizing stmts using SLP" "vect" { target vect_widen_mult_hi_to_si } } } */
 

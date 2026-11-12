@@ -1,3 +1,5 @@
+/* Disabling epilogues until we find a better way to deal with scans.  */
+/* { dg-additional-options "--param vect-epilogues-nomask=0" } */
 /* { dg-require-effective-target vect_int } */
 /* { dg-additional-options "-fno-ipa-icf" } */
 
@@ -41,12 +43,14 @@ int main (void)
 
   foo ();
 
+#pragma GCC novector
   for (i = 0; i < N; i++)
     if (out[i] != in[i] * COEF)
       abort ();
 
   bar ();
 
+#pragma GCC novector
   for (i = 0; i < N; i++)
     if (out[i] != in[i] * COEF)
       abort ();

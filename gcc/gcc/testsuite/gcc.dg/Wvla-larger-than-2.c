@@ -1,6 +1,5 @@
 /* { dg-do compile } */
 /* { dg-require-effective-target stdint_types } */
-/* { dg-require-effective-target alloca } */
 /* { dg-options "-O2 -Wvla-larger-than=40" } */
 
 #include <stdint.h>
@@ -24,7 +23,6 @@ f2 (__SIZE_TYPE__ a)
     {
       // 11 * 4 bytes = 44: Not OK.
       uint32_t x[a]; // { dg-warning "array may be too large" }
-      // { dg-message "note:.*argument may be as large as 44" "note" { target *-*-* } .-1 }
       f0 (x);
     }
 }

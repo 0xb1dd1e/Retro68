@@ -6,7 +6,7 @@
  *                                                                          *
  *              Auxiliary C functions for Interfaces.C.Streams              *
  *                                                                          *
- *          Copyright (C) 1992-2019, Free Software Foundation, Inc.         *
+ *          Copyright (C) 1992-2026, Free Software Foundation, Inc.         *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -37,10 +37,16 @@
 #define _FILE_OFFSET_BITS 64
 /* the define above will make off_t a 64bit type on GNU/Linux */
 
+/* Tell Cygwin's <stdio.h> to expose fileno_unlocked() */
+#if defined(__CYGWIN__) && !defined(__CYGWIN32__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
+
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 #ifdef _AIX
 /* needed to avoid conflicting declarations */
@@ -53,9 +59,7 @@
 #endif
 
 #ifdef IN_RTS
-#include "tconfig.h"
-#include "tsystem.h"
-#include <sys/stat.h>
+#include <string.h>
 #else
 #include "config.h"
 #include "system.h"
@@ -91,14 +95,6 @@ extern "C" {
 #undef feof
 #undef ferror
 #undef fileno
-#endif
-
-/* The _IONBF value in MINGW32 stdio.h is wrong.  */
-#if defined (WINNT) || defined (_WINNT)
-#if OLD_MINGW
-#undef _IONBF
-#define _IONBF 0004
-#endif
 #endif
 
 int
@@ -197,19 +193,6 @@ __gnat_full_name (char *nam, char *buffer)
      cannot handle more than 5 symbolic links in a full name, so we use the
      getcwd approach instead. */
   realpath (nam, buffer);
-
-#elif defined (__QNX__)
-
-  int length;
-
-  if (__gnat_is_absolute_path (nam, strlen (nam)))
-    realpath (nam, buffer);
-  else
-    {
-      length = __gnat_max_path_len;
-      __gnat_get_current_dir (buffer, &length);
-      strncat (buffer, nam, __gnat_max_path_len - length - 1);
-    }
 
 #elif defined (__vxworks)
 

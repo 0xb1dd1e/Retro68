@@ -1,6 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O2 -fcompare-debug -w" } */
-/* { dg-xfail-if "" { powerpc-ibm-aix* } } */
+/* { dg-options "-O2 -fpermissive -fcompare-debug -w" } */
 
 typedef struct
 {

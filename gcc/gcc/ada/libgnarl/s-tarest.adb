@@ -6,7 +6,7 @@
 --                                                                          --
 --                                  B o d y                                 --
 --                                                                          --
---         Copyright (C) 1999-2019, Free Software Foundation, Inc.          --
+--         Copyright (C) 1999-2026, Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -39,14 +39,11 @@ pragma Style_Checks (All_Checks);
 --  This package represents the high level tasking interface used by the
 --  compiler to expand Ada 95 tasking constructs into simpler run time calls.
 
-pragma Polling (Off);
---  Turn off polling, we do not want ATC polling to take place during
---  tasking operations. It causes infinite loops and other problems.
-
 with Ada.Exceptions;
 
-with System.Task_Primitives.Operations;
+with System.OS_Locks;
 with System.Soft_Links.Tasking;
+with System.Task_Primitives.Operations;
 
 with System.Soft_Links;
 --  Used for the non-tasking routines (*_NT) that refer to global data. They
@@ -62,13 +59,12 @@ package body System.Tasking.Restricted.Stages is
 
    use Ada.Exceptions;
 
-   use Parameters;
    use Task_Primitives.Operations;
 
    Tasks_Activation_Chain : Task_Id;
    --  Chain of all the tasks to activate
 
-   Global_Task_Lock : aliased System.Task_Primitives.RTS_Lock;
+   Global_Task_Lock : aliased System.OS_Locks.RTS_Lock;
    --  This is a global lock; it is used to execute in mutual exclusion
    --  from all other tasks. It is only used by Task_Lock and Task_Unlock.
 
@@ -153,7 +149,7 @@ package body System.Tasking.Restricted.Stages is
         Self_ID.Common.Global_Task_Lock_Nesting + 1;
 
       if Self_ID.Common.Global_Task_Lock_Nesting = 1 then
-         STPO.Write_Lock (Global_Task_Lock'Access, Global_Lock => True);
+         STPO.Write_Lock (Global_Task_Lock'Access);
       end if;
    end Task_Lock;
 
@@ -170,7 +166,7 @@ package body System.Tasking.Restricted.Stages is
         Self_ID.Common.Global_Task_Lock_Nesting - 1;
 
       if Self_ID.Common.Global_Task_Lock_Nesting = 0 then
-         STPO.Unlock (Global_Task_Lock'Access, Global_Lock => True);
+         STPO.Unlock (Global_Task_Lock'Access);
       end if;
    end Task_Unlock;
 
@@ -265,19 +261,11 @@ package body System.Tasking.Restricted.Stages is
          TH : Termination_Handler := null;
 
       begin
-         if Single_Lock then
-            Lock_RTS;
-         end if;
-
          Write_Lock (Self_ID.Common.Parent);
 
          TH := Self_ID.Common.Parent.Common.Fall_Back_Handler;
 
          Unlock (Self_ID.Common.Parent);
-
-         if Single_Lock then
-            Unlock_RTS;
-         end if;
 
          --  Execute the task termination handler if we found it
 
@@ -347,10 +335,6 @@ package body System.Tasking.Restricted.Stages is
       pragma Assert (Self_ID = Environment_Task);
       pragma Assert (Self_ID.Common.Wait_Count = 0);
 
-      if Single_Lock then
-         Lock_RTS;
-      end if;
-
       --  Lock self, to prevent activated tasks from racing ahead before we
       --  finish activating the chain.
 
@@ -403,10 +387,6 @@ package body System.Tasking.Restricted.Stages is
 
       Self_ID.Common.State := Runnable;
       Unlock (Self_ID);
-
-      if Single_Lock then
-         Unlock_RTS;
-      end if;
    end Activate_Tasks;
 
    ------------------------------------
@@ -423,10 +403,6 @@ package body System.Tasking.Restricted.Stages is
       Activator : constant Task_Id := Self_ID.Common.Activator;
 
    begin
-      if Single_Lock then
-         Lock_RTS;
-      end if;
-
       Write_Lock (Activator);
       Write_Lock (Self_ID);
 
@@ -448,10 +424,6 @@ package body System.Tasking.Restricted.Stages is
 
       Unlock (Self_ID);
       Unlock (Activator);
-
-      if Single_Lock then
-         Unlock_RTS;
-      end if;
 
       --  After the activation, active priority should be the same as base
       --  priority. We must unlock the Activator first, though, since it should
@@ -533,10 +505,6 @@ package body System.Tasking.Restricted.Stages is
             else System.Multiprocessors.CPU_Range (CPU));
       end if;
 
-      if Single_Lock then
-         Lock_RTS;
-      end if;
-
       Write_Lock (Self_ID);
 
       --  With no task hierarchy, the parent of all non-Environment tasks that
@@ -546,7 +514,8 @@ package body System.Tasking.Restricted.Stages is
 
       Initialize_ATCB
         (Self_ID, State, Discriminants, Self_ID, Elaborated, Base_Priority,
-         Base_CPU, null, Task_Info, Stack_Size, Created_Task, Success);
+         Base_CPU, CPU /= Unspecified_CPU, null, Task_Info, Stack_Size,
+         Created_Task, Success);
 
       --  If we do our job right then there should never be any failures, which
       --  was probably said about the Titanic; so just to be safe, let's retain
@@ -554,11 +523,6 @@ package body System.Tasking.Restricted.Stages is
 
       if not Success then
          Unlock (Self_ID);
-
-         if Single_Lock then
-            Unlock_RTS;
-         end if;
-
          raise Program_Error;
       end if;
 
@@ -580,10 +544,6 @@ package body System.Tasking.Restricted.Stages is
         Task_Image (Task_Image'First .. Task_Image'First + Len - 1);
 
       Unlock (Self_ID);
-
-      if Single_Lock then
-         Unlock_RTS;
-      end if;
 
       --  Create TSD as early as possible in the creation of a task, since
       --  it may be used by the operation of Ada code within the task. If the
@@ -681,10 +641,6 @@ package body System.Tasking.Restricted.Stages is
    begin
       pragma Assert (Self_ID = STPO.Environment_Task);
 
-      if Single_Lock then
-         Lock_RTS;
-      end if;
-
       --  Handle normal task termination by the environment task, but only for
       --  the normal task termination. In the case of Abnormal and
       --  Unhandled_Exception they must have been handled before, and the task
@@ -704,10 +660,6 @@ package body System.Tasking.Restricted.Stages is
       Write_Lock (Self_ID);
       Sleep (Self_ID, Master_Completion_Sleep);
       Unlock (Self_ID);
-
-      if Single_Lock then
-         Unlock_RTS;
-      end if;
 
       --  Should never return from Master Completion Sleep
 

@@ -1,6 +1,6 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 #
-# Copyright (C) 2013-2018 Free Software Foundation, Inc.
+# Copyright (C) 2013-2026 Free Software Foundation, Inc.
 #
 # This script is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -64,7 +64,10 @@ class GenericFilter:
     def __init__ (self):
         self.skip_files = set()
         self.skip_dirs = set()
-        self.skip_extensions = set()
+        self.skip_extensions = set([
+                '.png',
+                '.pyc',
+                ])
         self.fossilised_files = set()
         self.own_files = set()
 
@@ -75,10 +78,12 @@ class GenericFilter:
                 'COPYING3',
                 'COPYING3.LIB',
                 'LICENSE',
+                'LICENSE.txt',
                 'fdl.texi',
                 'gpl_v3.texi',
                 'fdl-1.3.xml',
                 'gpl-3.0.xml',
+                'gpl_v3_without_node.texi',
 
                 # Skip auto- and libtool-related files
                 'aclocal.m4',
@@ -229,7 +234,7 @@ class Copyright:
     def add_external_author (self, holder):
         self.holders[holder] = None
 
-    class BadYear():
+    class BadYear (Exception):
         def __init__ (self, year):
             self.year = year
 
@@ -306,7 +311,7 @@ class Copyright:
             # If it looks like the copyright is incomplete, add the next line.
             while not self.is_complete (match):
                 try:
-                    next_line = file.next()
+                    next_line = file.readline()
                 except StopIteration:
                     break
 
@@ -380,6 +385,15 @@ class Copyright:
 
         return (line != orig_line, line, next_line)
 
+    def guess_encoding (self, pathname):
+        for encoding in ('utf8', 'iso8859'):
+            try:
+                open(pathname, 'r', encoding=encoding).read()
+                return encoding
+            except UnicodeDecodeError:
+                pass
+        return None
+
     def process_file (self, dir, filename, filter):
         pathname = os.path.join (dir, filename)
         if filename.endswith ('.tmp'):
@@ -394,7 +408,8 @@ class Copyright:
         changed = False
         line_filter = filter.get_line_filter (dir, filename)
         mode = None
-        with open (pathname, 'r') as file:
+        encoding = self.guess_encoding(pathname)
+        with open (pathname, 'r', encoding=encoding) as file:
             prev = None
             mode = os.fstat (file.fileno()).st_mode
             for line in file:
@@ -420,7 +435,7 @@ class Copyright:
         # If something changed, write the new file out.
         if changed and self.errors.ok():
             tmp_pathname = pathname + '.tmp'
-            with open (tmp_pathname, 'w') as file:
+            with open (tmp_pathname, 'w', encoding=encoding) as file:
                 for line in lines:
                     file.write (line)
                 os.fchmod (file.fileno(), mode)
@@ -431,7 +446,7 @@ class Copyright:
     def process_tree (self, tree, filter):
         for (dir, subdirs, filenames) in os.walk (tree):
             # Don't recurse through directories that should be skipped.
-            for i in xrange (len (subdirs) - 1, -1, -1):
+            for i in range (len (subdirs) - 1, -1, -1):
                 if filter.skip_dir (dir, subdirs[i]):
                     del subdirs[i]
 
@@ -542,6 +557,9 @@ class GCCFilter (GenericFilter):
         self.skip_files |= set ([
                 # Not part of GCC
                 'math-68881.h',
+
+                # Weird ways to compose copyright year
+                'GmcOptions.cc',
                 ])
 
         self.skip_dirs |= set ([
@@ -569,6 +587,11 @@ class TestsuiteFilter (GenericFilter):
     def __init__ (self):
         GenericFilter.__init__ (self)
 
+        self.skip_files |= set ([
+                # Weird ways to compose copyright year
+                'spec-example-4.sarif',
+                ])
+
         self.skip_extensions |= set ([
                 # Don't change the tests, which could be woend by anyone.
                 '.c',
@@ -582,6 +605,8 @@ class TestsuiteFilter (GenericFilter):
                 '.go',
                 '.inc',
                 '.java',
+                '.mod',
+                '.rs'
                 ])
 
     def skip_file (self, dir, filename):
@@ -593,12 +618,18 @@ class TestsuiteFilter (GenericFilter):
         if filename == 'README' and os.path.basename (dir) == 'params':
             return True
         if filename == 'pdt_5.f03' and os.path.basename (dir) == 'gfortran.dg':
-	    return True
+            return True
         return GenericFilter.skip_file (self, dir, filename)
 
 class LibCppFilter (GenericFilter):
     def __init__ (self):
         GenericFilter.__init__ (self)
+
+        self.skip_files |= set ([
+                # Generated file with the generated strings sometimes
+                # matching the regexps.
+                'uname2c.h',
+                ])
 
         self.skip_extensions |= set ([
                 # Maintained by the translation project.
@@ -622,8 +653,10 @@ class LibPhobosFilter (GenericFilter):
         GenericFilter.__init__ (self)
 
         self.skip_files |= set ([
-                # Source module imported from upstream.
+                # Source modules imported from upstream.
                 'object.d',
+                '__builtins.di',
+                '__importc_builtins.di',
                 ])
 
         self.skip_dirs |= set ([
@@ -666,6 +699,28 @@ class LibStdCxxFilter (GenericFilter):
             return re.compile ('// \(C\) Copyright Jeremy Siek')
         return GenericFilter.get_line_filter (self, dir, filename)
 
+class LibGRustFilter (GenericFilter):
+    def __init__ (self):
+        GenericFilter.__init__ (self)
+
+        self.skip_files |= set ([
+                'arm-intrinsics.html',
+                '.cargo-checksum.json',
+                ])
+
+class ContribFilter(GenericFilter):
+    def __init__ (self):
+        GenericFilter.__init__ (self)
+
+        self.skip_files |= set ([
+                # A different copyrights.
+                'unicode-license.txt',
+                'Info.plist',
+                # Contains CR (^M).
+                'repro_fail',
+                'test_patches.txt',
+                ])
+
 class GCCCopyright (Copyright):
     def __init__ (self, errors):
         Copyright.__init__ (self, errors)
@@ -682,8 +737,11 @@ class GCCCopyright (Copyright):
 
         self.add_external_author ('ARM')
         self.add_external_author ('AdaCore')
+        self.add_external_author ('Advanced Micro Devices Inc.')
         self.add_external_author ('Ami Tavory and Vladimir Dreizin, IBM-HRL.')
+        self.add_external_author ('Andrew Gallant, bluss and Nicolas Koch')
         self.add_external_author ('Cavium Networks.')
+        self.add_external_author ('David Malcolm')
         self.add_external_author ('Faraday Technology Corp.')
         self.add_external_author ('Florida State University')
         self.add_external_author ('Gerard Jungman')
@@ -691,8 +749,13 @@ class GCCCopyright (Copyright):
         self.add_external_author ('Hewlett-Packard Company')
         self.add_external_author ('Intel Corporation')
         self.add_external_author ('Information Technology Industry Council.')
+        self.add_external_author ('James Bohl.')
         self.add_external_author ('James Theiler, Brian Gough')
+        self.add_external_author ('Jose E. Marchesi')
+        self.add_external_author ('Jose E. Marchesi.')
+        self.add_external_author ('J. Marcel van der Veer.')
         self.add_external_author ('Makoto Matsumoto and Takuji Nishimura,')
+        self.add_external_author ('Mentor Graphics Corporation')
         self.add_external_author ('National Research Council of Canada.')
         self.add_external_author ('NVIDIA Corporation')
         self.add_external_author ('Peter Dimov and Multi Media Ltd.')
@@ -703,13 +766,20 @@ class GCCCopyright (Copyright):
         self.add_external_author ('Silicon Graphics')
         self.add_external_author ('Stephen L. Moshier')
         self.add_external_author ('Sun Microsystems, Inc. All rights reserved.')
+        self.add_external_author ('Symas Corporation')
         self.add_external_author ('The D Language Foundation, All Rights Reserved')
+        self.add_external_author ('The fast_float authors')
         self.add_external_author ('The Go Authors.  All rights reserved.')
         self.add_external_author ('The Go Authors. All rights reserved.')
         self.add_external_author ('The Go Authors.')
         self.add_external_author ('The Regents of the University of California.')
+        self.add_external_author ('The Rust Project Developers')
+        self.add_external_author ('The Rust Project Developers. See the COPYRIGHT')
+        self.add_external_author ('Ulf Adams')
         self.add_external_author ('Unicode, Inc.')
+        self.add_external_author ('University of Illinois at Urbana-Champaign.')
         self.add_external_author ('University of Toronto.')
+        self.add_external_author ('Yoshinori Sato')
 
 class GCCCmdLine (CmdLine):
     def __init__ (self):
@@ -717,8 +787,9 @@ class GCCCmdLine (CmdLine):
 
         self.add_dir ('.', TopLevelFilter())
         # boehm-gc is imported from upstream.
+        self.add_dir ('c++tools')
         self.add_dir ('config', ConfigFilter())
-        # contrib isn't really part of GCC.
+        self.add_dir ('contrib', ContribFilter())
         self.add_dir ('fixincludes')
         self.add_dir ('gcc', GCCFilter())
         self.add_dir (os.path.join ('gcc', 'testsuite'), TestsuiteFilter())
@@ -733,15 +804,15 @@ class GCCCmdLine (CmdLine):
         self.add_dir ('libcpp', LibCppFilter())
         self.add_dir ('libdecnumber')
         # libffi is imported from upstream.
+        self.add_dir ('libga68')
         self.add_dir ('libgcc', LibGCCFilter())
         self.add_dir ('libgfortran')
         # libgo is imported from upstream.
         self.add_dir ('libgomp')
-        self.add_dir ('libhsail-rt')
+        self.add_dir ('libgrust', LibGRustFilter())
         self.add_dir ('libiberty')
         self.add_dir ('libitm')
         self.add_dir ('libobjc')
-        # liboffloadmic is imported from upstream.
         self.add_dir ('libphobos', LibPhobosFilter())
         self.add_dir ('libquadmath')
         # libsanitizer is imported from upstream.
@@ -753,6 +824,8 @@ class GCCCmdLine (CmdLine):
         # zlib is imported from upstream.
 
         self.default_dirs = [
+            'c++tools',
+            'contrib',
             'gcc',
             'include',
             'libada',
@@ -762,9 +835,10 @@ class GCCCmdLine (CmdLine):
             'libcpp',
             'libdecnumber',
             'libgcc',
+            'libga68',
             'libgfortran',
             'libgomp',
-            'libhsail-rt',
+            'libgrust',
             'libiberty',
             'libitm',
             'libobjc',

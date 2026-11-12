@@ -24,7 +24,6 @@ BFD's idea of an architecture is implemented in @file{archures.c}.
 @subsection bfd_architecture
 
 
-@strong{Description}@*
 This enum gives the object file's CPU architecture, in a
 global sense---i.e., what processor family does it belong to?
 Another field indicates which processor within
@@ -140,9 +139,12 @@ enum bfd_architecture
 #define bfd_mach_mips16000             16000
 #define bfd_mach_mips16                16
 #define bfd_mach_mips5                 5
+#define bfd_mach_mips_allegrex         10111431 /* octal 'AL', 31.  */
 #define bfd_mach_mips_loongson_2e      3001
 #define bfd_mach_mips_loongson_2f      3002
-#define bfd_mach_mips_loongson_3a      3003
+#define bfd_mach_mips_gs464            3003
+#define bfd_mach_mips_gs464e           3004
+#define bfd_mach_mips_gs264e           3005
 #define bfd_mach_mips_sb1              12310201 /* octal 'SB', 01.  */
 #define bfd_mach_mips_octeon           6501
 #define bfd_mach_mips_octeonp          6601
@@ -170,16 +172,6 @@ enum bfd_architecture
 #define bfd_mach_i386_i386_intel_syntax (bfd_mach_i386_i386 | bfd_mach_i386_intel_syntax)
 #define bfd_mach_x86_64_intel_syntax   (bfd_mach_x86_64 | bfd_mach_i386_intel_syntax)
 #define bfd_mach_x64_32_intel_syntax   (bfd_mach_x64_32 | bfd_mach_i386_intel_syntax)
-  bfd_arch_l1om,      /* Intel L1OM.  */
-#define bfd_mach_l1om                  (1 << 5)
-#define bfd_mach_l1om_intel_syntax     (bfd_mach_l1om | bfd_mach_i386_intel_syntax)
-  bfd_arch_k1om,      /* Intel K1OM.  */
-#define bfd_mach_k1om                  (1 << 6)
-#define bfd_mach_k1om_intel_syntax     (bfd_mach_k1om | bfd_mach_i386_intel_syntax)
-#define bfd_mach_i386_nacl             (1 << 7)
-#define bfd_mach_i386_i386_nacl        (bfd_mach_i386_i386 | bfd_mach_i386_nacl)
-#define bfd_mach_x86_64_nacl           (bfd_mach_x86_64 | bfd_mach_i386_nacl)
-#define bfd_mach_x64_32_nacl           (bfd_mach_x64_32 | bfd_mach_i386_nacl)
   bfd_arch_iamcu,     /* Intel MCU.  */
 #define bfd_mach_iamcu                 (1 << 8)
 #define bfd_mach_i386_iamcu            (bfd_mach_i386_i386 | bfd_mach_iamcu)
@@ -197,7 +189,6 @@ enum bfd_architecture
 #define bfd_mach_h8300sx       6
 #define bfd_mach_h8300sxn      7
   bfd_arch_pdp11,     /* DEC PDP-11.  */
-  bfd_arch_plugin,
   bfd_arch_powerpc,   /* PowerPC.  */
 #define bfd_mach_ppc           32
 #define bfd_mach_ppc64         64
@@ -293,6 +284,21 @@ enum bfd_architecture
 #define bfd_mach_arm_ep9312    11
 #define bfd_mach_arm_iWMMXt    12
 #define bfd_mach_arm_iWMMXt2   13
+#define bfd_mach_arm_5TEJ      14
+#define bfd_mach_arm_6         15
+#define bfd_mach_arm_6KZ       16
+#define bfd_mach_arm_6T2       17
+#define bfd_mach_arm_6K        18
+#define bfd_mach_arm_7         19
+#define bfd_mach_arm_6M        20
+#define bfd_mach_arm_6SM       21
+#define bfd_mach_arm_7EM       22
+#define bfd_mach_arm_8         23
+#define bfd_mach_arm_8R        24
+#define bfd_mach_arm_8M_BASE   25
+#define bfd_mach_arm_8M_MAIN   26
+#define bfd_mach_arm_8_1M_MAIN 27
+#define bfd_mach_arm_9         28
   bfd_arch_nds32,     /* Andes NDS32.  */
 #define bfd_mach_n1            1
 #define bfd_mach_n1h           2
@@ -306,7 +312,6 @@ enum bfd_architecture
 #define bfd_mach_tic4x         40
   bfd_arch_tic54x,    /* Texas Instruments TMS320C54X.  */
   bfd_arch_tic6x,     /* Texas Instruments TMS320C6X.  */
-  bfd_arch_tic80,     /* TI TMS320c80 (MVP).  */
   bfd_arch_v850,      /* NEC V850.  */
   bfd_arch_v850_rh850,/* NEC V850 (using RH850 ABI).  */
 #define bfd_mach_v850          1
@@ -366,6 +371,9 @@ enum bfd_architecture
  bfd_arch_iq2000,     /* Vitesse IQ2000.  */
 #define bfd_mach_iq2000        1
 #define bfd_mach_iq10          2
+  bfd_arch_bpf,       /* Linux eBPF.  */
+#define bfd_mach_bpf           1
+#define bfd_mach_xbpf          2
   bfd_arch_epiphany,  /* Adapteva EPIPHANY.  */
 #define bfd_mach_epiphany16    1
 #define bfd_mach_epiphany32    2
@@ -397,8 +405,6 @@ enum bfd_architecture
 #define bfd_mach_bfin          1
   bfd_arch_cr16,      /* National Semiconductor CompactRISC (ie CR16).  */
 #define bfd_mach_cr16          1
-  bfd_arch_cr16c,     /* National Semiconductor CompactRISC.  */
-#define bfd_mach_cr16c         1
   bfd_arch_crx,       /*  National Semiconductor CRX.  */
 #define bfd_mach_crx           1
   bfd_arch_cris,      /* Axis CRIS.  */
@@ -412,6 +418,8 @@ enum bfd_architecture
 #define bfd_mach_rl78          0x75
   bfd_arch_rx,        /* Renesas RX.  */
 #define bfd_mach_rx            0x75
+#define bfd_mach_rx_v2         0x76
+#define bfd_mach_rx_v3         0x77
   bfd_arch_s390,      /* IBM s390.  */
 #define bfd_mach_s390_31       31
 #define bfd_mach_s390_64       64
@@ -446,22 +454,44 @@ enum bfd_architecture
 #define bfd_mach_msp46         46
 #define bfd_mach_msp47         47
 #define bfd_mach_msp54         54
-  bfd_arch_xc16x,     /* Infineon's XC16X Series.  */
-#define bfd_mach_xc16x         1
-#define bfd_mach_xc16xl        2
-#define bfd_mach_xc16xs        3
   bfd_arch_xgate,     /* Freescale XGATE.  */
 #define bfd_mach_xgate         1
   bfd_arch_xtensa,    /* Tensilica's Xtensa cores.  */
 #define bfd_mach_xtensa        1
   bfd_arch_z80,
-#define bfd_mach_z80strict     1 /* No undocumented opcodes.  */
-#define bfd_mach_z80           3 /* With ixl, ixh, iyl, and iyh.  */
-#define bfd_mach_z80full       7 /* All undocumented instructions.  */
-#define bfd_mach_r800          11 /* R800: successor with multiplication.  */
+/* Zilog Z80 without undocumented opcodes.  */
+#define bfd_mach_z80strict     1
+/* Zilog Z180: successor with additional instructions, but without
+ halves of ix and iy.  */
+#define bfd_mach_z180          2
+/* Zilog Z80 with ixl, ixh, iyl, and iyh.  */
+#define bfd_mach_z80           3
+/* Zilog eZ80 (successor of Z80 & Z180) in Z80 (16-bit address) mode.  */
+#define bfd_mach_ez80_z80      4
+/* Zilog eZ80 (successor of Z80 & Z180) in ADL (24-bit address) mode.  */
+#define bfd_mach_ez80_adl      5
+/* Z80N */
+#define bfd_mach_z80n          6
+/* Zilog Z80 with all undocumented instructions.  */
+#define bfd_mach_z80full       7
+/* GameBoy Z80 (reduced instruction set).  */
+#define bfd_mach_gbz80         8
+/* ASCII R800: successor with multiplication.  */
+#define bfd_mach_r800          11
   bfd_arch_lm32,      /* Lattice Mico32.  */
 #define bfd_mach_lm32          1
   bfd_arch_microblaze,/* Xilinx MicroBlaze.  */
+  bfd_arch_kvx,        /* Kalray VLIW core of the MPPA processor family */
+#define bfd_mach_kv3_unknown       0
+#define bfd_mach_kv3_1             1
+#define bfd_mach_kv3_1_64          2
+#define bfd_mach_kv3_1_usr         3
+#define bfd_mach_kv3_2             4
+#define bfd_mach_kv3_2_64          5
+#define bfd_mach_kv3_2_usr         6
+#define bfd_mach_kv4_1             7
+#define bfd_mach_kv4_1_64          8
+#define bfd_mach_kv4_1_usr         9
   bfd_arch_tilepro,   /* Tilera TILEPro.  */
   bfd_arch_tilegx,    /* Tilera TILE-Gx.  */
 #define bfd_mach_tilepro       1
@@ -469,11 +499,9 @@ enum bfd_architecture
 #define bfd_mach_tilegx32      2
   bfd_arch_aarch64,   /* AArch64.  */
 #define bfd_mach_aarch64 0
+#define bfd_mach_aarch64_8R    1
 #define bfd_mach_aarch64_ilp32 32
-  bfd_arch_nios2,     /* Nios II.  */
-#define bfd_mach_nios2         0
-#define bfd_mach_nios2r1       1
-#define bfd_mach_nios2r2       2
+#define bfd_mach_aarch64_llp64 64
   bfd_arch_visium,    /* Visium.  */
 #define bfd_mach_visium        1
   bfd_arch_wasm32,    /* WebAssembly.  */
@@ -483,6 +511,35 @@ enum bfd_architecture
   bfd_arch_nfp,       /* Netronome Flow Processor */
 #define bfd_mach_nfp3200       0x3200
 #define bfd_mach_nfp6000       0x6000
+  bfd_arch_csky,      /* C-SKY.  */
+#define bfd_mach_ck_unknown    0
+#define bfd_mach_ck510         1
+#define bfd_mach_ck610         2
+#define bfd_mach_ck801         3
+#define bfd_mach_ck802         4
+#define bfd_mach_ck803         5
+#define bfd_mach_ck807         6
+#define bfd_mach_ck810         7
+#define bfd_mach_ck860         8
+  bfd_arch_loongarch,       /* LoongArch */
+#define bfd_mach_loongarch32   1
+#define bfd_mach_loongarch64   2
+  bfd_arch_amdgcn,     /* AMDGCN */
+#define bfd_mach_amdgcn_unknown 0x000
+#define bfd_mach_amdgcn_gfx900  0x02c
+#define bfd_mach_amdgcn_gfx904  0x02e
+#define bfd_mach_amdgcn_gfx906  0x02f
+#define bfd_mach_amdgcn_gfx908  0x030
+#define bfd_mach_amdgcn_gfx90a  0x03f
+#define bfd_mach_amdgcn_gfx1010 0x033
+#define bfd_mach_amdgcn_gfx1011 0x034
+#define bfd_mach_amdgcn_gfx1012 0x035
+#define bfd_mach_amdgcn_gfx1030 0x036
+#define bfd_mach_amdgcn_gfx1031 0x037
+#define bfd_mach_amdgcn_gfx1032 0x038
+#define bfd_mach_amdgcn_gfx1100 0x041
+#define bfd_mach_amdgcn_gfx1101 0x046
+#define bfd_mach_amdgcn_gfx1102 0x047
   bfd_arch_last
   @};
 @end example
@@ -490,7 +547,6 @@ enum bfd_architecture
 @subsection bfd_arch_info
 
 
-@strong{Description}@*
 This structure contains information on architectures for use
 within BFD.
 @example
@@ -508,19 +564,28 @@ typedef struct bfd_arch_info
   /* TRUE if this is the default machine for the architecture.
      The default arch should be the first entry for an arch so that
      all the entries for that arch can be accessed via @code{next}.  */
-  bfd_boolean the_default;
+  bool the_default;
   const struct bfd_arch_info * (*compatible) (const struct bfd_arch_info *,
                                               const struct bfd_arch_info *);
 
-  bfd_boolean (*scan) (const struct bfd_arch_info *, const char *);
+  bool (*scan) (const struct bfd_arch_info *, const char *);
 
   /* Allocate via bfd_malloc and return a fill buffer of size COUNT.  If
      IS_BIGENDIAN is TRUE, the order of bytes is big endian.  If CODE is
      TRUE, the buffer contains code.  */
-  void *(*fill) (bfd_size_type count, bfd_boolean is_bigendian,
-                 bfd_boolean code);
+  void *(*fill) (bfd_size_type count, bool is_bigendian, bool code);
 
   const struct bfd_arch_info *next;
+
+  /* On some architectures the offset for a relocation can point into
+     the middle of an instruction.  This field specifies the maximum
+     offset such a relocation can have (in octets).  This affects the
+     behaviour of the disassembler, since a value greater than zero
+     means that it may need to disassemble an instruction twice, once
+     to get its length and then a second time to display it.  If the
+     value is negative then this has to be done for every single
+     instruction, regardless of the offset of the reloc.  */
+  signed int max_reloc_offset_into_insn;
 @}
 bfd_arch_info_type;
 
@@ -528,52 +593,38 @@ bfd_arch_info_type;
 
 @findex bfd_printable_name
 @subsubsection @code{bfd_printable_name}
-@strong{Synopsis}
-@example
-const char *bfd_printable_name (bfd *abfd);
-@end example
-@strong{Description}@*
+@deftypefn {Function} const char *bfd_printable_name (bfd *abfd); 
 Return a printable string representing the architecture and machine
 from the pointer to the architecture info structure.
 
+@end deftypefn
 @findex bfd_scan_arch
 @subsubsection @code{bfd_scan_arch}
-@strong{Synopsis}
-@example
-const bfd_arch_info_type *bfd_scan_arch (const char *string);
-@end example
-@strong{Description}@*
+@deftypefn {Function} const bfd_arch_info_type *bfd_scan_arch (const char *string); 
 Figure out if BFD supports any cpu which could be described with
 the name @var{string}.  Return a pointer to an @code{arch_info}
 structure if a machine is found, otherwise NULL.
 
+@end deftypefn
 @findex bfd_arch_list
 @subsubsection @code{bfd_arch_list}
-@strong{Synopsis}
-@example
-const char **bfd_arch_list (void);
-@end example
-@strong{Description}@*
+@deftypefn {Function} const char **bfd_arch_list (void); 
 Return a freshly malloced NULL-terminated vector of the names
 of all the valid BFD architectures.  Do not modify the names.
 
+@end deftypefn
 @findex bfd_arch_get_compatible
 @subsubsection @code{bfd_arch_get_compatible}
-@strong{Synopsis}
-@example
-const bfd_arch_info_type *bfd_arch_get_compatible
-   (const bfd *abfd, const bfd *bbfd, bfd_boolean accept_unknowns);
-@end example
-@strong{Description}@*
+@deftypefn {Function} const bfd_arch_info_type *bfd_arch_get_compatible (const bfd *abfd, const bfd *bbfd, bool accept_unknowns); 
 Determine whether two BFDs' architectures and machine types
 are compatible.  Calculates the lowest common denominator
 between the two architectures and machine types implied by
 the BFDs and returns a pointer to an @code{arch_info} structure
 describing the compatible machine.
 
+@end deftypefn
 @findex bfd_default_arch_struct
 @subsubsection @code{bfd_default_arch_struct}
-@strong{Description}@*
 The @code{bfd_default_arch_struct} is an item of
 @code{bfd_arch_info_type} which has been initialized to a fairly
 generic state.  A BFD starts life by pointing to this
@@ -581,160 +632,111 @@ structure, until the correct back end has determined the real
 architecture of the file.
 @example
 extern const bfd_arch_info_type bfd_default_arch_struct;
+
 @end example
 
 @findex bfd_set_arch_info
 @subsubsection @code{bfd_set_arch_info}
-@strong{Synopsis}
-@example
-void bfd_set_arch_info (bfd *abfd, const bfd_arch_info_type *arg);
-@end example
-@strong{Description}@*
+@deftypefn {Function} void bfd_set_arch_info (bfd *abfd, const bfd_arch_info_type *arg); 
 Set the architecture info of @var{abfd} to @var{arg}.
 
+@end deftypefn
 @findex bfd_default_set_arch_mach
 @subsubsection @code{bfd_default_set_arch_mach}
-@strong{Synopsis}
-@example
-bfd_boolean bfd_default_set_arch_mach
-   (bfd *abfd, enum bfd_architecture arch, unsigned long mach);
-@end example
-@strong{Description}@*
+@deftypefn {Function} bool bfd_default_set_arch_mach (bfd *abfd, enum bfd_architecture arch, unsigned long mach); 
 Set the architecture and machine type in BFD @var{abfd}
 to @var{arch} and @var{mach}.  Find the correct
 pointer to a structure and insert it into the @code{arch_info}
 pointer.
 
+@end deftypefn
 @findex bfd_get_arch
 @subsubsection @code{bfd_get_arch}
-@strong{Synopsis}
-@example
-enum bfd_architecture bfd_get_arch (bfd *abfd);
-@end example
-@strong{Description}@*
+@deftypefn {Function} enum bfd_architecture bfd_get_arch (const bfd *abfd); 
 Return the enumerated type which describes the BFD @var{abfd}'s
 architecture.
 
+@end deftypefn
 @findex bfd_get_mach
 @subsubsection @code{bfd_get_mach}
-@strong{Synopsis}
-@example
-unsigned long bfd_get_mach (bfd *abfd);
-@end example
-@strong{Description}@*
+@deftypefn {Function} unsigned long bfd_get_mach (const bfd *abfd); 
 Return the long type which describes the BFD @var{abfd}'s
 machine.
 
+@end deftypefn
 @findex bfd_arch_bits_per_byte
 @subsubsection @code{bfd_arch_bits_per_byte}
-@strong{Synopsis}
-@example
-unsigned int bfd_arch_bits_per_byte (bfd *abfd);
-@end example
-@strong{Description}@*
+@deftypefn {Function} unsigned int bfd_arch_bits_per_byte (const bfd *abfd); 
 Return the number of bits in one of the BFD @var{abfd}'s
 architecture's bytes.
 
+@end deftypefn
 @findex bfd_arch_bits_per_address
 @subsubsection @code{bfd_arch_bits_per_address}
-@strong{Synopsis}
-@example
-unsigned int bfd_arch_bits_per_address (bfd *abfd);
-@end example
-@strong{Description}@*
+@deftypefn {Function} unsigned int bfd_arch_bits_per_address (const bfd *abfd); 
 Return the number of bits in one of the BFD @var{abfd}'s
 architecture's addresses.
 
+@end deftypefn
 @findex bfd_default_compatible
 @subsubsection @code{bfd_default_compatible}
-@strong{Synopsis}
-@example
-const bfd_arch_info_type *bfd_default_compatible
-   (const bfd_arch_info_type *a, const bfd_arch_info_type *b);
-@end example
-@strong{Description}@*
+@deftypefn {Function} const bfd_arch_info_type *bfd_default_compatible (const bfd_arch_info_type *a, const bfd_arch_info_type *b); 
 The default function for testing for compatibility.
 
+@end deftypefn
 @findex bfd_default_scan
 @subsubsection @code{bfd_default_scan}
-@strong{Synopsis}
-@example
-bfd_boolean bfd_default_scan
-   (const struct bfd_arch_info *info, const char *string);
-@end example
-@strong{Description}@*
+@deftypefn {Function} bool bfd_default_scan (const struct bfd_arch_info *info, const char *string); 
 The default function for working out whether this is an
 architecture hit and a machine hit.
 
+@end deftypefn
 @findex bfd_get_arch_info
 @subsubsection @code{bfd_get_arch_info}
-@strong{Synopsis}
-@example
-const bfd_arch_info_type *bfd_get_arch_info (bfd *abfd);
-@end example
-@strong{Description}@*
+@deftypefn {Function} const bfd_arch_info_type *bfd_get_arch_info (bfd *abfd); 
 Return the architecture info struct in @var{abfd}.
 
+@end deftypefn
 @findex bfd_lookup_arch
 @subsubsection @code{bfd_lookup_arch}
-@strong{Synopsis}
-@example
-const bfd_arch_info_type *bfd_lookup_arch
-   (enum bfd_architecture arch, unsigned long machine);
-@end example
-@strong{Description}@*
+@deftypefn {Function} const bfd_arch_info_type *bfd_lookup_arch (enum bfd_architecture arch, unsigned long machine); 
 Look for the architecture info structure which matches the
 arguments @var{arch} and @var{machine}. A machine of 0 matches the
 machine/architecture structure which marks itself as the
 default.
 
+@end deftypefn
 @findex bfd_printable_arch_mach
 @subsubsection @code{bfd_printable_arch_mach}
-@strong{Synopsis}
-@example
-const char *bfd_printable_arch_mach
-   (enum bfd_architecture arch, unsigned long machine);
-@end example
-@strong{Description}@*
+@deftypefn {Function} const char *bfd_printable_arch_mach (enum bfd_architecture arch, unsigned long machine); 
 Return a printable string representing the architecture and
 machine type.
 
 This routine is depreciated.
 
+@end deftypefn
 @findex bfd_octets_per_byte
 @subsubsection @code{bfd_octets_per_byte}
-@strong{Synopsis}
-@example
-unsigned int bfd_octets_per_byte (bfd *abfd);
-@end example
-@strong{Description}@*
+@deftypefn {Function} unsigned int bfd_octets_per_byte (const bfd *abfd, const asection *sec); 
 Return the number of octets (8-bit quantities) per target byte
 (minimum addressable unit).  In most cases, this will be one, but some
 DSP targets have 16, 32, or even 48 bits per byte.
 
+@end deftypefn
 @findex bfd_arch_mach_octets_per_byte
 @subsubsection @code{bfd_arch_mach_octets_per_byte}
-@strong{Synopsis}
-@example
-unsigned int bfd_arch_mach_octets_per_byte
-   (enum bfd_architecture arch, unsigned long machine);
-@end example
-@strong{Description}@*
+@deftypefn {Function} unsigned int bfd_arch_mach_octets_per_byte (enum bfd_architecture arch, unsigned long machine); 
 See bfd_octets_per_byte.
 
 This routine is provided for those cases where a bfd * is not
 available
 
+@end deftypefn
 @findex bfd_arch_default_fill
 @subsubsection @code{bfd_arch_default_fill}
-@strong{Synopsis}
-@example
-void *bfd_arch_default_fill (bfd_size_type count,
-    bfd_boolean is_bigendian,
-    bfd_boolean code);
-@end example
-@strong{Description}@*
+@deftypefn {Function} void *bfd_arch_default_fill (bfd_size_type count, bool is_bigendian, bool code); 
 Allocate via bfd_malloc and return a fill buffer of size COUNT.
 If IS_BIGENDIAN is TRUE, the order of bytes is big endian.  If
 CODE is TRUE, the buffer contains code.
 
+@end deftypefn

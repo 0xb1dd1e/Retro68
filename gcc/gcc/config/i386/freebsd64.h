@@ -1,5 +1,5 @@
 /* Definitions for AMD x86-64 running FreeBSD with ELF format
-   Copyright (C) 2002-2019 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
    Contributed by David O'Brien <obrien@FreeBSD.org>
 
 This file is part of GCC.
@@ -31,8 +31,9 @@ along with GCC; see the file COPYING3.  If not see
 
 #undef	LINK_SPEC
 #define LINK_SPEC "\
-  %{m32:-m elf_i386_fbsd} \
+  %{m32:-m elf_i386_fbsd}%{!m32:-m elf_x86_64_fbsd} \
   %{p:%nconsider using '-pg' instead of '-p' with gprof(1)} \
+  " FBSD_LINK_PG_NOTE " \
   %{v:-V} \
   %{assert*} %{R*} %{rpath*} %{defsym*} \
   %{shared:-Bshareable %{h*} %{soname*}} \
@@ -42,3 +43,6 @@ along with GCC; see the file COPYING3.  If not see
 	-dynamic-linker %(fbsd_dynamic_linker) } \
     %{static:-Bstatic}} \
   %{symbolic:-Bsymbolic}"
+
+#undef	MULTILIB_DEFAULTS
+#define MULTILIB_DEFAULTS { "m64" }

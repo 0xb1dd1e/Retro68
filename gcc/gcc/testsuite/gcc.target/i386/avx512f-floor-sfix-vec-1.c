@@ -1,10 +1,9 @@
 /* { dg-do run } */
 /* { dg-options "-O2 -ffast-math -ftree-vectorize -mavx512f" } */
 /* { dg-require-effective-target avx512f } */
-/* { dg-skip-if "no M_PI" { vxworks_kernel } } */
 
 #define __NO_MATH_INLINES
-#include <math.h>
+#include "math_m_pi.h"
 #include "avx512f-check.h"
 
 extern double floor (double);
@@ -48,6 +47,7 @@ avx512f_test (void)
     r[i] = (int) floor (a[i]);
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < NUM; i++)
     if (r[i] != (int) floor (a[i]))
       abort();

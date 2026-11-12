@@ -1,5 +1,5 @@
 /* tc-rl78.h - header file for Renesas RL78
-   Copyright (C) 2011-2018 Free Software Foundation, Inc.
+   Copyright (C) 2011-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -53,12 +53,11 @@ extern void rl78_md_end (void);
 extern int rl78_relax_frag (segT, fragS *, long);
 
 #define TC_FRAG_TYPE struct rl78_bytesT *
-#define TC_FRAG_INIT rl78_frag_init
+#define TC_FRAG_INIT(fragp, max_bytes) rl78_frag_init (fragp)
 extern void rl78_frag_init (fragS *);
 
 /* Call md_pcrel_from_section(), not md_pcrel_from().  */
 #define MD_PCREL_FROM_SECTION(FIXP, SEC) md_pcrel_from_section (FIXP, SEC)
-extern long md_pcrel_from_section (struct fix *, segT);
 
 /* RL78 doesn't have a 32 bit PCREL relocations.  */
 #define TC_FORCE_RELOCATION_SUB_LOCAL(FIX, SEG) 1
@@ -76,8 +75,8 @@ extern void rl78_cons_fix_new (fragS *, int, int, expressionS *);
 #define RELOC_EXPANSION_POSSIBLE 1
 #define MAX_RELOC_EXPANSION      8
 
-#define MAX_MEM_FOR_RS_ALIGN_CODE 8
-#define HANDLE_ALIGN(FRAG) rl78_handle_align (FRAG)
+#define MAX_MEM_FOR_RS_ALIGN_CODE(p2align, max) 8
+#define HANDLE_ALIGN(SEC, FRAG) rl78_handle_align (FRAG)
 extern void rl78_handle_align (fragS *);
 
 #define elf_tc_final_processing	rl78_elf_final_processing

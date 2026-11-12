@@ -6,7 +6,7 @@
 --                                                                          --
 --                                  S p e c                                 --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -32,15 +32,15 @@
 --  This package contains all the GNULL primitives that interface directly with
 --  the underlying OS.
 
+with System.OS_Interface;
 with System.Parameters;
 with System.Tasking;
-with System.OS_Interface;
 
 package System.Task_Primitives.Operations is
    pragma Preelaborate;
 
-   package ST renames System.Tasking;
    package OSI renames System.OS_Interface;
+   package ST  renames System.Tasking;
 
    procedure Initialize (Environment_Task : ST.Task_Id);
    --  Perform initialization and set up of the environment task for proper
@@ -149,7 +149,7 @@ package System.Task_Primitives.Operations is
      (Prio : System.Any_Priority;
       L    : not null access Lock);
    procedure Initialize_Lock
-     (L     : not null access RTS_Lock;
+     (L     : not null access System.OS_Locks.RTS_Lock;
       Level : Lock_Level);
    pragma Inline (Initialize_Lock);
    --  Initialize a lock object
@@ -173,7 +173,7 @@ package System.Task_Primitives.Operations is
    --  These operations raise Storage_Error if a lack of storage is detected
 
    procedure Finalize_Lock (L : not null access Lock);
-   procedure Finalize_Lock (L : not null access RTS_Lock);
+   procedure Finalize_Lock (L : not null access System.OS_Locks.RTS_Lock);
    pragma Inline (Finalize_Lock);
    --  Finalize a lock object, freeing any resources allocated by the
    --  corresponding Initialize_Lock operation.
@@ -181,11 +181,8 @@ package System.Task_Primitives.Operations is
    procedure Write_Lock
      (L                 : not null access Lock;
       Ceiling_Violation : out Boolean);
-   procedure Write_Lock
-     (L           : not null access RTS_Lock;
-      Global_Lock : Boolean := False);
-   procedure Write_Lock
-     (T : ST.Task_Id);
+   procedure Write_Lock (L : not null access System.OS_Locks.RTS_Lock);
+   procedure Write_Lock (T : ST.Task_Id);
    pragma Inline (Write_Lock);
    --  Lock a lock object for write access. After this operation returns,
    --  the calling task holds write permission for the lock object. No other
@@ -197,9 +194,6 @@ package System.Task_Primitives.Operations is
    --  For the operation on Lock, Ceiling_Violation is set to true iff the
    --  operation failed, which will happen if there is a priority ceiling
    --  violation.
-   --
-   --  For the operation on RTS_Lock, Global_Lock should be set to True
-   --  if L is a global lock (Single_RTS_Lock, Global_Task_Lock).
    --
    --  For the operation on ST.Task_Id, the lock is the special lock object
    --  associated with that task's ATCB. This lock has effective ceiling
@@ -235,11 +229,8 @@ package System.Task_Primitives.Operations is
 
    procedure Unlock
      (L : not null access Lock);
-   procedure Unlock
-     (L           : not null access RTS_Lock;
-      Global_Lock : Boolean := False);
-   procedure Unlock
-     (T : ST.Task_Id);
+   procedure Unlock (L : not null access System.OS_Locks.RTS_Lock);
+   procedure Unlock (T : ST.Task_Id);
    pragma Inline (Unlock);
    --  Unlock a locked lock object
    --
@@ -249,9 +240,6 @@ package System.Task_Primitives.Operations is
    --  read or write permission. (That is, matching pairs of Lock and Unlock
    --  operations on each lock object must be properly nested.)
 
-   --  For the operation on RTS_Lock, Global_Lock should be set to True if L
-   --  is a global lock (Single_RTS_Lock, Global_Task_Lock).
-   --
    --  Note that Write_Lock for RTS_Lock does not have an out-parameter.
    --  RTS_Locks are used in situations where we have not made provision for
    --  recovery from ceiling violations. We do not expect them to occur inside
@@ -333,6 +321,15 @@ package System.Task_Primitives.Operations is
    --  of inherited priority, it goes at the head of the queue for its new
    --  priority (RM D.2.2 par 9). Loss_Of_Inheritance helps the underlying
    --  implementation to do it right when the OS doesn't.
+
+   --  Note: The behavior of Set_Priority is OS specific when a dispatching
+   --  policy is not specified, and, as a result, calls to Set_Priority may
+   --  have no affect without setting such a policy via pragma
+   --  Task_Dispatching_Policy.
+
+   --  For example:
+
+   --    pragma Task_Dispatching_Policy (FIFO_Within_Priorities);
 
    function Get_Priority (T : ST.Task_Id) return System.Any_Priority;
    pragma Inline (Get_Priority);
@@ -424,10 +421,7 @@ package System.Task_Primitives.Operations is
 
    --  Following two routines are used for possible operations needed to be
    --  setup/cleared upon entrance/exit of RTS while maintaining a single
-   --  thread of control in the RTS. Since we intend these routines to be used
-   --  for implementing the Single_Lock RTS, Lock_RTS should follow the first
-   --  Defer_Abort operation entering RTS. In the same fashion Unlock_RTS
-   --  should precede the last Undefer_Abort exiting RTS.
+   --  thread of control in the RTS.
    --
    --  These routines also replace the functions Lock/Unlock_All_Tasks_List
 
@@ -478,38 +472,6 @@ package System.Task_Primitives.Operations is
    --
    --  The call to Stack_Guard has no effect if guard pages are not used on
    --  the target, or if guard pages are automatically provided by the system.
-
-   ------------------------
-   -- Suspension objects --
-   ------------------------
-
-   --  These subprograms provide the functionality required for synchronizing
-   --  on a suspension object. Tasks can suspend execution and relinquish the
-   --  processors until the condition is signaled.
-
-   function Current_State (S : Suspension_Object) return Boolean;
-   --  Return the state of the suspension object
-
-   procedure Set_False (S : in out Suspension_Object);
-   --  Set the state of the suspension object to False
-
-   procedure Set_True (S : in out Suspension_Object);
-   --  Set the state of the suspension object to True. If a task were
-   --  suspended on the protected object then this task is released (and
-   --  the state of the suspension object remains set to False).
-
-   procedure Suspend_Until_True (S : in out Suspension_Object);
-   --  If the state of the suspension object is True then the calling task
-   --  continues its execution, and the state is set to False. If the state
-   --  of the object is False then the task is suspended on the suspension
-   --  object until a Set_True operation is executed. Program_Error is raised
-   --  if another task is already waiting on that suspension object.
-
-   procedure Initialize (S : in out Suspension_Object);
-   --  Initialize the suspension object
-
-   procedure Finalize (S : in out Suspension_Object);
-   --  Finalize the suspension object
 
    -----------------------------------------
    -- Runtime System Debugging Interfaces --
@@ -567,5 +529,15 @@ package System.Task_Primitives.Operations is
    --  Enforce at the operating system level the task affinity defined in the
    --  Ada Task Control Block. Has no effect if the underlying operating system
    --  does not support this capability.
+
+   function Is_Task_Context return Boolean
+   with Inline;
+   --  This function returns False if all the following points hold:
+   --
+   --  1. Abort_Defer should not be called in an interrupt context on the
+   --     current operating system.
+   --  2. The current execution is in the context of an interrupt context.
+   --
+   --  Otherwise this function returns True.
 
 end System.Task_Primitives.Operations;

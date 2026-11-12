@@ -5,7 +5,7 @@
 // with variable concepts.
 
 template<class A, class B>
-concept bool C = true;
+concept C = true;
 
 template<C<int> D>
 struct E

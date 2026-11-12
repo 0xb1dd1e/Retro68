@@ -14,7 +14,7 @@
  */
 module core.sys.posix.stdlib;
 
-private import core.sys.posix.config;
+import core.sys.posix.config;
 public import core.stdc.stdlib;
 public import core.sys.posix.sys.wait;
 
@@ -51,37 +51,37 @@ void    _Exit(int);
 void    abort();
 int     abs(int);
 int     atexit(void function());
-double  atof(in char*);
-int     atoi(in char*);
-c_long  atol(in char*);
-long    atoll(in char*);
-void*   bsearch(in void*, in void*, size_t, size_t, int function(in void*, in void*));
+double  atof(const scope char*);
+int     atoi(const scope char*);
+c_long  atol(const scope char*);
+long    atoll(const scope char*);
+void*   bsearch(const scope void*, const scope void*, size_t, size_t, int function(const scope void*, const scope void*));
 void*   calloc(size_t, size_t);
 div_t   div(int, int);
 void    exit(int);
 void    free(void*);
-char*   getenv(in char*);
+char*   getenv(const scope char*);
 c_long  labs(c_long);
 ldiv_t  ldiv(c_long, c_long);
 long    llabs(long);
 lldiv_t lldiv(long, long);
 void*   malloc(size_t);
-int     mblen(in char*, size_t);
-size_t  mbstowcs(wchar_t*, in char*, size_t);
-int     mbtowc(wchar_t*, in char*, size_t);
-void    qsort(void*, size_t, size_t, int function(in void*, in void*));
+int     mblen(const scope char*, size_t);
+size_t  mbstowcs(wchar_t*, const scope char*, size_t);
+int     mbtowc(wchar_t*, const scope char*, size_t);
+void    qsort(void*, size_t, size_t, int function(const scope void*, const scope void*));
 int     rand();
 void*   realloc(void*, size_t);
 void    srand(uint);
-double  strtod(in char*, char**);
-float   strtof(in char*, char**);
-c_long  strtol(in char*, char**, int);
-real    strtold(in char*, char**);
-long    strtoll(in char*, char**, int);
-c_ulong strtoul(in char*, char**, int);
-ulong   strtoull(in char*, char**, int);
-int     system(in char*);
-size_t  wcstombs(char*, in wchar_t*, size_t);
+double  strtod(const scope char*, char**);
+float   strtof(const scope char*, char**);
+c_long  strtol(const scope char*, char**, int);
+real    strtold(const scope char*, char**);
+long    strtoll(const scope char*, char**, int);
+c_ulong strtoul(const scope char*, char**, int);
+ulong   strtoull(const scope char*, char**, int);
+int     system(const scope char*);
+size_t  wcstombs(char*, const scope wchar_t*, size_t);
 int     wctomb(char*, wchar_t);
 */
 
@@ -94,119 +94,119 @@ int posix_memalign(void**, size_t, size_t);
 
 version (CRuntime_Glibc)
 {
-    int posix_memalign(void**, size_t, size_t);
+    int posix_memalign(scope void**, size_t, size_t) pure;
 }
 else version (FreeBSD)
 {
-    int posix_memalign(void**, size_t, size_t);
+    int posix_memalign(scope void**, size_t, size_t) pure;
 }
 else version (NetBSD)
 {
-    int posix_memalign(void**, size_t, size_t);
+    int posix_memalign(scope void**, size_t, size_t) pure;
 }
 else version (OpenBSD)
 {
-    int posix_memalign(void**, size_t, size_t);
+    int posix_memalign(scope void**, size_t, size_t) pure;
 }
 else version (DragonFlyBSD)
 {
-    int posix_memalign(void**, size_t, size_t);
+    int posix_memalign(scope void**, size_t, size_t) pure;
 }
 else version (Solaris)
 {
-    int posix_memalign(void**, size_t, size_t);
+    int posix_memalign(scope void**, size_t, size_t) pure;
 }
 else version (Darwin)
 {
-    int posix_memalign(void**, size_t, size_t);
+    int posix_memalign(scope void**, size_t, size_t) pure;
 }
 else version (CRuntime_Bionic)
 {
     // Added since Lollipop
-    int posix_memalign(void**, size_t, size_t);
+    int posix_memalign(scope void**, size_t, size_t) pure;
 }
 else version (CRuntime_Musl)
 {
-    int posix_memalign(void**, size_t, size_t);
+    int posix_memalign(scope void**, size_t, size_t) pure;
 }
 else version (CRuntime_UClibc)
 {
-    int posix_memalign(void**, size_t, size_t);
+    int posix_memalign(scope void**, size_t, size_t) pure;
 }
 
 //
 // C Extension (CX)
 //
 /*
-int setenv(in char*, in char*, int);
-int unsetenv(in char*);
+int setenv(const scope char*, const scope char*, int);
+int unsetenv(const scope char*);
 */
 
 version (CRuntime_Glibc)
 {
-    int setenv(in char*, in char*, int);
-    int unsetenv(in char*);
+    int setenv(const scope char*, const scope char*, int);
+    int unsetenv(const scope char*);
 
     void* valloc(size_t); // LEGACY non-standard
 }
 else version (Darwin)
 {
-    int setenv(in char*, in char*, int);
-    int unsetenv(in char*);
+    int setenv(const scope char*, const scope char*, int);
+    int unsetenv(const scope char*);
 
     void* valloc(size_t); // LEGACY non-standard
 }
 else version (FreeBSD)
 {
-    int setenv(in char*, in char*, int);
-    int unsetenv(in char*);
+    int setenv(const scope char*, const scope char*, int);
+    int unsetenv(const scope char*);
 
     void* valloc(size_t); // LEGACY non-standard
 }
 else version (NetBSD)
 {
-    int setenv(in char*, in char*, int);
-    int __unsetenv13(in char*);
-    alias __unsetenv13 unsetenv;
+    int setenv(const scope char*, const scope char*, int);
+    int __unsetenv13(const scope char*);
+    alias unsetenv = __unsetenv13;
     void* valloc(size_t); // LEGACY non-standard
 }
 else version (OpenBSD)
 {
-    int setenv(in char*, in char*, int);
-    int unsetenv(in char*);
+    int setenv(const scope char*, const scope char*, int);
+    int unsetenv(const scope char*);
 
     void* valloc(size_t); // LEGACY non-standard
 }
 else version (DragonFlyBSD)
 {
-    int setenv(in char*, in char*, int);
-    int unsetenv(in char*);
+    int setenv(const scope char*, const scope char*, int);
+    int unsetenv(const scope char*);
 
     void* valloc(size_t); // LEGACY non-standard
 }
 else version (CRuntime_Bionic)
 {
-    int setenv(in char*, in char*, int);
-    int unsetenv(in char*);
+    int setenv(const scope char*, const scope char*, int);
+    int unsetenv(const scope char*);
 
     void* valloc(size_t);
 }
 else version (Solaris)
 {
-    int setenv(in char*, in char*, int);
-    int unsetenv(in char*);
+    int setenv(const scope char*, const scope char*, int);
+    int unsetenv(const scope char*);
 
     void* valloc(size_t); // LEGACY non-standard
 }
 else version (CRuntime_Musl)
 {
-    int setenv(in char*, in char*, int);
-    int unsetenv(in char*);
+    int setenv(const scope char*, const scope char*, int);
+    int unsetenv(const scope char*);
 }
 else version (CRuntime_UClibc)
 {
-    int setenv(in char*, in char*, int);
-    int unsetenv(in char*);
+    int setenv(const scope char*, const scope char*, int);
+    int unsetenv(const scope char*);
     void* valloc(size_t);
 }
 
@@ -263,14 +263,14 @@ WIFSTOPPED  (defined in core.sys.posix.sys.wait)
 WSTOPSIG    (defined in core.sys.posix.sys.wait)
 WTERMSIG    (defined in core.sys.posix.sys.wait)
 
-c_long a64l(in char*);
+c_long a64l(const scope char*);
 double drand48();
 char*  ecvt(double, int, int *, int *); // LEGACY
 double erand48(ref ushort[3]);
 char*  fcvt(double, int, int *, int *); // LEGACY
 char*  gcvt(double, int, char*); // LEGACY
 // per spec: int getsubopt(char** char* const*, char**);
-int    getsubopt(char**, in char**, char**);
+int    getsubopt(char**, const scope char**, char**);
 int    grantpt(int);
 char*  initstate(uint, char*, size_t);
 c_long jrand48(ref ushort[3]);
@@ -286,10 +286,10 @@ int    posix_openpt(int);
 char*  ptsname(int);
 int    putenv(char*);
 c_long random();
-char*  realpath(in char*, char*);
+char*  realpath(const scope char*, char*);
 ushort *seed48(ref ushort[3]);
-void   setkey(in char*);
-char*  setstate(in char*);
+void   setkey(const scope char*);
+char*  setstate(const scope char*);
 void   srand48(c_long);
 void   srandom(uint);
 int    unlockpt(int);
@@ -306,13 +306,13 @@ version (CRuntime_Glibc)
     //WSTOPSIG    (defined in core.sys.posix.sys.wait)
     //WTERMSIG    (defined in core.sys.posix.sys.wait)
 
-    c_long a64l(in char*);
+    c_long a64l(const scope char*);
     double drand48();
     char*  ecvt(double, int, int *, int *); // LEGACY
     double erand48(ref ushort[3]);
     char*  fcvt(double, int, int *, int *); // LEGACY
     char*  gcvt(double, int, char*); // LEGACY
-    int    getsubopt(char**, in char**, char**);
+    int    getsubopt(char**, const scope char**, char**);
     int    grantpt(int);
     char*  initstate(uint, char*, size_t);
     c_long jrand48(ref ushort[3]);
@@ -328,10 +328,10 @@ version (CRuntime_Glibc)
     char*  ptsname(int);
     int    putenv(char*);
     c_long random();
-    char*  realpath(in char*, char*);
+    char*  realpath(const scope char*, char*);
     ushort *seed48(ref ushort[3]);
-    void   setkey(in char*);
-    char*  setstate(in char*);
+    void   setkey(const scope char*);
+    char*  setstate(const scope char*);
     void   srand48(c_long);
     void   srandom(uint);
     int    unlockpt(int);
@@ -339,7 +339,7 @@ version (CRuntime_Glibc)
   static if ( __USE_LARGEFILE64 )
   {
     int    mkstemp64(char*);
-    alias  mkstemp64 mkstemp;
+    alias  mkstemp = mkstemp64;
   }
   else
   {
@@ -357,13 +357,13 @@ else version (Darwin)
     //WSTOPSIG    (defined in core.sys.posix.sys.wait)
     //WTERMSIG    (defined in core.sys.posix.sys.wait)
 
-    c_long a64l(in char*);
+    c_long a64l(const scope char*);
     double drand48();
     char*  ecvt(double, int, int *, int *); // LEGACY
     double erand48(ref ushort[3]);
     char*  fcvt(double, int, int *, int *); // LEGACY
     char*  gcvt(double, int, char*); // LEGACY
-    int    getsubopt(char**, in char**, char**);
+    int    getsubopt(char**, const scope char**, char**);
     int    grantpt(int);
     char*  initstate(uint, char*, size_t);
     c_long jrand48(ref ushort[3]);
@@ -379,10 +379,10 @@ else version (Darwin)
     char*  ptsname(int);
     int    putenv(char*);
     c_long random();
-    char*  realpath(in char*, char*);
+    char*  realpath(const scope char*, char*);
     ushort *seed48(ref ushort[3]);
-    void   setkey(in char*);
-    char*  setstate(in char*);
+    void   setkey(const scope char*);
+    char*  setstate(const scope char*);
     void   srand48(c_long);
     void   srandom(uint);
     int    unlockpt(int);
@@ -398,13 +398,13 @@ else version (FreeBSD)
     //WSTOPSIG    (defined in core.sys.posix.sys.wait)
     //WTERMSIG    (defined in core.sys.posix.sys.wait)
 
-    c_long a64l(in char*);
+    c_long a64l(const scope char*);
     double drand48();
     //char*  ecvt(double, int, int *, int *); // LEGACY
     double erand48(ref ushort[3]);
     //char*  fcvt(double, int, int *, int *); // LEGACY
     //char*  gcvt(double, int, char*); // LEGACY
-    int    getsubopt(char**, in char**, char**);
+    int    getsubopt(char**, const scope char**, char**);
     int    grantpt(int);
     char*  initstate(uint, char*, size_t);
     c_long jrand48(ref ushort[3]);
@@ -420,10 +420,10 @@ else version (FreeBSD)
     char*  ptsname(int);
     int    putenv(char*);
     c_long random();
-    char*  realpath(in char*, char*);
+    char*  realpath(const scope char*, char*);
     ushort *seed48(ref ushort[3]);
-    void   setkey(in char*);
-    char*  setstate(in char*);
+    void   setkey(const scope char*);
+    char*  setstate(const scope char*);
     void   srand48(c_long);
     void   srandom(uint);
     int    unlockpt(int);
@@ -439,13 +439,13 @@ else version (NetBSD)
     //WSTOPSIG    (defined in core.sys.posix.sys.wait)
     //WTERMSIG    (defined in core.sys.posix.sys.wait)
 
-    c_long a64l(in char*);
+    c_long a64l(const scope char*);
     double drand48();
     //char*  ecvt(double, int, int *, int *); // LEGACY
     double erand48(ref ushort[3]);
     //char*  fcvt(double, int, int *, int *); // LEGACY
     //char*  gcvt(double, int, char*); // LEGACY
-    int    getsubopt(char**, in char**, char**);
+    int    getsubopt(char**, const scope char**, char**);
     int    grantpt(int);
     char*  initstate(uint, char*, size_t);
     c_long jrand48(ref ushort[3]);
@@ -459,14 +459,14 @@ else version (NetBSD)
     c_long nrand48(ref ushort[3]);
     int    posix_openpt(int);
     char*  ptsname(int);
-    int    putenv(char*);
+    pragma(mangle, "__putenv50") int    putenv(char*);
     c_long random();
-    char*  realpath(in char*, char*);
+    char*  realpath(const scope char*, char*);
     ushort *seed48(ref ushort[3]);
-    void   setkey(in char*);
-    char*  setstate(in char*);
+    void   setkey(const scope char*);
+    char*  setstate(const scope char*);
     void   srand48(c_long);
-    void   srandom(uint);
+    pragma(mangle, "__srandom60") void   srandom(uint);
     int    unlockpt(int);
 }
 else version (OpenBSD)
@@ -480,13 +480,13 @@ else version (OpenBSD)
     //WSTOPSIG    (defined in core.sys.posix.sys.wait)
     //WTERMSIG    (defined in core.sys.posix.sys.wait)
 
-    c_long a64l(in char*);
+    c_long a64l(const scope char*);
     double drand48();
     //char*  ecvt(double, int, int *, int *); // LEGACY
     double erand48(ref ushort[3]);
     //char*  fcvt(double, int, int *, int *); // LEGACY
     //char*  gcvt(double, int, char*); // LEGACY
-    int    getsubopt(char**, in char**, char**);
+    int    getsubopt(char**, const scope char**, char**);
     int    grantpt(int);
     char*  initstate(uint, char*, size_t);
     c_long jrand48(ref ushort[3]);
@@ -502,10 +502,10 @@ else version (OpenBSD)
     char*  ptsname(int);
     int    putenv(char*);
     c_long random();
-    char*  realpath(in char*, char*);
+    char*  realpath(const scope char*, char*);
     ushort *seed48(ref ushort[3]);
-    // void   setkey(in char*); // not implemented
-    char*  setstate(in char*);
+    // void   setkey(const scope char*); // not implemented
+    char*  setstate(const scope char*);
     void   srand48(c_long);
     void   srandom(uint);
     int    unlockpt(int);
@@ -521,13 +521,13 @@ else version (DragonFlyBSD)
     //WSTOPSIG    (defined in core.sys.posix.sys.wait)
     //WTERMSIG    (defined in core.sys.posix.sys.wait)
 
-    c_long a64l(in char*);
+    c_long a64l(const scope char*);
     double drand48();
     //char*  ecvt(double, int, int *, int *); // LEGACY
     double erand48(ref ushort[3]);
     //char*  fcvt(double, int, int *, int *); // LEGACY
     //char*  gcvt(double, int, char*); // LEGACY
-    int    getsubopt(char**, in char**, char**);
+    int    getsubopt(char**, const scope char**, char**);
     int    grantpt(int);
     char*  initstate(uint, char*, size_t);
     c_long jrand48(ref ushort[3]);
@@ -543,10 +543,10 @@ else version (DragonFlyBSD)
     char*  ptsname(int);
     int    putenv(char*);
     c_long random();
-    char*  realpath(in char*, char*);
+    char*  realpath(const scope char*, char*);
     ushort *seed48(ref ushort[3]);
-    void   setkey(in char*);
-    char*  setstate(in char*);
+    void   setkey(const scope char*);
+    char*  setstate(const scope char*);
     void   srand48(c_long);
     void   srandom(uint);
     int    unlockpt(int);
@@ -564,9 +564,9 @@ else version (CRuntime_Bionic)
     c_long  mrand48();
     c_long  nrand48(ref ushort[3]);
     char*   ptsname(int);
-    int     putenv(in char*);
+    int     putenv(const scope char*);
     c_long  random() { return lrand48(); }
-    char*   realpath(in char*, char*);
+    char*   realpath(const scope char*, char*);
     ushort* seed48(ref ushort[3]);
     void    srand48(c_long);
     void    srandom(uint s) { srand48(s); }
@@ -574,10 +574,41 @@ else version (CRuntime_Bionic)
 }
 else version (CRuntime_Musl)
 {
-    char*  realpath(in char*, char*);
+    c_long a64l(const scope char*);
+    double drand48();
+    char*  ecvt(double, int, int *, int *); // LEGACY
+    double erand48(ref ushort[3]);
+    char*  fcvt(double, int, int *, int *); // LEGACY
+    char*  gcvt(double, int, char*); // LEGACY
+    int    getsubopt(char**, const scope char**, char**);
+    int    grantpt(int);
+    char*  initstate(uint, char*, size_t);
+    c_long jrand48(ref ushort[3]);
+    char*  l64a(c_long);
+    void   lcong48(ref ushort[7]);
+    c_long lrand48();
+    char*  mktemp(char*); // LEGACY
+    char*  mkdtemp(char*); // Defined in IEEE 1003.1, 2008 Edition
+    int    mkstemp(char*);
+    c_long mrand48();
+    c_long nrand48(ref ushort[3]);
+    int    posix_openpt(int);
+    char*  ptsname(int);
     int    putenv(char*);
+    c_long random();
+    char*  realpath(const scope char*, char*);
+    ushort *seed48(ref ushort[3]);
+    void   setkey(const scope char*);
+    char*  setstate(const scope char*);
+    void   srand48(c_long);
+    void   srandom(uint);
+    int    unlockpt(int);
     int    mkstemp(char*);
 
+    static if (__USE_LARGEFILE64)
+    {
+        alias mkstemp64 = mkstemp;
+    }
 }
 else version (Solaris)
 {
@@ -590,13 +621,13 @@ else version (Solaris)
     //WSTOPSIG    (defined in core.sys.posix.sys.wait)
     //WTERMSIG    (defined in core.sys.posix.sys.wait)
 
-    c_long a64l(in char*);
+    c_long a64l(const scope char*);
     double drand48();
     char*  ecvt(double, int, int *, int *); // LEGACY
     double erand48(ref ushort[3]);
     char*  fcvt(double, int, int *, int *); // LEGACY
     char*  gcvt(double, int, char*); // LEGACY
-    int    getsubopt(char**, in char**, char**);
+    int    getsubopt(char**, const scope char**, char**);
     int    grantpt(int);
     char*  initstate(uint, char*, size_t);
     c_long jrand48(ref ushort[3]);
@@ -612,10 +643,10 @@ else version (Solaris)
     char*  ptsname(int);
     int    putenv(char*);
     c_long random();
-    char*  realpath(in char*, char*);
+    char*  realpath(const scope char*, char*);
     ushort *seed48(ref ushort[3]);
-    void   setkey(in char*);
-    char*  setstate(in char*);
+    void   setkey(const scope char*);
+    char*  setstate(const scope char*);
     void   srand48(c_long);
     void   srandom(uint);
     int    unlockpt(int);
@@ -625,27 +656,27 @@ else version (Solaris)
         int mkstemp(char*);
 
         static if ( __USE_LARGEFILE64 )
-            alias mkstemp mkstemp64;
+            alias mkstemp64 = mkstemp;
     }
     else
     {
         int mkstemp64(char*);
 
         static if ( __USE_LARGEFILE64 )
-            alias mkstemp64 mkstemp;
+            alias mkstemp = mkstemp64;
         else
             int mkstemp(char*);
     }
 }
 else version (CRuntime_UClibc)
 {
-    c_long a64l(in char*);
+    c_long a64l(const scope char*);
     double drand48();
     char*  ecvt(double, int, int *, int *);
     double erand48(ref ushort[3]);
     char*  fcvt(double, int, int *, int *);
     char*  gcvt(double, int, char*);
-    int    getsubopt(char**, in char**, char**);
+    int    getsubopt(char**, const scope char**, char**);
     int    grantpt(int);
     char*  initstate(uint, char*, size_t);
     c_long jrand48(ref ushort[3]);
@@ -660,10 +691,10 @@ else version (CRuntime_UClibc)
     char*  ptsname(int);
     int    putenv(char*);
     c_long random();
-    char*  realpath(in char*, char*);
+    char*  realpath(const scope char*, char*);
     ushort* seed48(ref ushort[3]);
-    void   setkey(in char*);
-    char*  setstate(in char*);
+    void   setkey(const scope char*);
+    char*  setstate(const scope char*);
     void   srand48(c_long);
     void   srandom(uint);
     int    unlockpt(int);
@@ -671,7 +702,7 @@ else version (CRuntime_UClibc)
   static if ( __USE_LARGEFILE64 )
   {
     int    mkstemp64(char*);
-    alias  mkstemp64 mkstemp;
+    alias  mkstemp = mkstemp64;
   }
   else
   {

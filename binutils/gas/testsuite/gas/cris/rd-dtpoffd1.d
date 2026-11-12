@@ -1,12 +1,12 @@
 #objdump: -sr
-#as: --em=criself
+#as: --emulation=criself
 
 # Checking .dtpoffd output.
 
 .*:     file format .*-cris
 
 RELOCATION RECORDS FOR \[.text\]:
-OFFSET   TYPE              VALUE 
+OFFSET +TYPE +VALUE
 0+4 R_CRIS_32_DTPREL  extsym\+0x0000002a
 0+c R_CRIS_32_DTPREL  x\+0x00000002
 

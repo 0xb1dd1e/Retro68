@@ -1,6 +1,6 @@
-/* { dg-do compile { target { powerpc64*-*-* } } } */
-/* { dg-require-effective-target powerpc_vsx_ok } */
+/* { dg-do compile } */
 /* { dg-options "-O1 -mvsx" } */
+/* { dg-require-effective-target powerpc_vsx } */
 /* { dg-final { scan-assembler {\m(lxvd2x|lxv)\M} } } */
 /* { dg-final { scan-assembler {\m(stxvd2x|stxv)\M} } } */
 /* { dg-final { scan-assembler-not "xxpermdi" } } */

@@ -1,5 +1,5 @@
 /* Implementation of the MATMUL intrinsic
-   Copyright (C) 2002-2019 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
    Contributed by Paul Brook <paul@nowt.org>
 
 This file is part of the GNU Fortran runtime library (libgfortran).
@@ -35,10 +35,10 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
    matrices.  */
 
 typedef void (*blas_call)(const char *, const char *, const int *, const int *,
-                          const int *, const GFC_COMPLEX_16 *, const GFC_COMPLEX_16 *,
-                          const int *, const GFC_COMPLEX_16 *, const int *,
-                          const GFC_COMPLEX_16 *, GFC_COMPLEX_16 *, const int *,
-                          int, int);
+			  const int *, const GFC_COMPLEX_16 *, const GFC_COMPLEX_16 *,
+			  const int *, const GFC_COMPLEX_16 *, const int *,
+			  const GFC_COMPLEX_16 *, GFC_COMPLEX_16 *, const int *,
+			  int, int);
 
 /* The order of loops is different in the case of plain matrix
    multiplication C=MATMUL(A,B), and in the frequent special case where
@@ -69,7 +69,7 @@ typedef void (*blas_call)(const char *, const char *, const int *, const int *,
    see if there is a way to perform the matrix multiplication by a call
    to the BLAS gemm function.  */
 
-extern void matmul_c16 (gfc_array_c16 * const restrict retarray, 
+extern void matmul_c16 (gfc_array_c16 * const restrict retarray,
 	gfc_array_c16 * const restrict a, gfc_array_c16 * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm);
 export_proto(matmul_c16);
@@ -80,11 +80,11 @@ export_proto(matmul_c16);
 
 #ifdef HAVE_AVX
 static void
-matmul_c16_avx (gfc_array_c16 * const restrict retarray, 
+matmul_c16_avx (gfc_array_c16 * const restrict retarray,
 	gfc_array_c16 * const restrict a, gfc_array_c16 * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm) __attribute__((__target__("avx")));
 static void
-matmul_c16_avx (gfc_array_c16 * const restrict retarray, 
+matmul_c16_avx (gfc_array_c16 * const restrict retarray,
 	gfc_array_c16 * const restrict a, gfc_array_c16 * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm)
 {
@@ -276,7 +276,8 @@ matmul_c16_avx (gfc_array_c16 * const restrict retarray,
 	}
     }
 
-  if (rxstride == 1 && axstride == 1 && bxstride == 1)
+  if (rxstride == 1 && axstride == 1 && bxstride == 1
+      && GFC_DESCRIPTOR_RANK (b) != 1)
     {
       /* This block of code implements a tuned matmul, derived from
          Superscalar GEMM-based level 3 BLAS,  Beta version 0.1
@@ -590,20 +591,6 @@ matmul_c16_avx (gfc_array_c16 * const restrict retarray,
 	    }
 	}
     }
-  else if (axstride < aystride)
-    {
-      for (y = 0; y < ycount; y++)
-	for (x = 0; x < xcount; x++)
-	  dest[x*rxstride + y*rystride] = (GFC_COMPLEX_16)0;
-
-      for (y = 0; y < ycount; y++)
-	for (n = 0; n < count; n++)
-	  for (x = 0; x < xcount; x++)
-	    /* dest[x,y] += a[x,n] * b[n,y] */
-	    dest[x*rxstride + y*rystride] +=
-					abase[x*axstride + n*aystride] *
-					bbase[n*bxstride + y*bystride];
-    }
   else if (GFC_DESCRIPTOR_RANK (a) == 1)
     {
       const GFC_COMPLEX_16 *restrict bbase_y;
@@ -617,6 +604,20 @@ matmul_c16_avx (gfc_array_c16 * const restrict retarray,
 	    s += abase[n*axstride] * bbase_y[n*bxstride];
 	  dest[y*rxstride] = s;
 	}
+    }
+  else if (axstride < aystride)
+    {
+      for (y = 0; y < ycount; y++)
+	for (x = 0; x < xcount; x++)
+	  dest[x*rxstride + y*rystride] = (GFC_COMPLEX_16)0;
+
+      for (y = 0; y < ycount; y++)
+	for (n = 0; n < count; n++)
+	  for (x = 0; x < xcount; x++)
+	    /* dest[x,y] += a[x,n] * b[n,y] */
+	    dest[x*rxstride + y*rystride] +=
+					abase[x*axstride + n*aystride] *
+					bbase[n*bxstride + y*bystride];
     }
   else
     {
@@ -648,11 +649,11 @@ matmul_c16_avx (gfc_array_c16 * const restrict retarray,
 
 #ifdef HAVE_AVX2
 static void
-matmul_c16_avx2 (gfc_array_c16 * const restrict retarray, 
+matmul_c16_avx2 (gfc_array_c16 * const restrict retarray,
 	gfc_array_c16 * const restrict a, gfc_array_c16 * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm) __attribute__((__target__("avx2,fma")));
 static void
-matmul_c16_avx2 (gfc_array_c16 * const restrict retarray, 
+matmul_c16_avx2 (gfc_array_c16 * const restrict retarray,
 	gfc_array_c16 * const restrict a, gfc_array_c16 * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm)
 {
@@ -844,7 +845,8 @@ matmul_c16_avx2 (gfc_array_c16 * const restrict retarray,
 	}
     }
 
-  if (rxstride == 1 && axstride == 1 && bxstride == 1)
+  if (rxstride == 1 && axstride == 1 && bxstride == 1
+      && GFC_DESCRIPTOR_RANK (b) != 1)
     {
       /* This block of code implements a tuned matmul, derived from
          Superscalar GEMM-based level 3 BLAS,  Beta version 0.1
@@ -1158,20 +1160,6 @@ matmul_c16_avx2 (gfc_array_c16 * const restrict retarray,
 	    }
 	}
     }
-  else if (axstride < aystride)
-    {
-      for (y = 0; y < ycount; y++)
-	for (x = 0; x < xcount; x++)
-	  dest[x*rxstride + y*rystride] = (GFC_COMPLEX_16)0;
-
-      for (y = 0; y < ycount; y++)
-	for (n = 0; n < count; n++)
-	  for (x = 0; x < xcount; x++)
-	    /* dest[x,y] += a[x,n] * b[n,y] */
-	    dest[x*rxstride + y*rystride] +=
-					abase[x*axstride + n*aystride] *
-					bbase[n*bxstride + y*bystride];
-    }
   else if (GFC_DESCRIPTOR_RANK (a) == 1)
     {
       const GFC_COMPLEX_16 *restrict bbase_y;
@@ -1185,6 +1173,20 @@ matmul_c16_avx2 (gfc_array_c16 * const restrict retarray,
 	    s += abase[n*axstride] * bbase_y[n*bxstride];
 	  dest[y*rxstride] = s;
 	}
+    }
+  else if (axstride < aystride)
+    {
+      for (y = 0; y < ycount; y++)
+	for (x = 0; x < xcount; x++)
+	  dest[x*rxstride + y*rystride] = (GFC_COMPLEX_16)0;
+
+      for (y = 0; y < ycount; y++)
+	for (n = 0; n < count; n++)
+	  for (x = 0; x < xcount; x++)
+	    /* dest[x,y] += a[x,n] * b[n,y] */
+	    dest[x*rxstride + y*rystride] +=
+					abase[x*axstride + n*aystride] *
+					bbase[n*bxstride + y*bystride];
     }
   else
     {
@@ -1216,11 +1218,11 @@ matmul_c16_avx2 (gfc_array_c16 * const restrict retarray,
 
 #ifdef HAVE_AVX512F
 static void
-matmul_c16_avx512f (gfc_array_c16 * const restrict retarray, 
+matmul_c16_avx512f (gfc_array_c16 * const restrict retarray,
 	gfc_array_c16 * const restrict a, gfc_array_c16 * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm) __attribute__((__target__("avx512f")));
 static void
-matmul_c16_avx512f (gfc_array_c16 * const restrict retarray, 
+matmul_c16_avx512f (gfc_array_c16 * const restrict retarray,
 	gfc_array_c16 * const restrict a, gfc_array_c16 * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm)
 {
@@ -1412,7 +1414,8 @@ matmul_c16_avx512f (gfc_array_c16 * const restrict retarray,
 	}
     }
 
-  if (rxstride == 1 && axstride == 1 && bxstride == 1)
+  if (rxstride == 1 && axstride == 1 && bxstride == 1
+      && GFC_DESCRIPTOR_RANK (b) != 1)
     {
       /* This block of code implements a tuned matmul, derived from
          Superscalar GEMM-based level 3 BLAS,  Beta version 0.1
@@ -1726,20 +1729,6 @@ matmul_c16_avx512f (gfc_array_c16 * const restrict retarray,
 	    }
 	}
     }
-  else if (axstride < aystride)
-    {
-      for (y = 0; y < ycount; y++)
-	for (x = 0; x < xcount; x++)
-	  dest[x*rxstride + y*rystride] = (GFC_COMPLEX_16)0;
-
-      for (y = 0; y < ycount; y++)
-	for (n = 0; n < count; n++)
-	  for (x = 0; x < xcount; x++)
-	    /* dest[x,y] += a[x,n] * b[n,y] */
-	    dest[x*rxstride + y*rystride] +=
-					abase[x*axstride + n*aystride] *
-					bbase[n*bxstride + y*bystride];
-    }
   else if (GFC_DESCRIPTOR_RANK (a) == 1)
     {
       const GFC_COMPLEX_16 *restrict bbase_y;
@@ -1753,6 +1742,20 @@ matmul_c16_avx512f (gfc_array_c16 * const restrict retarray,
 	    s += abase[n*axstride] * bbase_y[n*bxstride];
 	  dest[y*rxstride] = s;
 	}
+    }
+  else if (axstride < aystride)
+    {
+      for (y = 0; y < ycount; y++)
+	for (x = 0; x < xcount; x++)
+	  dest[x*rxstride + y*rystride] = (GFC_COMPLEX_16)0;
+
+      for (y = 0; y < ycount; y++)
+	for (n = 0; n < count; n++)
+	  for (x = 0; x < xcount; x++)
+	    /* dest[x,y] += a[x,n] * b[n,y] */
+	    dest[x*rxstride + y*rystride] +=
+					abase[x*axstride + n*aystride] *
+					bbase[n*bxstride + y*bystride];
     }
   else
     {
@@ -1786,7 +1789,7 @@ matmul_c16_avx512f (gfc_array_c16 * const restrict retarray,
 
 #if defined(HAVE_AVX) && defined(HAVE_FMA3) && defined(HAVE_AVX128)
 void
-matmul_c16_avx128_fma3 (gfc_array_c16 * const restrict retarray, 
+matmul_c16_avx128_fma3 (gfc_array_c16 * const restrict retarray,
 	gfc_array_c16 * const restrict a, gfc_array_c16 * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm) __attribute__((__target__("avx,fma")));
 internal_proto(matmul_c16_avx128_fma3);
@@ -1794,7 +1797,7 @@ internal_proto(matmul_c16_avx128_fma3);
 
 #if defined(HAVE_AVX) && defined(HAVE_FMA4) && defined(HAVE_AVX128)
 void
-matmul_c16_avx128_fma4 (gfc_array_c16 * const restrict retarray, 
+matmul_c16_avx128_fma4 (gfc_array_c16 * const restrict retarray,
 	gfc_array_c16 * const restrict a, gfc_array_c16 * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm) __attribute__((__target__("avx,fma4")));
 internal_proto(matmul_c16_avx128_fma4);
@@ -1802,7 +1805,7 @@ internal_proto(matmul_c16_avx128_fma4);
 
 /* Function to fall back to if there is no special processor-specific version.  */
 static void
-matmul_c16_vanilla (gfc_array_c16 * const restrict retarray, 
+matmul_c16_vanilla (gfc_array_c16 * const restrict retarray,
 	gfc_array_c16 * const restrict a, gfc_array_c16 * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm)
 {
@@ -1994,7 +1997,8 @@ matmul_c16_vanilla (gfc_array_c16 * const restrict retarray,
 	}
     }
 
-  if (rxstride == 1 && axstride == 1 && bxstride == 1)
+  if (rxstride == 1 && axstride == 1 && bxstride == 1
+      && GFC_DESCRIPTOR_RANK (b) != 1)
     {
       /* This block of code implements a tuned matmul, derived from
          Superscalar GEMM-based level 3 BLAS,  Beta version 0.1
@@ -2308,20 +2312,6 @@ matmul_c16_vanilla (gfc_array_c16 * const restrict retarray,
 	    }
 	}
     }
-  else if (axstride < aystride)
-    {
-      for (y = 0; y < ycount; y++)
-	for (x = 0; x < xcount; x++)
-	  dest[x*rxstride + y*rystride] = (GFC_COMPLEX_16)0;
-
-      for (y = 0; y < ycount; y++)
-	for (n = 0; n < count; n++)
-	  for (x = 0; x < xcount; x++)
-	    /* dest[x,y] += a[x,n] * b[n,y] */
-	    dest[x*rxstride + y*rystride] +=
-					abase[x*axstride + n*aystride] *
-					bbase[n*bxstride + y*bystride];
-    }
   else if (GFC_DESCRIPTOR_RANK (a) == 1)
     {
       const GFC_COMPLEX_16 *restrict bbase_y;
@@ -2335,6 +2325,20 @@ matmul_c16_vanilla (gfc_array_c16 * const restrict retarray,
 	    s += abase[n*axstride] * bbase_y[n*bxstride];
 	  dest[y*rxstride] = s;
 	}
+    }
+  else if (axstride < aystride)
+    {
+      for (y = 0; y < ycount; y++)
+	for (x = 0; x < xcount; x++)
+	  dest[x*rxstride + y*rystride] = (GFC_COMPLEX_16)0;
+
+      for (y = 0; y < ycount; y++)
+	for (n = 0; n < count; n++)
+	  for (x = 0; x < xcount; x++)
+	    /* dest[x,y] += a[x,n] * b[n,y] */
+	    dest[x*rxstride + y*rystride] +=
+					abase[x*axstride + n*aystride] *
+					bbase[n*bxstride + y*bystride];
     }
   else
     {
@@ -2367,16 +2371,15 @@ matmul_c16_vanilla (gfc_array_c16 * const restrict retarray,
 
 /* Currently, this is i386 only.  Adjust for other architectures.  */
 
-#include <config/i386/cpuinfo.h>
-void matmul_c16 (gfc_array_c16 * const restrict retarray, 
+void matmul_c16 (gfc_array_c16 * const restrict retarray,
 	gfc_array_c16 * const restrict a, gfc_array_c16 * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm)
 {
-  static void (*matmul_p) (gfc_array_c16 * const restrict retarray, 
+  static void (*matmul_p) (gfc_array_c16 * const restrict retarray,
 	gfc_array_c16 * const restrict a, gfc_array_c16 * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm);
 
-  void (*matmul_fn) (gfc_array_c16 * const restrict retarray, 
+  void (*matmul_fn) (gfc_array_c16 * const restrict retarray,
 	gfc_array_c16 * const restrict a, gfc_array_c16 * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm);
 
@@ -2384,11 +2387,11 @@ void matmul_c16 (gfc_array_c16 * const restrict retarray,
   if (matmul_fn == NULL)
     {
       matmul_fn = matmul_c16_vanilla;
-      if (__cpu_model.__cpu_vendor == VENDOR_INTEL)
+      if (__builtin_cpu_is ("intel"))
 	{
           /* Run down the available processors in order of preference.  */
 #ifdef HAVE_AVX512F
-      	  if (__cpu_model.__cpu_features[0] & (1 << FEATURE_AVX512F))
+	  if (__builtin_cpu_supports ("avx512f"))
 	    {
 	      matmul_fn = matmul_c16_avx512f;
 	      goto store;
@@ -2397,8 +2400,8 @@ void matmul_c16 (gfc_array_c16 * const restrict retarray,
 #endif  /* HAVE_AVX512F */
 
 #ifdef HAVE_AVX2
-      	  if ((__cpu_model.__cpu_features[0] & (1 << FEATURE_AVX2))
-	     && (__cpu_model.__cpu_features[0] & (1 << FEATURE_FMA)))
+	  if (__builtin_cpu_supports ("avx2")
+	      && __builtin_cpu_supports ("fma"))
 	    {
 	      matmul_fn = matmul_c16_avx2;
 	      goto store;
@@ -2407,26 +2410,26 @@ void matmul_c16 (gfc_array_c16 * const restrict retarray,
 #endif
 
 #ifdef HAVE_AVX
-      	  if (__cpu_model.__cpu_features[0] & (1 << FEATURE_AVX))
+	  if (__builtin_cpu_supports ("avx"))
  	    {
               matmul_fn = matmul_c16_avx;
 	      goto store;
 	    }
 #endif  /* HAVE_AVX */
         }
-    else if (__cpu_model.__cpu_vendor == VENDOR_AMD)
+    else if (__builtin_cpu_is ("amd"))
       {
 #if defined(HAVE_AVX) && defined(HAVE_FMA3) && defined(HAVE_AVX128)
-        if ((__cpu_model.__cpu_features[0] & (1 << FEATURE_AVX))
-	    && (__cpu_model.__cpu_features[0] & (1 << FEATURE_FMA)))
+	if (__builtin_cpu_supports ("avx")
+	    && __builtin_cpu_supports ("fma"))
 	  {
             matmul_fn = matmul_c16_avx128_fma3;
 	    goto store;
 	  }
 #endif
 #if defined(HAVE_AVX) && defined(HAVE_FMA4) && defined(HAVE_AVX128)
-        if ((__cpu_model.__cpu_features[0] & (1 << FEATURE_AVX))
-	     && (__cpu_model.__cpu_features[0] & (1 << FEATURE_FMA4)))
+	if (__builtin_cpu_supports ("avx")
+	    && __builtin_cpu_supports ("fma4"))
 	  {
             matmul_fn = matmul_c16_avx128_fma4;
 	    goto store;
@@ -2444,7 +2447,7 @@ void matmul_c16 (gfc_array_c16 * const restrict retarray,
 #else  /* Just the vanilla function.  */
 
 void
-matmul_c16 (gfc_array_c16 * const restrict retarray, 
+matmul_c16 (gfc_array_c16 * const restrict retarray,
 	gfc_array_c16 * const restrict a, gfc_array_c16 * const restrict b, int try_blas,
 	int blas_limit, blas_call gemm)
 {
@@ -2636,7 +2639,8 @@ matmul_c16 (gfc_array_c16 * const restrict retarray,
 	}
     }
 
-  if (rxstride == 1 && axstride == 1 && bxstride == 1)
+  if (rxstride == 1 && axstride == 1 && bxstride == 1
+      && GFC_DESCRIPTOR_RANK (b) != 1)
     {
       /* This block of code implements a tuned matmul, derived from
          Superscalar GEMM-based level 3 BLAS,  Beta version 0.1
@@ -2950,20 +2954,6 @@ matmul_c16 (gfc_array_c16 * const restrict retarray,
 	    }
 	}
     }
-  else if (axstride < aystride)
-    {
-      for (y = 0; y < ycount; y++)
-	for (x = 0; x < xcount; x++)
-	  dest[x*rxstride + y*rystride] = (GFC_COMPLEX_16)0;
-
-      for (y = 0; y < ycount; y++)
-	for (n = 0; n < count; n++)
-	  for (x = 0; x < xcount; x++)
-	    /* dest[x,y] += a[x,n] * b[n,y] */
-	    dest[x*rxstride + y*rystride] +=
-					abase[x*axstride + n*aystride] *
-					bbase[n*bxstride + y*bystride];
-    }
   else if (GFC_DESCRIPTOR_RANK (a) == 1)
     {
       const GFC_COMPLEX_16 *restrict bbase_y;
@@ -2977,6 +2967,20 @@ matmul_c16 (gfc_array_c16 * const restrict retarray,
 	    s += abase[n*axstride] * bbase_y[n*bxstride];
 	  dest[y*rxstride] = s;
 	}
+    }
+  else if (axstride < aystride)
+    {
+      for (y = 0; y < ycount; y++)
+	for (x = 0; x < xcount; x++)
+	  dest[x*rxstride + y*rystride] = (GFC_COMPLEX_16)0;
+
+      for (y = 0; y < ycount; y++)
+	for (n = 0; n < count; n++)
+	  for (x = 0; x < xcount; x++)
+	    /* dest[x,y] += a[x,n] * b[n,y] */
+	    dest[x*rxstride + y*rystride] +=
+					abase[x*axstride + n*aystride] *
+					bbase[n*bxstride + y*bystride];
     }
   else
     {

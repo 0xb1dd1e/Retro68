@@ -1,6 +1,6 @@
 /* Form lists of pseudo register references for autoinc optimization
    for GNU compiler.  This is part of flow optimization.
-   Copyright (C) 1999-2019 Free Software Foundation, Inc.
+   Copyright (C) 1999-2026 Free Software Foundation, Inc.
    Originally contributed by Michael P. Hayes
              (m.hayes@elec.canterbury.ac.nz, mhayes@redhat.com)
    Major rewrite contributed by Danny Berlin (dberlin@dberlin.org)
@@ -30,7 +30,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "timevar.h"
 
 struct dataflow;
-struct df_d;
+class df_d;
 struct df_problem;
 struct df_link;
 struct df_insn_info;
@@ -47,6 +47,7 @@ enum df_problem_id
   {
     DF_SCAN,
     DF_LR,                /* Live Registers backward. */
+    DF_LR_DCE,            /* Dead code elimination post-pass for LR.  */
     DF_LIVE,              /* Live Registers & Uninitialized Registers */
     DF_RD,                /* Reaching Defs. */
     DF_CHAIN,             /* Def-Use and/or Use-Def Chains. */
@@ -218,7 +219,7 @@ typedef void (*df_confluence_function_0) (basic_block);
    Return true if BB input data has changed.  */
 typedef bool (*df_confluence_function_n) (edge);
 
-/* Transfer function for blocks. 
+/* Transfer function for blocks.
    Return true if BB output data has changed.  */
 typedef bool (*df_transfer_function) (int);
 
@@ -524,8 +525,9 @@ struct df_reg_info
    used by owners of the problem.
 ----------------------------------------------------------------------------*/
 
-struct df_d
+class df_d
 {
+public:
 
   /* The set of problems to be solved is stored in two arrays.  In
      PROBLEMS_IN_ORDER, the problems are stored in the order that they
@@ -580,10 +582,10 @@ struct df_d
   bitmap_head insns_to_delete;
   bitmap_head insns_to_rescan;
   bitmap_head insns_to_notes_rescan;
-  int *postorder;                /* The current set of basic blocks
-                                    in reverse postorder.  */
-  vec<int> postorder_inverted;       /* The current set of basic blocks
-                                    in reverse postorder of inverted CFG.  */
+  int *postorder;                /* The current set of basic blocks in reverse
+				    postorder for DF_BACKWARD problems.  */
+  int *postorder_inverted;       /* The current set of basic blocks in reverse
+				    postorder for DF_FORWARD problems. */
   int n_blocks;                  /* The number of blocks in reverse postorder.  */
 
   /* An array [FIRST_PSEUDO_REGISTER], indexed by regno, of the number
@@ -799,7 +801,7 @@ struct df_d
 
 /* An obstack for bitmap not related to specific dataflow problems.
    This obstack should e.g. be used for bitmaps with a short life time
-   such as temporary bitmaps.  This obstack is declared in df-core.c.  */
+   such as temporary bitmaps.  This obstack is declared in df-core.cc.  */
 
 extern bitmap_obstack df_bitmap_obstack;
 
@@ -830,8 +832,9 @@ struct df_scan_bb_info
    the ref except sparse_kill which is indexed by regno.  For the
    LR&RD problem, the kill set is not complete: It does not contain
    DEFs killed because the set register has died in the LR set.  */
-struct df_rd_bb_info
+class df_rd_bb_info
 {
+public:
   /* Local sets to describe the basic blocks.   */
   bitmap_head kill;
   bitmap_head sparse_kill;
@@ -846,8 +849,9 @@ struct df_rd_bb_info
 /* Multiple reaching definitions.  All bitmaps are referenced by the
    register number.  */
 
-struct df_md_bb_info
+class df_md_bb_info
 {
+public:
   /* Local sets to describe the basic blocks.  */
   bitmap_head gen;    /* Partial/conditional definitions live at BB out.  */
   bitmap_head kill;   /* Other definitions that are live at BB out.  */
@@ -862,8 +866,9 @@ struct df_md_bb_info
 /* Live registers, a backwards dataflow problem.  All bitmaps are
    referenced by the register number.  */
 
-struct df_lr_bb_info
+class df_lr_bb_info
 {
+public:
   /* Local sets to describe the basic blocks.  */
   bitmap_head def;   /* The set of registers set in this block
                         - except artificial defs at the top.  */
@@ -879,8 +884,9 @@ struct df_lr_bb_info
    register number.  Anded results of the forwards and backward live
    info.  Note that the forwards live information is not available
    separately.  */
-struct df_live_bb_info
+class df_live_bb_info
 {
+public:
   /* Local sets to describe the basic blocks.  */
   bitmap_head kill;  /* The set of registers unset in this block.  Calls,
 		        for instance, unset registers.  */
@@ -897,8 +903,9 @@ struct df_live_bb_info
    pseudo.  Only pseudos that have a size of 2 * UNITS_PER_WORD are
    meaningfully tracked.  */
 
-struct df_word_lr_bb_info
+class df_word_lr_bb_info
 {
+public:
   /* Local sets to describe the basic blocks.  */
   bitmap_head def;   /* The set of registers set in this block
                         - except artificial defs at the top.  */
@@ -911,8 +918,9 @@ struct df_word_lr_bb_info
 
 /* Must-initialized registers.  All bitmaps are referenced by the
    register number.  */
-struct df_mir_bb_info
+class df_mir_bb_info
 {
+public:
   /* Local sets to describe the basic blocks.  */
   bitmap_head kill;  /* The set of registers unset in this block.  Calls,
 		        for instance, unset registers.  */
@@ -922,16 +930,18 @@ struct df_mir_bb_info
   /* The results of the dataflow problem.  */
   bitmap_head in;    /* At the top of the block.  */
   bitmap_head out;   /* At the bottom of the block.  */
+  bool con_visited;  /* Visited by con_fun_{0,n}.  */
 };
 
 
 /* This is used for debugging and for the dumpers to find the latest
    instance so that the df info can be added to the dumps.  This
    should not be used by regular code.  */
-extern struct df_d *df;
+extern class df_d *df;
 #define df_scan    (df->problems_by_index[DF_SCAN])
 #define df_rd      (df->problems_by_index[DF_RD])
 #define df_lr      (df->problems_by_index[DF_LR])
+#define df_lr_dce  (df->problems_by_index[DF_LR_DCE])
 #define df_live    (df->problems_by_index[DF_LIVE])
 #define df_chain   (df->problems_by_index[DF_CHAIN])
 #define df_word_lr (df->problems_by_index[DF_WORD_LR])
@@ -951,7 +961,7 @@ extern struct df_d *df;
 #endif
 
 
-/* Functions defined in df-core.c.  */
+/* Functions defined in df-core.cc.  */
 
 extern void df_add_problem (const struct df_problem *);
 extern int df_set_flags (int);
@@ -961,7 +971,7 @@ extern void df_remove_problem (struct dataflow *);
 extern void df_finish_pass (bool);
 extern void df_analyze_problem (struct dataflow *, bitmap, int *, int);
 extern void df_analyze ();
-extern void df_analyze_loop (struct loop *);
+extern void df_analyze_loop (class loop *);
 extern int df_get_n_blocks (enum df_flow_dir);
 extern int *df_get_postorder (enum df_flow_dir);
 extern void df_simple_dataflow (enum df_flow_dir, df_init_function,
@@ -979,13 +989,15 @@ extern void df_check_cfg_clean (void);
 #endif
 extern df_ref df_bb_regno_first_def_find (basic_block, unsigned int);
 extern df_ref df_bb_regno_last_def_find (basic_block, unsigned int);
+extern df_ref df_bb_regno_only_def_find (basic_block, unsigned int);
 extern df_ref df_find_def (rtx_insn *, rtx);
 extern bool df_reg_defined (rtx_insn *, rtx);
 extern df_ref df_find_use (rtx_insn *, rtx);
 extern bool df_reg_used (rtx_insn *, rtx);
+extern rtx df_find_single_def_src (rtx);
 extern void df_worklist_dataflow (struct dataflow *,bitmap, int *, int);
-extern void df_print_regset (FILE *file, bitmap r);
-extern void df_print_word_regset (FILE *file, bitmap r);
+extern void df_print_regset (FILE *file, const_bitmap r);
+extern void df_print_word_regset (FILE *file, const_bitmap r);
 extern void df_dump (FILE *);
 extern void df_dump_region (FILE *);
 extern void df_dump_start (FILE *);
@@ -1007,7 +1019,7 @@ extern void debug_df_useno (unsigned int);
 extern void debug_df_ref (df_ref);
 extern void debug_df_chain (struct df_link *);
 
-/* Functions defined in df-problems.c. */
+/* Functions defined in df-problems.cc. */
 
 extern struct df_link *df_chain_create (df_ref, df_ref);
 extern void df_chain_unlink (df_ref);
@@ -1050,7 +1062,7 @@ extern bool can_move_insns_across (rtx_insn *, rtx_insn *,
 				   rtx_insn *, rtx_insn *,
 				   basic_block, regset,
 				   regset, rtx_insn **);
-/* Functions defined in df-scan.c.  */
+/* Functions defined in df-scan.cc.  */
 
 extern void df_scan_alloc (bitmap);
 extern void df_scan_add_problem (void);
@@ -1078,16 +1090,18 @@ extern void df_update_entry_exit_and_calls (void);
 extern bool df_hard_reg_used_p (unsigned int);
 extern unsigned int df_hard_reg_used_count (unsigned int);
 extern bool df_regs_ever_live_p (unsigned int);
+extern bool df_epilogue_uses_p (unsigned int);
 extern void df_set_regs_ever_live (unsigned int, bool);
 extern void df_compute_regs_ever_live (bool);
 extern void df_scan_verify (void);
+extern void df_get_exit_block_use_set (bitmap);
 
 
 /*----------------------------------------------------------------------------
    Public functions access functions for the dataflow problems.
 ----------------------------------------------------------------------------*/
 
-static inline struct df_scan_bb_info *
+inline struct df_scan_bb_info *
 df_scan_get_bb_info (unsigned int index)
 {
   if (index < df_scan->block_info_size)
@@ -1096,56 +1110,56 @@ df_scan_get_bb_info (unsigned int index)
     return NULL;
 }
 
-static inline struct df_rd_bb_info *
+inline class df_rd_bb_info *
 df_rd_get_bb_info (unsigned int index)
 {
   if (index < df_rd->block_info_size)
-    return &((struct df_rd_bb_info *) df_rd->block_info)[index];
+    return &((class df_rd_bb_info *) df_rd->block_info)[index];
   else
     return NULL;
 }
 
-static inline struct df_lr_bb_info *
+inline class df_lr_bb_info *
 df_lr_get_bb_info (unsigned int index)
 {
   if (index < df_lr->block_info_size)
-    return &((struct df_lr_bb_info *) df_lr->block_info)[index];
+    return &((class df_lr_bb_info *) df_lr->block_info)[index];
   else
     return NULL;
 }
 
-static inline struct df_md_bb_info *
+inline class df_md_bb_info *
 df_md_get_bb_info (unsigned int index)
 {
   if (index < df_md->block_info_size)
-    return &((struct df_md_bb_info *) df_md->block_info)[index];
+    return &((class df_md_bb_info *) df_md->block_info)[index];
   else
     return NULL;
 }
 
-static inline struct df_live_bb_info *
+inline class df_live_bb_info *
 df_live_get_bb_info (unsigned int index)
 {
   if (index < df_live->block_info_size)
-    return &((struct df_live_bb_info *) df_live->block_info)[index];
+    return &((class df_live_bb_info *) df_live->block_info)[index];
   else
     return NULL;
 }
 
-static inline struct df_word_lr_bb_info *
+inline class df_word_lr_bb_info *
 df_word_lr_get_bb_info (unsigned int index)
 {
   if (index < df_word_lr->block_info_size)
-    return &((struct df_word_lr_bb_info *) df_word_lr->block_info)[index];
+    return &((class df_word_lr_bb_info *) df_word_lr->block_info)[index];
   else
     return NULL;
 }
 
-static inline struct df_mir_bb_info *
+inline class df_mir_bb_info *
 df_mir_get_bb_info (unsigned int index)
 {
   if (index < df_mir->block_info_size)
-    return &((struct df_mir_bb_info *) df_mir->block_info)[index];
+    return &((class df_mir_bb_info *) df_mir->block_info)[index];
   else
     return NULL;
 }
@@ -1155,7 +1169,7 @@ df_mir_get_bb_info (unsigned int index)
    choose different dataflow problems depending on the optimization
    level.  */
 
-static inline bitmap
+inline bitmap
 df_get_live_out (basic_block bb)
 {
   gcc_checking_assert (df_lr);
@@ -1171,7 +1185,7 @@ df_get_live_out (basic_block bb)
    choose different dataflow problems depending on the optimization
    level.  */
 
-static inline bitmap
+inline bitmap
 df_get_live_in (basic_block bb)
 {
   gcc_checking_assert (df_lr);
@@ -1185,7 +1199,7 @@ df_get_live_in (basic_block bb)
 /* Get basic block info.  */
 /* Get the artificial defs for a basic block.  */
 
-static inline df_ref
+inline df_ref
 df_get_artificial_defs (unsigned int bb_index)
 {
   return df_scan_get_bb_info (bb_index)->artificial_defs;
@@ -1194,7 +1208,7 @@ df_get_artificial_defs (unsigned int bb_index)
 
 /* Get the artificial uses for a basic block.  */
 
-static inline df_ref
+inline df_ref
 df_get_artificial_uses (unsigned int bb_index)
 {
   return df_scan_get_bb_info (bb_index)->artificial_uses;
@@ -1203,7 +1217,7 @@ df_get_artificial_uses (unsigned int bb_index)
 /* If INSN defines exactly one register, return the associated reference,
    otherwise return null.  */
 
-static inline df_ref
+inline df_ref
 df_single_def (const df_insn_info *info)
 {
   df_ref defs = DF_INSN_INFO_DEFS (info);
@@ -1213,7 +1227,7 @@ df_single_def (const df_insn_info *info)
 /* If INSN uses exactly one register, return the associated reference,
    otherwise return null.  */
 
-static inline df_ref
+inline df_ref
 df_single_use (const df_insn_info *info)
 {
   df_ref uses = DF_INSN_INFO_USES (info);
@@ -1222,7 +1236,7 @@ df_single_use (const df_insn_info *info)
 
 /* web */
 
-class web_entry_base
+struct web_entry_base
 {
  private:
   /* Reference to the parent in the union/find tree.  */

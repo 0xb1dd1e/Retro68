@@ -14,7 +14,7 @@
  */
 module core.sys.posix.sys.time;
 
-private import core.sys.posix.config;
+import core.sys.posix.config;
 public import core.sys.posix.sys.types;  // for time_t, suseconds_t
 public import core.sys.posix.sys.select; // for fd_set, FD_CLR() FD_ISSET() FD_SET() FD_ZERO() FD_SETSIZE, select()
 
@@ -55,8 +55,8 @@ ITIMER_PROF
 int getitimer(int, itimerval*);
 int gettimeofday(timeval*, void*);
 int select(int, fd_set*, fd_set*, fd_set*, timeval*); (defined in core.sys.posix.sys.signal)
-int setitimer(int, in itimerval*, itimerval*);
-int utimes(in char*, ref const(timeval)[2]); // LEGACY
+int setitimer(int, const scope itimerval*, itimerval*);
+int utimes(const scope char*, ref const(timeval)[2]); // LEGACY
 */
 
 version (CRuntime_Glibc)
@@ -79,8 +79,8 @@ version (CRuntime_Glibc)
 
     int getitimer(int, itimerval*);
     int gettimeofday(timeval*, void*);
-    int setitimer(int, in itimerval*, itimerval*);
-    int utimes(in char*, ref const(timeval)[2]); // LEGACY
+    int setitimer(int, const scope itimerval*, itimerval*);
+    int utimes(const scope char*, ref const(timeval)[2]); // LEGACY
 }
 else version (CRuntime_Musl)
 {
@@ -89,8 +89,10 @@ else version (CRuntime_Musl)
         time_t      tv_sec;
         suseconds_t tv_usec;
     }
+    pragma(mangle, muslRedirTime64Mangle!("gettimeofday", "__gettimeofday_time64"))
     int gettimeofday(timeval*, void*);
-    int utimes(in char*, ref const(timeval)[2]);
+    pragma(mangle, muslRedirTime64Mangle!("utimes", "__utimes_time64"))
+    int utimes(const scope char*, ref const(timeval)[2]);
 }
 else version (Darwin)
 {
@@ -115,8 +117,8 @@ else version (Darwin)
 
     int getitimer(int, itimerval*);
     int gettimeofday(timeval*, timezone_t*); // timezone_t* is normally void*
-    int setitimer(int, in itimerval*, itimerval*);
-    int utimes(in char*, ref const(timeval)[2]);
+    int setitimer(int, const scope itimerval*, itimerval*);
+    int utimes(const scope char*, ref const(timeval)[2]);
 }
 else version (FreeBSD)
 {
@@ -141,8 +143,8 @@ else version (FreeBSD)
 
     int getitimer(int, itimerval*);
     int gettimeofday(timeval*, timezone_t*); // timezone_t* is normally void*
-    int setitimer(int, in itimerval*, itimerval*);
-    int utimes(in char*, ref const(timeval)[2]);
+    int setitimer(int, const scope itimerval*, itimerval*);
+    int utimes(const scope char*, ref const(timeval)[2]);
 }
 else version (NetBSD)
 {
@@ -158,10 +160,40 @@ else version (NetBSD)
         timeval it_value;
     }
 
+    pragma(mangle, "__getitimer50")
     int getitimer(int, itimerval*);
+    pragma(mangle, "__gettimeofday50")
     int gettimeofday(timeval*, void*); // timezone_t* is normally void*
-    int setitimer(int, in itimerval*, itimerval*);
-    int utimes(in char*, ref const(timeval)[2]);
+    pragma(mangle, "__setitimer50")
+    int setitimer(int, const scope itimerval*, itimerval*);
+    pragma(mangle, "__utimes50")
+    int utimes(const scope char*, ref const(timeval)[2]);
+}
+else version (OpenBSD)
+{
+    struct timeval
+    {
+        time_t      tv_sec;
+        suseconds_t tv_usec;
+    }
+
+    struct itimerval
+    {
+        timeval it_interval;
+        timeval it_value;
+    }
+
+    // non-standard
+    struct timezone_t
+    {
+        int tz_minuteswest;
+        int tz_dsttime;
+    }
+
+    int getitimer(int, itimerval*);
+    int gettimeofday(timeval*, timezone_t*);
+    int setitimer(int, const scope itimerval*, itimerval*);
+    int utimes(const scope char*, ref const(timeval)[2]);
 }
 else version (DragonFlyBSD)
 {
@@ -186,8 +218,8 @@ else version (DragonFlyBSD)
 
     int getitimer(int, itimerval*);
     int gettimeofday(timeval*, timezone_t*); // timezone_t* is normally void*
-    int setitimer(int, in itimerval*, itimerval*);
-    int utimes(in char*, ref const(timeval)[2]);
+    int setitimer(int, const scope itimerval*, itimerval*);
+    int utimes(const scope char*, ref const(timeval)[2]);
 }
 else version (Solaris)
 {
@@ -205,8 +237,8 @@ else version (Solaris)
 
     int getitimer(int, itimerval*);
     int gettimeofday(timeval*, void*);
-    int setitimer(int, in itimerval*, itimerval*);
-    int utimes(in char*, ref const(timeval)[2]);
+    int setitimer(int, const scope itimerval*, itimerval*);
+    int utimes(const scope char*, ref const(timeval)[2]);
 }
 else version (CRuntime_Bionic)
 {
@@ -234,8 +266,8 @@ else version (CRuntime_Bionic)
 
     int getitimer(int, itimerval*);
     int gettimeofday(timeval*, timezone_t*);
-    int setitimer(int, in itimerval*, itimerval*);
-    int utimes(in char*, ref const(timeval)[2]);
+    int setitimer(int, const scope itimerval*, itimerval*);
+    int utimes(const scope char*, ref const(timeval)[2]);
 }
 else version (CRuntime_UClibc)
 {
@@ -257,8 +289,8 @@ else version (CRuntime_UClibc)
 
     int getitimer(int, itimerval*);
     int gettimeofday(timeval*, void*);
-    int setitimer(int, in itimerval*, itimerval*);
-    int utimes(in char*, ref const(timeval)[2]);
+    int setitimer(int, const scope itimerval*, itimerval*);
+    int utimes(const scope char*, ref const(timeval)[2]);
 }
 else
 {

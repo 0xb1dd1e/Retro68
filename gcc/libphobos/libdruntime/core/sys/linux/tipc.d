@@ -207,4 +207,3 @@ enum: int
         TIPC_DEST_DROPPABLE = 129,
         TIPC_CONN_TIMEOUT   = 130,
 }
-

@@ -1,6 +1,6 @@
 dnl Process this file with autoconf to produce a configure script.
 dnl
-dnl   Copyright (C) 2012-2018 Free Software Foundation, Inc.
+dnl   Copyright (C) 2012-2026 Free Software Foundation, Inc.
 dnl
 dnl This file is free software; you can redistribute it and/or modify
 dnl it under the terms of the GNU General Public License as published by
@@ -17,13 +17,13 @@ dnl along with this program; see the file COPYING3.  If not see
 dnl <http://www.gnu.org/licenses/>.
 dnl
 m4_include([../bfd/version.m4])
-AC_INIT([gprof], BFD_VERSION)
+AC_INIT([gprof], [BFD_VERSION])
 AC_CONFIG_SRCDIR([gprof.c])
 
 AC_CANONICAL_TARGET([])
-AC_ISC_POSIX
 
 AM_INIT_AUTOMAKE
+AM_SILENT_RULES([yes])
 
 dnl For simplicity, we use the BFD configuration file for most
 dnl things.  However, we also need our own configuration file for
@@ -32,18 +32,18 @@ dnl config.h, to avoid any possible confusion with the bfd config.h.
 AC_CONFIG_HEADERS([gconfig.h:gconfig.in])
 
 AC_PROG_CC
-AC_GNU_SOURCE
 AC_USE_SYSTEM_EXTENSIONS
 AC_PROG_INSTALL
 
 LT_INIT
 ACX_LARGEFILE
 
-AC_CHECK_FUNCS(setmode)
+# These are in addition to what is made available in bfd/.
+AC_CHECK_HEADERS(sys/time.h)
+AC_CHECK_FUNCS(setitimer)
 
 ALL_LINGUAS="bg da de eo es fi fr ga hu id it ja ms nl pt_BR ro ru rw sr sv tr uk vi"
 ZW_GNU_GETTEXT_SISTER_DIR
-AM_PO_SUBDIRS
 
 AM_MAINTAINER_MODE
 AM_CONDITIONAL(GENINSRC_NEVER, false)
@@ -72,5 +72,21 @@ AC_SUBST(docdir)
 AC_SUBST(htmldir)
 AC_SUBST(pdfdir)
 
-AC_CONFIG_FILES([Makefile po/Makefile.in:po/Make-in])
+AC_CACHE_CHECK([whether gprof tests can run],
+  [gprof_cv_sys_native], [dnl
+  gprof_cv_sys_native=no
+  if test x"${host}" = x"${target}" \
+     && ${CC-cc} -O2 -fno-omit-frame-pointer -pg -o tst-gmon $srcdir/testsuite/tst-gmon.c; then
+    rm -f gmon.out
+    ./tst-gmon
+    if test -s gmon.out; then
+      gprof_cv_sys_native=yes
+    fi
+    rm -f tst-gmon gmon.out
+  fi])
+AM_CONDITIONAL(NATIVE, test "$gprof_cv_sys_native" = "yes")
+
+AC_CONFIG_FILES([Makefile testsuite/Makefile po/Makefile.in:po/Make-in])
 AC_OUTPUT
+
+GNU_MAKE_JOBSERVER

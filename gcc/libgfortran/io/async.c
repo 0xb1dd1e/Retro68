@@ -1,4 +1,4 @@
-/* Copyright (C) 2018-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2018-2026 Free Software Foundation, Inc.
    Contributed by Nicolas Koenig
 
    This file is part of the GNU Fortran runtime library (libgfortran).
@@ -42,6 +42,10 @@ DEBUG_LINE (__thread const char *aio_prefix = MPREFIX);
 
 DEBUG_LINE (__gthread_mutex_t debug_queue_lock = __GTHREAD_MUTEX_INIT;)
 DEBUG_LINE (aio_lock_debug *aio_debug_head = NULL;)
+#ifdef __GTHREAD_RWLOCK_INIT
+DEBUG_LINE (aio_rwlock_debug *aio_rwlock_debug_head = NULL;)
+DEBUG_LINE (__gthread_rwlock_t debug_queue_rwlock = __GTHREAD_RWLOCK_INIT;)
+#endif
 
 /* Current unit for asynchronous I/O.  Needed for error reporting.  */
 
@@ -71,8 +75,7 @@ update_pdt (st_parameter_dt **old, st_parameter_dt *new) {
   NOTE ("Changing pdts, current_unit = %p", (void *) (new->u.p.current_unit));
   temp = *old;
   *old = new;
-  if (temp)
-    free (temp);
+  free (temp);
 }
 
 /* Destroy an adv_cond structure.  */
@@ -80,7 +83,6 @@ update_pdt (st_parameter_dt **old, st_parameter_dt *new) {
 static void
 destroy_adv_cond (struct adv_cond *ac)
 {
-  T_ERROR (__gthread_mutex_destroy, &ac->lock);
   T_ERROR (__gthread_cond_destroy, &ac->signal);
 }
 
@@ -107,8 +109,7 @@ async_io (void *arg)
       /* Loop over the queue entries until they are finished.  */
       while (ctq)
 	{
-	  if (prev)
-	    free (prev);
+	  free (prev);
 	  prev = ctq;
 	  if (!au->error.has_error)
 	    {
@@ -118,13 +119,13 @@ async_io (void *arg)
 		{
 		case AIO_WRITE_DONE:
 		  NOTE ("Finalizing write");
-		  st_write_done_worker (au->pdt);
+		  st_write_done_worker (au->pdt, false);
 		  UNLOCK (&au->io_lock);
 		  break;
 
 		case AIO_READ_DONE:
 		  NOTE ("Finalizing read");
-		  st_read_done_worker (au->pdt);
+		  st_read_done_worker (au->pdt, false);
 		  UNLOCK (&au->io_lock);
 		  break;
 
@@ -156,6 +157,7 @@ async_io (void *arg)
 
 		case AIO_CLOSE:
 		  NOTE ("Received AIO_CLOSE");
+		  LOCK (&au->lock);
 		  goto finish_thread;
 
 		default:
@@ -175,7 +177,6 @@ async_io (void *arg)
 	      else if (ctq->type == AIO_CLOSE)
 		{
 		  NOTE ("Received AIO_CLOSE during error condition");
-		  UNLOCK (&au->lock);
 		  goto finish_thread;
 		}
 	    }
@@ -189,9 +190,7 @@ async_io (void *arg)
       au->tail = NULL;
       au->head = NULL;
       au->empty = 1;
-      UNLOCK (&au->lock);
       SIGNAL (&au->emptysignal);
-      LOCK (&au->lock);
     }
  finish_thread:
   au->tail = NULL;
@@ -199,6 +198,7 @@ async_io (void *arg)
   au->empty = 1;
   SIGNAL (&au->emptysignal);
   free (ctq);
+  UNLOCK (&au->lock);
   return NULL;
 }
 
@@ -223,7 +223,6 @@ static void
 init_adv_cond (struct adv_cond *ac)
 {
   ac->pending = 0;
-  __GTHREAD_MUTEX_INIT_FUNCTION (&ac->lock);
   __GTHREAD_COND_INIT_FUNCTION (&ac->signal);
 }
 
@@ -267,7 +266,7 @@ init_async_unit (gfc_unit *u)
 void
 enqueue_transfer (async_unit *au, transfer_args *arg, enum aio_do type)
 {
-  transfer_queue *tq = calloc (sizeof (transfer_queue), 1);
+  transfer_queue *tq = calloc (1, sizeof (transfer_queue));
   tq->arg = *arg;
   tq->type = type;
   tq->has_id = 0;
@@ -279,8 +278,8 @@ enqueue_transfer (async_unit *au, transfer_args *arg, enum aio_do type)
   au->tail = tq;
   REVOKE_SIGNAL (&(au->emptysignal));
   au->empty = false;
-  UNLOCK (&au->lock);
   SIGNAL (&au->work);
+  UNLOCK (&au->lock);
 }
 
 /* Enqueue an st_write_done or st_read_done which contains an ID.  */
@@ -289,7 +288,7 @@ int
 enqueue_done_id (async_unit *au, enum aio_do type)
 {
   int ret;
-  transfer_queue *tq = calloc (sizeof (transfer_queue), 1);
+  transfer_queue *tq = calloc (1, sizeof (transfer_queue));
 
   tq->type = type;
   tq->has_id = 1;
@@ -303,8 +302,8 @@ enqueue_done_id (async_unit *au, enum aio_do type)
   au->empty = false;
   ret = au->id.high++;
   NOTE ("Enqueue id: %d", ret);
-  UNLOCK (&au->lock);
   SIGNAL (&au->work);
+  UNLOCK (&au->lock);
   return ret;
 }
 
@@ -313,7 +312,7 @@ enqueue_done_id (async_unit *au, enum aio_do type)
 void
 enqueue_done (async_unit *au, enum aio_do type)
 {
-  transfer_queue *tq = calloc (sizeof (transfer_queue), 1);
+  transfer_queue *tq = calloc (1, sizeof (transfer_queue));
   tq->type = type;
   tq->has_id = 0;
   LOCK (&au->lock);
@@ -324,8 +323,8 @@ enqueue_done (async_unit *au, enum aio_do type)
   au->tail = tq;
   REVOKE_SIGNAL (&(au->emptysignal));
   au->empty = false;
-  UNLOCK (&au->lock);
   SIGNAL (&au->work);
+  UNLOCK (&au->lock);
 }
 
 /* Enqueue a CLOSE statement.  */
@@ -333,7 +332,7 @@ enqueue_done (async_unit *au, enum aio_do type)
 void
 enqueue_close (async_unit *au)
 {
-  transfer_queue *tq = calloc (sizeof (transfer_queue), 1);
+  transfer_queue *tq = calloc (1, sizeof (transfer_queue));
 
   tq->type = AIO_CLOSE;
   LOCK (&au->lock);
@@ -344,8 +343,8 @@ enqueue_close (async_unit *au)
   au->tail = tq;
   REVOKE_SIGNAL (&(au->emptysignal));
   au->empty = false;
-  UNLOCK (&au->lock);
   SIGNAL (&au->work);
+  UNLOCK (&au->lock);
 }
 
 /* The asynchronous unit keeps the currently active PDT around.
@@ -374,9 +373,9 @@ enqueue_data_transfer_init (async_unit *au, st_parameter_dt *dt, int read_flag)
     au->tail->next = tq;
   au->tail = tq;
   REVOKE_SIGNAL (&(au->emptysignal));
-  au->empty = 0;
-  UNLOCK (&au->lock);
+  au->empty = false;
   SIGNAL (&au->work);
+  UNLOCK (&au->lock);
 }
 
 /* Collect the errors that may have happened asynchronously.  Return true if
@@ -427,12 +426,17 @@ async_wait_id (st_parameter_common *cmp, async_unit *au, int i)
     }
 
   LOCK (&au->lock);
+  if (i > au->id.high)
+    {
+      generate_error_common (cmp, LIBERROR_BAD_WAIT_ID, NULL);
+      UNLOCK (&au->lock);
+      return true;
+    }
+
   NOTE ("Waiting for id %d", i);
   if (au->id.waiting < i)
     au->id.waiting = i;
-  UNLOCK (&au->lock);
   SIGNAL (&(au->work));
-  LOCK (&au->lock);
   WAIT_SIGNAL_MUTEX (&(au->id.done),
 		     (au->id.low >= au->id.waiting || au->empty), &au->lock);
   LOCK (&au->lock);
@@ -454,8 +458,8 @@ async_wait (st_parameter_common *cmp, async_unit *au)
   if (cmp == NULL)
     cmp = au->error.cmp;
 
-  SIGNAL (&(au->work));
   LOCK (&(au->lock));
+  SIGNAL (&(au->work));
 
   if (au->empty)
     {

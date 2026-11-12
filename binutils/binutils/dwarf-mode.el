@@ -1,8 +1,8 @@
 ;;; dwarf-mode.el --- Browser for DWARF information. -*-lexical-binding:t-*-
 
-;; Version: 1.4
+;; Version: 1.9
 
-;; Copyright (C) 2012-2018 Free Software Foundation, Inc.
+;; Copyright (C) 2012-2026 Free Software Foundation, Inc.
 
 ;; This file is not part of GNU Emacs, but is distributed under the
 ;; same terms:
@@ -27,10 +27,10 @@
 (defconst dwarf-font-lock-keywords
   '(
     ;; Name and linkage name.
-    ("DW_AT_[a-z_]*name\\s *: .*:\\(.*\\)\\s *$"
+    ("DW_AT_[a-zA-Z_]*name\\s *:\\(?:\\s *(.*):\\)?\\s *\\(.*\\)\\s *$"
      (1 font-lock-function-name-face))
 
-    ("Compilation Unit @ offset 0x[0-9a-f]+"
+    ("Compilation Unit @ offset \\(0x[0-9a-f]+\\|0\\)"
      (0 font-lock-string-face))
     ))
 
@@ -62,9 +62,11 @@
           (set-marker (process-mark proc) (point))
 	  (set-buffer-modified-p nil))))))
 
-(defun dwarf--sentinel (_proc _status)
-  (setq mode-line-process nil)
-  (setq dwarf--process nil))
+(defun dwarf--sentinel (proc _status)
+  (when (buffer-live-p (process-buffer proc))
+    (with-current-buffer (process-buffer proc)
+      (setq mode-line-process nil)
+      (setq dwarf--process nil))))
 
 (defun dwarf--invoke (start end &rest command)
   "Invoke a command and arrange to insert output into the current buffer."
@@ -109,7 +111,7 @@ By default, expands just one level of children.
 A prefix argument means expand all children."
   (interactive "P")
   (beginning-of-line)
-  (unless (looking-at "^ <\\([0-9]+\\)><\\([0-9a-f]+\\)>")
+  (unless (looking-at "^ <\\([0-9]+\\)><\\([0-9a-f]+\\)>: \\.\\.\\.")
     (error "Unrecognized line."))
   (let ((die (match-string 2)))
     (if arg
@@ -120,9 +122,11 @@ A prefix argument means expand all children."
 ;; Either follows a DIE reference, or expands a "...".
 (defun dwarf-die-button-action (button)
   (let* ((die (button-get button 'die))
-	 ;; Note that the first number can only be decimal.
-	 (die-rx (concat "^\\s *\\(<[0-9]+>\\)?<"
-			 die ">[^<]"))
+	 ;; Note that the first number can only be decimal.  It is
+	 ;; included in this search because otherwise following a ref
+	 ;; might lead to a zero-length boolean attribute in the
+	 ;; previous DIE.
+	 (die-rx (concat "^\\s *<[0-9]+><" die ">:"))
 	 (old (point))
 	 (is-ref (button-get button 'die-ref)))
     (if is-ref
@@ -173,7 +177,7 @@ A prefix argument means expand all children."
 ;; Run objdump and insert the contents into the buffer.  The arguments
 ;; are the way they are because this is also called as a
 ;; revert-buffer-function.
-(defun dwarf-do-refresh (&rest ignore)
+(defun dwarf-do-refresh (&rest _ignore)
   (dwarf--check-running)
   (let ((inhibit-read-only t))
     (dwarf--invoke (point-min) (point-max)
@@ -181,10 +185,31 @@ A prefix argument means expand all children."
 		   (expand-file-name dwarf-file))
     (set-buffer-modified-p nil)))
 
+(defun dwarf-refresh-all ()
+  "Refresh the current buffer without eliding substructure.
+Note that this can result in very voluminous output."
+  (interactive)
+  (dwarf--check-running)
+  (let ((inhibit-read-only t))
+    (dwarf--invoke (point-min) (point-max)
+		   dwarf-objdump-program "-Wi"
+		   (expand-file-name dwarf-file))
+    (set-buffer-modified-p nil)))
+
+(defvar dwarf-mode-syntax-table
+  (let ((table (make-syntax-table)))
+    ;; This at least makes it so mark-sexp on some hex digits inside
+    ;; <...> does not also copy the ">".
+    (modify-syntax-entry ?< "(>" table)
+    (modify-syntax-entry ?> ")<" table)
+    table)
+  "Syntax table for dwarf-mode buffers.")
+
 (defvar dwarf-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map special-mode-map)
     (define-key map [(control ?m)] #'dwarf-insert-substructure)
+    (define-key map "A" #'dwarf-refresh-all)
     map)
   "Keymap for dwarf-mode buffers.")
 
@@ -194,7 +219,6 @@ A prefix argument means expand all children."
 \\{dwarf-mode-map}"
 
   (set (make-local-variable 'font-lock-defaults) '(dwarf-font-lock-keywords))
-  ;; FIXME: we could be smarter and check the file time.
   (set (make-local-variable 'revert-buffer-function) #'dwarf-do-refresh)
   (jit-lock-register #'dwarf-fontify-region))
 

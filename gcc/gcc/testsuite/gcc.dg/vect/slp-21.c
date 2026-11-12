@@ -12,6 +12,7 @@ main1 ()
   unsigned short out[N*8], out2[N*8], b0, b1, b2, b3, b4, a0, a1, a2, a3, b5;
   unsigned short in[N*8];
 
+#pragma GCC novector
   for (i = 0; i < N*8; i++)
     {
       in[i] = i;
@@ -45,6 +46,7 @@ main1 ()
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
       a0 = in[i*4];
@@ -101,6 +103,7 @@ main1 ()
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
       a0 = in[i*4];
@@ -158,6 +161,7 @@ main1 ()
     }
 
   /* check results:  */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
       a0 = in[i*4];
@@ -199,8 +203,5 @@ int main (void)
   return 0;
 }
 
-/* { dg-final { scan-tree-dump-times "vectorized 4 loops" 1 "vect"  { target { vect_strided4 || vect_extract_even_odd } } } } */
-/* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect"  { target  { ! { vect_strided4 || vect_extract_even_odd } } } } } */
-/* { dg-final { scan-tree-dump-times "vectorizing stmts using SLP" 2 "vect" { target vect_strided4 } } } */
-/* { dg-final { scan-tree-dump-times "vectorizing stmts using SLP" 0 "vect"  { target { ! { vect_strided4 } } } } } */
-  
+/* { dg-final { scan-tree-dump-times "vectorized 3 loops" 1 "vect"  { target { vect_strided4 || vect_extract_even_odd } } } } */
+/* { dg-final { scan-tree-dump-times "vectorized 0 loops" 1 "vect"  { target  { ! { vect_strided4 || vect_extract_even_odd } } } } } */

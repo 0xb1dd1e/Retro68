@@ -1,6 +1,6 @@
 /* -*- indented-text -*- */
 /* Process source files and output type information.
-   Copyright (C) 2002-2019 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -21,17 +21,6 @@ along with GCC; see the file COPYING3.  If not see
 %option noinput
 
 %{
-#ifdef HOST_GENERATOR_FILE
-#include "config.h"
-#define GENERATOR_FILE 1
-#else
-#include "bconfig.h"
-#endif
-#include "system.h"
-
-#define malloc xmalloc
-#define realloc xrealloc
-
 #include "gengtype.h"
 
 #define YY_DECL int yylex (const char **yylval)
@@ -40,7 +29,7 @@ along with GCC; see the file COPYING3.  If not see
 struct fileloc lexer_line;
 int lexer_toplevel_done;
 
-static void 
+static void
 update_lineno (const char *l, size_t len)
 {
   while (len-- > 0)
@@ -58,7 +47,7 @@ ITYPE	{IWORD}({WS}{IWORD})*
     /* Include '::' in identifiers to capture C++ scope qualifiers.  */
 ID	{CID}({HWS}::{HWS}{CID})*
 EOID	[^[:alnum:]_]
-CXX_KEYWORD inline|public:|private:|protected:|template|operator|friend|static
+CXX_KEYWORD inline|public:|private:|protected:|template|operator|friend|static|mutable
 
 %x in_struct in_struct_comment in_comment
 %option warn noyywrap nounput nodefault perf-report
@@ -125,7 +114,10 @@ CXX_KEYWORD inline|public:|private:|protected:|template|operator|friend|static
 "ptr_alias"/{EOID}	  	{ return PTR_ALIAS; }
 "nested_ptr"/{EOID}		{ return NESTED_PTR; }
 "user"/{EOID}			{ return USER_GTY; }
-[0-9]+				{ return NUM; }
+[0-9]+				{
+  *yylval = XDUPVAR (const char, yytext, yyleng, yyleng+1);
+  return NUM;
+}
 
 {IWORD}({WS}{IWORD})*/{EOID}		|
 "ENUM_BITFIELD"{WS}?"("{WS}?{ID}{WS}?")"	{
@@ -162,6 +154,9 @@ CXX_KEYWORD inline|public:|private:|protected:|template|operator|friend|static
 [(){},*:<>;=%/|+\!\?\.-]	{ return yytext[0]; }
 
    /* ignore pp-directives */
+^{HWS}"#"{HWS}[a-z_]+([^\n]*"\\"\n)+[^\n]*\n   {
+  update_lineno (yytext, yyleng);
+}
 ^{HWS}"#"{HWS}[a-z_]+[^\n]*\n   {lexer_line.line++;}
 
 .				{
@@ -185,12 +180,12 @@ CXX_KEYWORD inline|public:|private:|protected:|template|operator|friend|static
 "*"/[^/]	/* do nothing */
 }
 
-<in_comment>"*/"	{ BEGIN(INITIAL); } 
+<in_comment>"*/"	{ BEGIN(INITIAL); }
 <in_struct_comment>"*/"	{ BEGIN(in_struct); }
 
 ["/]    		|
 <in_struct_comment,in_comment>"*"	{
-  error_at_line (&lexer_line, 
+  error_at_line (&lexer_line,
 		 "unterminated comment or string; unexpected EOF");
 }
 

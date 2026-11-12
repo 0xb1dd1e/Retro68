@@ -1,9 +1,9 @@
 /* Verify that overloaded built-ins for vec_extract() with char
    inputs produce the right code with a P8 (LE or BE) target.  */
 
-/* { dg-do compile { target { powerpc*-*-linux* } } } */
-/* { dg-require-effective-target powerpc_p8vector_ok } */
-/* { dg-options "-mdejagnu-cpu=power8 -O2" } */
+/* { dg-do compile } */
+/* { dg-options "-mdejagnu-cpu=power8 -mvsx -O2" } */
+/* { dg-require-effective-target powerpc_vsx } */
 
 // six tests total. Targeting P8LE / P8BE.
 // P8 LE variable offset: rldicl, subfic, sldi, mtvsrd, xxpermdi, vslo, mfvsrd, sradi, rlwinm, (extsb)

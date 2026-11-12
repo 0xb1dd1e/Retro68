@@ -1,4 +1,5 @@
 // PR c++/29318
+// Explicit { dg-require-effective-target exceptions_enabled } to avoid verify compiler messages FAILs for '-fno-exceptions'.
 // { dg-options "" }
 
 #include <typeinfo>
@@ -6,7 +7,7 @@
 void f(int i) {
   try {
     int a[i];
-    throw &a; // { dg-error "int \\(\\*\\)\\\[i\\\]" }
+    throw &a; // { dg-error "11:cannot throw expression of type .int \\(\\*\\)\\\[i\\\]." }
   } catch (int (*)[i]) { // { dg-error "variable size" }
   }
 }

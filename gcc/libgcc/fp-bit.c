@@ -1,6 +1,6 @@
 /* This is a software floating point library which can be used
-   for targets without hardware floating point. 
-   Copyright (C) 1994-2019 Free Software Foundation, Inc.
+   for targets without hardware floating point.
+   Copyright (C) 1994-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -137,7 +137,7 @@ makenan (void)
 {
 #ifdef TFLOAT
   return & __thenan_tf;
-#elif defined FLOAT  
+#elif defined FLOAT
   return & __thenan_sf;
 #else
   return & __thenan_df;
@@ -168,7 +168,7 @@ iszero (const fp_number_type *  x)
   return x->class == CLASS_ZERO;
 }
 
-INLINE 
+INLINE
 static void
 flip_sign ( fp_number_type *  x)
 {
@@ -316,12 +316,7 @@ pack_d (const fp_number_type *src)
   /* We previously used bitfields to store the number, but this doesn't
      handle little/big endian systems conveniently, so use shifts and
      masks */
-#ifdef FLOAT_BIT_ORDER_MISMATCH
-  dst.bits.fraction = fraction;
-  dst.bits.exp = exp;
-  dst.bits.sign = sign;
-#else
-# if defined TFLOAT && defined HALFFRACBITS
+#if defined TFLOAT && defined HALFFRACBITS
  {
    halffractype high, low, unity;
    int lowsign, lowexp;
@@ -394,11 +389,10 @@ pack_d (const fp_number_type *src)
      }
    dst.value_raw = ((fractype) high << HALFSHIFT) | low;
  }
-# else
+#else
   dst.value_raw = fraction & ((((fractype)1) << FRACBITS) - (fractype)1);
   dst.value_raw |= ((fractype) (exp & ((1 << EXPBITS) - 1))) << FRACBITS;
   dst.value_raw |= ((fractype) (sign & 1)) << (FRACBITS | EXPBITS);
-# endif
 #endif
 
 #if defined(FLOAT_WORD_ORDER_MISMATCH) && !defined(FLOAT)
@@ -449,16 +443,11 @@ unpack_d (FLO_union_type * src, fp_number_type * dst)
 #endif
   src = &swapped;
 #endif
-  
-#ifdef FLOAT_BIT_ORDER_MISMATCH
-  fraction = src->bits.fraction;
-  exp = src->bits.exp;
-  sign = src->bits.sign;
-#else
-# if defined TFLOAT && defined HALFFRACBITS
+
+#if defined TFLOAT && defined HALFFRACBITS
  {
    halffractype high, low;
-   
+
    high = src->value_raw >> HALFSHIFT;
    low = src->value_raw & (((fractype)1 << HALFSHIFT) - 1);
 
@@ -498,11 +487,10 @@ unpack_d (FLO_union_type * src, fp_number_type * dst)
 	 }
      }
  }
-# else
+#else
   fraction = src->value_raw & ((((fractype)1) << FRACBITS) - 1);
   exp = ((int)(src->value_raw >> FRACBITS)) & ((1 << EXPBITS) - 1);
   sign = ((int)(src->value_raw >> (FRACBITS + EXPBITS))) & 1;
-# endif
 #endif
 
   dst->sign = sign;
@@ -835,11 +823,11 @@ _fpmul_parts ( fp_number_type *  a,
 	  x >>= 1;
 	}
     }
-#elif defined(FLOAT) 
+#elif defined(FLOAT)
     /* Multiplying two USIs to get a UDI, we're safe.  */
     {
       UDItype answer = (UDItype)a->fraction.ll * (UDItype)b->fraction.ll;
-      
+
       high = answer >> BITS_PER_SI;
       low = answer;
     }
@@ -1328,7 +1316,7 @@ si_to_float (SItype arg_a)
       USItype uarg;
       int shift;
       in.normal_exp = FRACBITS + NGARDS;
-      if (in.sign) 
+      if (in.sign)
 	{
 	  /* Special case for minint, since there is no +ve integer
 	     representation for it */
@@ -1470,7 +1458,7 @@ negate (FLO_type arg_a)
 SFtype
 __make_fp(fp_class_type class,
 	     unsigned int sign,
-	     int exp, 
+	     int exp,
 	     USItype frac)
 {
   fp_number_type in;
@@ -1584,7 +1572,7 @@ df_to_tf (DFtype arg_a)
 TFtype
 __make_tp(fp_class_type class,
 	     unsigned int sign,
-	     int exp, 
+	     int exp,
 	     UTItype frac)
 {
   fp_number_type in;

@@ -1,7 +1,7 @@
 #source: start1.s
 #source: tls128.s
 #source: tls-ie-8e.s
-#as: --no-underscore --em=criself
+#as: --no-underscore --emulation=criself
 #ld: -m crislinux --hash-style=sysv
 #ld_after_inputfiles: tmpdir/tls-dso-xz-1.so
 #objdump: -s -h -t -T -R -r -p
@@ -31,7 +31,7 @@ DYNAMIC SYMBOL TABLE:
 0+      D  \*UND\*	0+ x
 #...
 DYNAMIC RELOCATION RECORDS
-OFFSET   TYPE              VALUE 
+OFFSET +TYPE +VALUE
 0+82278 R_CRIS_32_TPREL   x
 
 Contents of section .interp:

@@ -9,6 +9,7 @@
 /* { dg-options "-O -fno-pic" } */
 /* { dg-additional-options "-no-pie" { target pie_enabled } } */
 /* { dg-require-effective-target nonlocal_goto } */
+/* { dg-skip-if "" { arm*-*-uclinuxfdpiceabi } "*" "" } */
 
 extern void abort (void);
 
@@ -36,6 +37,8 @@ extern void abort (void);
 /* PIC register is r1, but is used even without -fpic.  */
 #elif defined(__lm32__)
 /* No pic register.  */
+#elif defined(__loongarch__)
+/* No pic register.  */
 #elif defined(__M32R__)
 /* No pic register.  */
 #elif defined(__m68k__)
@@ -55,8 +58,6 @@ extern void abort (void);
 #elif defined(__moxie__)
 /* No pic register.  */
 #elif defined(__nds32__)
-/* No pic register.  */
-#elif defined(__nios2__)
 /* No pic register.  */
 #elif defined(__hppa__)
 /* PIC register is %r27 or %r19, but is used even without -fpic.  */
@@ -96,8 +97,6 @@ extern void abort (void);
 /* No pic register.  */
 #elif defined(__m32c__)
 /* No pic register.  */
-#elif defined(__SPU__)
-#  define PIC_REG  "126"
 #elif defined (__frv__)
 # ifdef __FRV_FDPIC__
 #  define PIC_REG "gr15"
@@ -120,6 +119,8 @@ extern void abort (void);
 #elif defined (__or1k__)
 /* No pic register.  */
 #elif defined (__AMDGCN__)
+/* No pic register.  */
+#elif defined(__PRU__)
 /* No pic register.  */
 #else
 # error "Modify the test for your target."

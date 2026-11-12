@@ -92,8 +92,10 @@ target_triplet = @target@
 subdir = src/c++17
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/../config/acx.m4 \
+	$(top_srcdir)/../config/clang-plugin.m4 \
 	$(top_srcdir)/../config/enable.m4 \
 	$(top_srcdir)/../config/futex.m4 \
+	$(top_srcdir)/../config/gcc-plugin.m4 \
 	$(top_srcdir)/../config/hwcaps.m4 \
 	$(top_srcdir)/../config/iconv.m4 \
 	$(top_srcdir)/../config/lead-dot.m4 \
@@ -104,7 +106,7 @@ am__aclocal_m4_deps = $(top_srcdir)/../config/acx.m4 \
 	$(top_srcdir)/../config/multi.m4 \
 	$(top_srcdir)/../config/no-executables.m4 \
 	$(top_srcdir)/../config/override.m4 \
-	$(top_srcdir)/../config/stdint.m4 \
+	$(top_srcdir)/../config/toolexeclibdir.m4 \
 	$(top_srcdir)/../config/unwind_ipinfo.m4 \
 	$(top_srcdir)/../libtool.m4 $(top_srcdir)/../ltoptions.m4 \
 	$(top_srcdir)/../ltsugar.m4 $(top_srcdir)/../ltversion.m4 \
@@ -123,12 +125,13 @@ LTLIBRARIES = $(noinst_LTLIBRARIES)
 libc__17convenience_la_LIBADD =
 @ENABLE_DUAL_ABI_TRUE@am__objects_1 = cow-fs_dir.lo cow-fs_ops.lo \
 @ENABLE_DUAL_ABI_TRUE@	cow-fs_path.lo
-am__objects_2 = fs_dir.lo fs_ops.lo fs_path.lo memory_resource.lo \
-	$(am__objects_1)
+am__objects_2 = floating_from_chars.lo floating_to_chars.lo fs_dir.lo \
+	fs_ops.lo fs_path.lo memory_resource.lo $(am__objects_1)
 @ENABLE_DUAL_ABI_TRUE@am__objects_3 = cow-string-inst.lo
 @ENABLE_EXTERN_TEMPLATE_TRUE@am__objects_4 = ostream-inst.lo \
 @ENABLE_EXTERN_TEMPLATE_TRUE@	string-inst.lo $(am__objects_3)
-am_libc__17convenience_la_OBJECTS = $(am__objects_2) $(am__objects_4)
+@GLIBCXX_HOSTED_TRUE@am_libc__17convenience_la_OBJECTS =  \
+@GLIBCXX_HOSTED_TRUE@	$(am__objects_2) $(am__objects_4)
 libc__17convenience_la_OBJECTS = $(am_libc__17convenience_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -189,6 +192,7 @@ ABI_TWEAKS_SRCDIR = @ABI_TWEAKS_SRCDIR@
 ACLOCAL = @ACLOCAL@
 ALLOCATOR_H = @ALLOCATOR_H@
 ALLOCATOR_NAME = @ALLOCATOR_NAME@
+ALLOC_FILE = @ALLOC_FILE@
 AMTAR = @AMTAR@
 AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
 AR = @AR@
@@ -200,6 +204,10 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
+BACKTRACE_CPPFLAGS = @BACKTRACE_CPPFLAGS@
+BACKTRACE_SUPPORTED = @BACKTRACE_SUPPORTED@
+BACKTRACE_SUPPORTS_THREADS = @BACKTRACE_SUPPORTS_THREADS@
+BACKTRACE_USES_MALLOC = @BACKTRACE_USES_MALLOC@
 BASIC_FILE_CC = @BASIC_FILE_CC@
 BASIC_FILE_H = @BASIC_FILE_H@
 CC = @CC@
@@ -240,11 +248,14 @@ ECHO_C = @ECHO_C@
 ECHO_N = @ECHO_N@
 ECHO_T = @ECHO_T@
 EGREP = @EGREP@
+EH_POOL_FLAGS = @EH_POOL_FLAGS@
 ERROR_CONSTANTS_SRCDIR = @ERROR_CONSTANTS_SRCDIR@
 EXEEXT = @EXEEXT@
 EXTRA_CFLAGS = @EXTRA_CFLAGS@
 EXTRA_CXX_FLAGS = @EXTRA_CXX_FLAGS@
 FGREP = @FGREP@
+FORMAT_FILE = @FORMAT_FILE@
+FREESTANDING_FLAGS = @FREESTANDING_FLAGS@
 GLIBCXX_INCLUDES = @GLIBCXX_INCLUDES@
 GLIBCXX_LIBS = @GLIBCXX_LIBS@
 GREP = @GREP@
@@ -261,7 +272,10 @@ LIBOBJS = @LIBOBJS@
 LIBS = @LIBS@
 LIBTOOL = @LIBTOOL@
 LIPO = @LIPO@
+LLVM_CONFIG = @LLVM_CONFIG@
 LN_S = @LN_S@
+LONG_DOUBLE_128_FLAGS = @LONG_DOUBLE_128_FLAGS@
+LONG_DOUBLE_ALT128_COMPAT_FLAGS = @LONG_DOUBLE_ALT128_COMPAT_FLAGS@
 LONG_DOUBLE_COMPAT_FLAGS = @LONG_DOUBLE_COMPAT_FLAGS@
 LTLIBICONV = @LTLIBICONV@
 LTLIBOBJS = @LTLIBOBJS@
@@ -299,6 +313,7 @@ SYMVER_FILE = @SYMVER_FILE@
 TOPLEVEL_INCLUDES = @TOPLEVEL_INCLUDES@
 USE_NLS = @USE_NLS@
 VERSION = @VERSION@
+VIEW_FILE = @VIEW_FILE@
 VTV_CXXFLAGS = @VTV_CXXFLAGS@
 VTV_CXXLINKFLAGS = @VTV_CXXLINKFLAGS@
 VTV_PCH_CXXFLAGS = @VTV_PCH_CXXFLAGS@
@@ -385,6 +400,7 @@ target_cpu = @target_cpu@
 target_os = @target_os@
 target_vendor = @target_vendor@
 thread_header = @thread_header@
+tmake_file = @tmake_file@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
@@ -403,11 +419,13 @@ toolexeclibdir = $(glibcxx_toolexeclibdir)
 @ENABLE_WERROR_TRUE@WERROR_FLAG = -Werror
 @ENABLE_EXTERN_TEMPLATE_FALSE@XTEMPLATE_FLAGS = 
 @ENABLE_EXTERN_TEMPLATE_TRUE@XTEMPLATE_FLAGS = -fno-implicit-templates
+@GLIBCXX_LDBL_ALT128_COMPAT_FALSE@LDBL_128_FLAGS = 
+@GLIBCXX_LDBL_ALT128_COMPAT_TRUE@LDBL_128_FLAGS = $(LONG_DOUBLE_128_FLAGS)
 
 # These bits are all figured out from configure.  Look in acinclude.m4
 # or configure.ac to see how they are set.  See GLIBCXX_EXPORT_FLAGS.
 CONFIG_CXXFLAGS = \
-	$(SECTION_FLAGS) $(HWCAP_CFLAGS) -frandom-seed=$@
+	$(SECTION_FLAGS) $(HWCAP_CFLAGS) -frandom-seed=$@ $(LDBL_128_FLAGS)
 
 WARN_CXXFLAGS = \
 	$(WARN_FLAGS) $(WERROR_FLAG) -fdiagnostics-show-location=once 
@@ -437,13 +455,16 @@ headers =
 @ENABLE_EXTERN_TEMPLATE_TRUE@	$(extra_string_inst_sources)
 
 sources = \
+	floating_from_chars.cc \
+	floating_to_chars.cc \
 	fs_dir.cc \
 	fs_ops.cc \
 	fs_path.cc \
 	memory_resource.cc \
 	$(extra_fs_sources)
 
-libc__17convenience_la_SOURCES = $(sources)  $(inst_sources)
+@GLIBCXX_HOSTED_FALSE@libc__17convenience_la_SOURCES = 
+@GLIBCXX_HOSTED_TRUE@libc__17convenience_la_SOURCES = $(sources)  $(inst_sources)
 
 # AM_CXXFLAGS needs to be in each subdirectory so that it can be
 # modified in a per-library or per-sub-library way.  Need to manually
@@ -451,7 +472,7 @@ libc__17convenience_la_SOURCES = $(sources)  $(inst_sources)
 # OPTIMIZE_CXXFLAGS on the compile line so that -O2 can be overridden
 # as the occasion calls for it.
 AM_CXXFLAGS = \
-	-std=gnu++17 \
+	-std=gnu++17 -nostdinc++ \
 	$(glibcxx_lt_pic_flag) $(glibcxx_compiler_shared_flag) \
 	$(XTEMPLATE_FLAGS) $(VTV_CXXFLAGS) \
 	$(WARN_CXXFLAGS) $(OPTIMIZE_CXXFLAGS) $(CONFIG_CXXFLAGS) \
@@ -752,6 +773,21 @@ uninstall-am:
 
 
 vpath % $(top_srcdir)/src/c++17
+
+# These files should be rebuilt if the .cc prerequisite changes.
+@ENABLE_DUAL_ABI_TRUE@cow-string-inst.lo cow-string-inst.o: string-inst.cc
+@ENABLE_DUAL_ABI_TRUE@cow-fs_dir.lo cow-fs_dir.o: fs_dir.cc
+@ENABLE_DUAL_ABI_TRUE@cow-fs_ops.lo cow-fs_ops.o: fs_ops.cc
+@ENABLE_DUAL_ABI_TRUE@cow-fs_path.lo cow-fs_path.o: fs_path.cc
+
+@GLIBCXX_LDBL_ALT128_COMPAT_TRUE@floating_from_chars.lo: floating_from_chars.cc
+@GLIBCXX_LDBL_ALT128_COMPAT_TRUE@	$(LTCXXCOMPILE) -mabi=ibmlongdouble $(LONG_DOUBLE_128_FLAGS) -c $<
+@GLIBCXX_LDBL_ALT128_COMPAT_TRUE@floating_from_chars.o: floating_from_chars.cc
+@GLIBCXX_LDBL_ALT128_COMPAT_TRUE@	$(CXXCOMPILE) -mabi=ibmlongdouble $(LONG_DOUBLE_128_FLAGS) -c $<
+@GLIBCXX_LDBL_ALT128_COMPAT_TRUE@floating_to_chars.lo: floating_to_chars.cc
+@GLIBCXX_LDBL_ALT128_COMPAT_TRUE@	$(LTCXXCOMPILE) -mabi=ibmlongdouble $(LONG_DOUBLE_128_FLAGS) -c $<
+@GLIBCXX_LDBL_ALT128_COMPAT_TRUE@floating_to_chars.o: floating_to_chars.cc
+@GLIBCXX_LDBL_ALT128_COMPAT_TRUE@	$(CXXCOMPILE) -mabi=ibmlongdouble $(LONG_DOUBLE_128_FLAGS) -c $<
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

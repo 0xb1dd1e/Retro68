@@ -92,8 +92,10 @@ target_triplet = @target@
 subdir = src/c++98
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/../config/acx.m4 \
+	$(top_srcdir)/../config/clang-plugin.m4 \
 	$(top_srcdir)/../config/enable.m4 \
 	$(top_srcdir)/../config/futex.m4 \
+	$(top_srcdir)/../config/gcc-plugin.m4 \
 	$(top_srcdir)/../config/hwcaps.m4 \
 	$(top_srcdir)/../config/iconv.m4 \
 	$(top_srcdir)/../config/lead-dot.m4 \
@@ -104,7 +106,7 @@ am__aclocal_m4_deps = $(top_srcdir)/../config/acx.m4 \
 	$(top_srcdir)/../config/multi.m4 \
 	$(top_srcdir)/../config/no-executables.m4 \
 	$(top_srcdir)/../config/override.m4 \
-	$(top_srcdir)/../config/stdint.m4 \
+	$(top_srcdir)/../config/toolexeclibdir.m4 \
 	$(top_srcdir)/../config/unwind_ipinfo.m4 \
 	$(top_srcdir)/../libtool.m4 $(top_srcdir)/../ltoptions.m4 \
 	$(top_srcdir)/../ltsugar.m4 $(top_srcdir)/../ltversion.m4 \
@@ -126,25 +128,25 @@ libc__98convenience_la_LIBADD =
 @ENABLE_DUAL_ABI_TRUE@	messages_members_cow.lo \
 @ENABLE_DUAL_ABI_TRUE@	monetary_members_cow.lo \
 @ENABLE_DUAL_ABI_TRUE@	numeric_members_cow.lo
-am__objects_3 = $(am__objects_2) atomicity.lo codecvt_members.lo \
-	collate_members.lo messages_members.lo monetary_members.lo \
-	numeric_members.lo time_members.lo
-@ENABLE_EXTERN_TEMPLATE_TRUE@am__objects_4 = allocator-inst.lo \
+am__objects_3 = $(am__objects_2) codecvt_members.lo collate_members.lo \
+	messages_members.lo monetary_members.lo numeric_members.lo \
+	time_members.lo
+am__objects_4 = c++locale.lo
+@ENABLE_EXTERN_TEMPLATE_TRUE@am__objects_5 = allocator-inst.lo \
 @ENABLE_EXTERN_TEMPLATE_TRUE@	concept-inst.lo ext-inst.lo \
 @ENABLE_EXTERN_TEMPLATE_TRUE@	misc-inst.lo
-am__objects_5 = parallel_settings.lo
-am__objects_6 = basic_file.lo c++locale.lo $(am__objects_4) \
-	$(am__objects_5)
+am__objects_6 = parallel_settings.lo
 am__objects_7 = bitmap_allocator.lo pool_allocator.lo mt_allocator.lo \
 	codecvt.lo complex_io.lo globals_io.lo hash_tr1.lo \
 	hashtable_tr1.lo ios_failure.lo ios_init.lo ios_locale.lo \
 	list.lo list-aux.lo list-aux-2.lo list_associated.lo \
-	list_associated-2.lo locale.lo locale_init.lo locale_facets.lo \
-	localename.lo math_stubs_float.lo math_stubs_long_double.lo \
-	stdexcept.lo strstream.lo tree.lo istream.lo istream-string.lo \
-	streambuf.lo valarray.lo $(am__objects_1) $(am__objects_3) \
-	$(am__objects_6)
-am_libc__98convenience_la_OBJECTS = $(am__objects_7)
+	list_associated-2.lo locale.lo locale_facets.lo \
+	math_stubs_float.lo math_stubs_long_double.lo stdexcept.lo \
+	strstream.lo tree.lo istream.lo istream-string.lo streambuf.lo \
+	valarray.lo $(am__objects_1) $(am__objects_3) $(am__objects_4) \
+	$(am__objects_5) $(am__objects_6)
+@GLIBCXX_HOSTED_TRUE@am_libc__98convenience_la_OBJECTS =  \
+@GLIBCXX_HOSTED_TRUE@	$(am__objects_7)
 libc__98convenience_la_OBJECTS = $(am_libc__98convenience_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -205,6 +207,7 @@ ABI_TWEAKS_SRCDIR = @ABI_TWEAKS_SRCDIR@
 ACLOCAL = @ACLOCAL@
 ALLOCATOR_H = @ALLOCATOR_H@
 ALLOCATOR_NAME = @ALLOCATOR_NAME@
+ALLOC_FILE = @ALLOC_FILE@
 AMTAR = @AMTAR@
 AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
 AR = @AR@
@@ -216,6 +219,10 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
+BACKTRACE_CPPFLAGS = @BACKTRACE_CPPFLAGS@
+BACKTRACE_SUPPORTED = @BACKTRACE_SUPPORTED@
+BACKTRACE_SUPPORTS_THREADS = @BACKTRACE_SUPPORTS_THREADS@
+BACKTRACE_USES_MALLOC = @BACKTRACE_USES_MALLOC@
 BASIC_FILE_CC = @BASIC_FILE_CC@
 BASIC_FILE_H = @BASIC_FILE_H@
 CC = @CC@
@@ -256,11 +263,14 @@ ECHO_C = @ECHO_C@
 ECHO_N = @ECHO_N@
 ECHO_T = @ECHO_T@
 EGREP = @EGREP@
+EH_POOL_FLAGS = @EH_POOL_FLAGS@
 ERROR_CONSTANTS_SRCDIR = @ERROR_CONSTANTS_SRCDIR@
 EXEEXT = @EXEEXT@
 EXTRA_CFLAGS = @EXTRA_CFLAGS@
 EXTRA_CXX_FLAGS = @EXTRA_CXX_FLAGS@
 FGREP = @FGREP@
+FORMAT_FILE = @FORMAT_FILE@
+FREESTANDING_FLAGS = @FREESTANDING_FLAGS@
 GLIBCXX_INCLUDES = @GLIBCXX_INCLUDES@
 GLIBCXX_LIBS = @GLIBCXX_LIBS@
 GREP = @GREP@
@@ -277,7 +287,10 @@ LIBOBJS = @LIBOBJS@
 LIBS = @LIBS@
 LIBTOOL = @LIBTOOL@
 LIPO = @LIPO@
+LLVM_CONFIG = @LLVM_CONFIG@
 LN_S = @LN_S@
+LONG_DOUBLE_128_FLAGS = @LONG_DOUBLE_128_FLAGS@
+LONG_DOUBLE_ALT128_COMPAT_FLAGS = @LONG_DOUBLE_ALT128_COMPAT_FLAGS@
 LONG_DOUBLE_COMPAT_FLAGS = @LONG_DOUBLE_COMPAT_FLAGS@
 LTLIBICONV = @LTLIBICONV@
 LTLIBOBJS = @LTLIBOBJS@
@@ -315,6 +328,7 @@ SYMVER_FILE = @SYMVER_FILE@
 TOPLEVEL_INCLUDES = @TOPLEVEL_INCLUDES@
 USE_NLS = @USE_NLS@
 VERSION = @VERSION@
+VIEW_FILE = @VIEW_FILE@
 VTV_CXXFLAGS = @VTV_CXXFLAGS@
 VTV_CXXLINKFLAGS = @VTV_CXXLINKFLAGS@
 VTV_PCH_CXXFLAGS = @VTV_PCH_CXXFLAGS@
@@ -401,6 +415,7 @@ target_cpu = @target_cpu@
 target_os = @target_os@
 target_vendor = @target_vendor@
 thread_header = @thread_header@
+tmake_file = @tmake_file@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
@@ -419,11 +434,13 @@ toolexeclibdir = $(glibcxx_toolexeclibdir)
 @ENABLE_WERROR_TRUE@WERROR_FLAG = -Werror
 @ENABLE_EXTERN_TEMPLATE_FALSE@XTEMPLATE_FLAGS = 
 @ENABLE_EXTERN_TEMPLATE_TRUE@XTEMPLATE_FLAGS = -fno-implicit-templates
+@GLIBCXX_LDBL_ALT128_COMPAT_FALSE@LDBL_128_FLAGS = 
+@GLIBCXX_LDBL_ALT128_COMPAT_TRUE@LDBL_128_FLAGS = $(LONG_DOUBLE_128_FLAGS)
 
 # These bits are all figured out from configure.  Look in acinclude.m4
 # or configure.ac to see how they are set.  See GLIBCXX_EXPORT_FLAGS.
 CONFIG_CXXFLAGS = \
-	$(SECTION_FLAGS) $(HWCAP_CFLAGS) -frandom-seed=$@
+	$(SECTION_FLAGS) $(HWCAP_CFLAGS) -frandom-seed=$@ $(LDBL_128_FLAGS)
 
 WARN_CXXFLAGS = \
 	$(WARN_FLAGS) $(WERROR_FLAG) -fdiagnostics-show-location=once 
@@ -446,7 +463,6 @@ headers =
 # particular host.
 host_sources = \
 	$(cow_string_host_sources) \
-	atomicity.cc \
 	codecvt_members.cc \
 	collate_members.cc \
 	messages_members.cc \
@@ -454,13 +470,11 @@ host_sources = \
 	numeric_members.cc \
 	time_members.cc
 
-atomicity_file = ${glibcxx_srcdir}/$(ATOMICITY_SRCDIR)/atomicity.h
 
 # Source files linked in via configuration/make substitution for a
 # particular host, but with ad hoc naming rules.
 host_sources_extra = \
-	basic_file.cc c++locale.cc \
-	${inst_sources} ${parallel_sources}
+	c++locale.cc
 
 @ENABLE_DUAL_ABI_FALSE@cxx11_abi_sources = 
 @ENABLE_DUAL_ABI_TRUE@cxx11_abi_sources = \
@@ -497,9 +511,7 @@ sources = \
 	list_associated.cc \
 	list_associated-2.cc \
 	locale.cc \
-	locale_init.cc \
 	locale_facets.cc \
-	localename.cc \
 	math_stubs_float.cc \
 	math_stubs_long_double.cc \
 	stdexcept.cc \
@@ -511,9 +523,12 @@ sources = \
 	valarray.cc \
 	${cxx11_abi_sources} \
 	${host_sources} \
-	${host_sources_extra}
+	${host_sources_extra} \
+	${inst_sources} \
+	${parallel_sources}
 
-libc__98convenience_la_SOURCES = $(sources)
+@GLIBCXX_HOSTED_FALSE@libc__98convenience_la_SOURCES = 
+@GLIBCXX_HOSTED_TRUE@libc__98convenience_la_SOURCES = $(sources)
 @ENABLE_DUAL_ABI_TRUE@GLIBCXX_ABI_FLAGS = -D_GLIBCXX_USE_CXX11_ABI=@glibcxx_cxx98_abi@
 
 # Use special rules for the deprecated source files so that they find
@@ -845,8 +860,6 @@ numeric_members.cc: ${glibcxx_srcdir}/$(CNUMERIC_CC)
 
 time_members.cc: ${glibcxx_srcdir}/$(CTIME_CC)
 	$(LN_S) ${glibcxx_srcdir}/$(CTIME_CC) . || true
-atomicity.cc: ${atomicity_file}
-	$(LN_S) ${atomicity_file} ./atomicity.cc || true
 
 @ENABLE_DUAL_ABI_TRUE@collate_members_cow.cc: ${glibcxx_srcdir}/$(CCOLLATE_CC)
 @ENABLE_DUAL_ABI_TRUE@	$(LN_S) ${glibcxx_srcdir}/$(CCOLLATE_CC) ./$@ || true
@@ -862,9 +875,6 @@ atomicity.cc: ${atomicity_file}
 
 c++locale.cc: ${glibcxx_srcdir}/$(CLOCALE_CC)
 	$(LN_S) ${glibcxx_srcdir}/$(CLOCALE_CC) ./$@ || true
-
-basic_file.cc: ${glibcxx_srcdir}/$(BASIC_FILE_CC)
-	$(LN_S) ${glibcxx_srcdir}/$(BASIC_FILE_CC) ./$@ || true
 
 vpath % $(top_srcdir)/src/c++98
 
@@ -890,16 +900,6 @@ c++locale.o: c++locale.cc
 @ENABLE_DUAL_ABI_TRUE@	$(LTCXXCOMPILE) $(GLIBCXX_ABI_FLAGS) -fimplicit-templates -c $<
 @ENABLE_DUAL_ABI_TRUE@numeric_members_cow.o: numeric_members_cow.cc
 @ENABLE_DUAL_ABI_TRUE@	$(CXXCOMPILE) $(GLIBCXX_ABI_FLAGS) -fimplicit-templates -c $<
-
-# XXX TODO move locale_init.cc and localename.cc to src/c++11
-locale_init.lo: locale_init.cc
-	$(LTCXXCOMPILE) -std=gnu++11 -fchar8_t -c $<
-locale_init.o: locale_init.cc
-	$(LTCXXCOMPILE) -std=gnu++11 -fchar8_t -c $<
-localename.lo: localename.cc
-	$(LTCXXCOMPILE) -std=gnu++11 -fchar8_t -c $<
-localename.o: localename.cc
-	$(LTCXXCOMPILE) -std=gnu++11 -fchar8_t -c $<
 strstream.lo: strstream.cc
 	$(LTCXXCOMPILE) -I$(GLIBCXX_INCLUDE_DIR)/backward -Wno-deprecated -c $<
 strstream.o: strstream.cc

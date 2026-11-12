@@ -1,5 +1,5 @@
 /* Definitions of target machine GNU compiler.  IA-64 version.
-   Copyright (C) 1999-2019 Free Software Foundation, Inc.
+   Copyright (C) 1999-2026 Free Software Foundation, Inc.
    Contributed by James E. Wilson <wilson@cygnus.com> and
    		  David Mosberger <davidm@hpl.hp.com>.
 
@@ -236,18 +236,6 @@ while (0)
 
 #define LONG_LONG_TYPE_SIZE 64
 
-#define FLOAT_TYPE_SIZE 32
-
-#define DOUBLE_TYPE_SIZE 64
-
-/* long double is XFmode normally, and TFmode for HPUX.  It should be
-   TFmode for VMS as well but we only support up to DFmode now.  */
-#define LONG_DOUBLE_TYPE_SIZE \
-  (TARGET_HPUX ? 128 \
-   : TARGET_ABI_OPEN_VMS ? 64 \
-   : 80)
-
-
 #define DEFAULT_SIGNED_CHAR 1
 
 /* A C expression for a string describing the name of the data type to use for
@@ -370,41 +358,6 @@ while (0)
   /*FP CCV UNAT PFS LC EC */				\
      1,  1,   1,  1, 1, 1				\
  }
-
-/* Like `FIXED_REGISTERS' but has 1 for each register that is clobbered
-   (in general) by function calls as well as for fixed registers.  This
-   macro therefore identifies the registers that are not available for
-   general allocation of values that must live across function calls.  */
-
-#define CALL_USED_REGISTERS \
-{ /* General registers.  */				\
-  1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1,	\
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	\
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-  0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1,	\
-  /* Floating-point registers.  */			\
-  1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	\
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	\
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	\
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	\
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	\
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	\
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	\
-  /* Predicate registers.  */				\
-  1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	\
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	\
-  /* Branch registers.  */				\
-  1, 0, 0, 0, 0, 0, 1, 1,				\
-  /*FP CCV UNAT PFS LC EC */				\
-     1,  1,   1,  1, 1, 1				\
-}
 
 /* Like `CALL_USED_REGISTERS' but used to overcome a historical
    problem which makes CALL_USED_REGISTERS *always* include
@@ -597,7 +550,7 @@ while (0)
 
 #define HARD_REGNO_CALLER_SAVE_MODE(REGNO, NREGS, MODE) \
   ((FR_REGNO_P (REGNO) && (NREGS) == 1) ? RFmode        \
-   : choose_hard_reg_mode ((REGNO), (NREGS), false))
+   : choose_hard_reg_mode ((REGNO), (NREGS), NULL))
 
 /* Handling Leaf Functions */
 
@@ -998,6 +951,7 @@ do {									\
 do {									\
   if ((PART) == 0)							\
     {									\
+      assemble_external (DECL);						\
       if (TARGET_ILP32)							\
         fputs ("\tdata8.ua @iplt(", FILE);				\
       else								\
@@ -1369,7 +1323,7 @@ do {									\
 }
 
 /* If defined, C string expressions to be used for the `%R', `%L', `%U', and
-   `%I' options of `asm_fprintf' (see `final.c').  */
+   `%I' options of `asm_fprintf' (see `final.cc').  */
 
 #define REGISTER_PREFIX ""
 #define LOCAL_LABEL_PREFIX "."
@@ -1456,22 +1410,6 @@ do {									\
 /* Macros Affecting all Debug Formats.  */
 
 /* This is handled in sysv4.h.  */
-
-
-/* Specific Options for DBX Output.  */
-
-/* This is handled by dbxelf.h.  */
-
-
-/* Open ended Hooks for DBX Output.  */
-
-/* Likewise.  */
-
-
-/* File names in DBX format.  */
-
-/* Likewise.  */
-
 
 /* Macros for Dwarf Output.  */
 

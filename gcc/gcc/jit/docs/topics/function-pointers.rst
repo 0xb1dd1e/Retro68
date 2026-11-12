@@ -1,4 +1,4 @@
-.. Copyright (C) 2017-2019 Free Software Foundation, Inc.
+.. Copyright (C) 2017-2026 Free Software Foundation, Inc.
    Originally contributed by David Malcolm <dmalcolm@redhat.com>
 
    This is free software: you can redistribute it and/or modify it
@@ -13,7 +13,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see
-   <http://www.gnu.org/licenses/>.
+   <https://www.gnu.org/licenses/>.
 
 .. default-domain:: c
 
@@ -48,7 +48,7 @@ to it in :c:type:`gcc_jit_rvalue` form using
 type obtained using :c:func:`gcc_jit_context_new_function_ptr_type`.
 
 Here's an example of creating a function pointer type corresponding to C's
-:c:type:`void (*) (int, int, int)`:
+:expr:`void (*) (int, int, int)`:
 
 .. code-block:: c
 
@@ -78,3 +78,5 @@ Here's an example of creating a function pointer type corresponding to C's
 
    Generate a :c:type:`gcc_jit_type` for a function pointer with the
    given return type and parameters.
+
+   Each of `param_types` must be non-`void`; `return_type` may be `void`.

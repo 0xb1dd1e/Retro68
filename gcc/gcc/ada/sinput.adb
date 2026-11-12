@@ -6,23 +6,17 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
 -- ware  Foundation;  either version 3,  or (at your option) any later ver- --
 -- sion.  GNAT is distributed in the hope that it will be useful, but WITH- --
 -- OUT ANY WARRANTY;  without even the  implied warranty of MERCHANTABILITY --
--- or FITNESS FOR A PARTICULAR PURPOSE.                                     --
---                                                                          --
--- As a special exception under Section 7 of GPL version 3, you are granted --
--- additional permissions described in the GCC Runtime Library Exception,   --
--- version 3.1, as published by the Free Software Foundation.               --
---                                                                          --
--- You should have received a copy of the GNU General Public License and    --
--- a copy of the GCC Runtime Library Exception along with this program;     --
--- see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see    --
--- <http://www.gnu.org/licenses/>.                                          --
+-- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
+-- for  more details.  You should have  received  a copy of the GNU General --
+-- Public License  distributed with GNAT; see file COPYING3.  If not, go to --
+-- http://www.gnu.org/licenses for a complete copy of the license.          --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -32,13 +26,13 @@
 pragma Style_Checks (All_Checks);
 --  Subprograms not all in alpha order
 
-with Atree;    use Atree;
-with Debug;    use Debug;
-with Opt;      use Opt;
-with Output;   use Output;
-with Scans;    use Scans;
-with Tree_IO;  use Tree_IO;
-with Widechar; use Widechar;
+with Atree;          use Atree;
+with Debug;          use Debug;
+with Opt;            use Opt;
+with Output;         use Output;
+with Scans;          use Scans;
+with Sinfo.Nodes;    use Sinfo.Nodes;
+with Widechar;       use Widechar;
 
 with GNAT.Byte_Order_Mark; use GNAT.Byte_Order_Mark;
 
@@ -46,8 +40,8 @@ with System.Storage_Elements;
 with System.Memory;
 with System.WCh_Con; use System.WCh_Con;
 
-with Unchecked_Conversion;
-with Unchecked_Deallocation;
+with Ada.Unchecked_Conversion;
+with Ada.Unchecked_Deallocation;
 
 package body Sinput is
 
@@ -61,16 +55,16 @@ package body Sinput is
    --  used to construct improperly aliased pointer values.
 
    function To_Address is
-     new Unchecked_Conversion (Lines_Table_Ptr, Address);
+     new Ada.Unchecked_Conversion (Lines_Table_Ptr, Address);
 
    function To_Address is
-     new Unchecked_Conversion (Logical_Lines_Table_Ptr, Address);
+     new Ada.Unchecked_Conversion (Logical_Lines_Table_Ptr, Address);
 
    function To_Pointer is
-     new Unchecked_Conversion (Address, Lines_Table_Ptr);
+     new Ada.Unchecked_Conversion (Address, Lines_Table_Ptr);
 
    function To_Pointer is
-     new Unchecked_Conversion (Address, Logical_Lines_Table_Ptr);
+     new Ada.Unchecked_Conversion (Address, Logical_Lines_Table_Ptr);
 
    pragma Warnings (On);
 
@@ -249,9 +243,28 @@ package body Sinput is
          Append (Buf, ':');
          Append (Buf, Nat (Get_Logical_Line_Number (Ptr)));
 
+         --  For inherited pragmas, the location will be appended to a messsage
+         --  that already says "inherited"; also, we are not interested where
+         --  the pragma has been inherited. Progress directly to instantiation
+         --  locations.
+
+         if Comes_From_Inherited_Pragma (Ptr) then
+            Ptr := Instantiation_Location (Ptr);
+         end if;
+
          Ptr := Instantiation_Location (Ptr);
          exit when Ptr = No_Location;
-         Append (Buf, " instantiated at ");
+
+         --  Make sure that we don't mention "instantiated" when in fact the
+         --  location comes from other mechanisms.
+
+         pragma Assert (not Comes_From_Inherited_Pragma (Ptr));
+
+         if Comes_From_Inlined_Body (Ptr) then
+            Append (Buf, " inlined at ");
+         else
+            Append (Buf, " instantiated at ");
+         end if;
       end loop;
    end Build_Location_String;
 
@@ -261,6 +274,23 @@ package body Sinput is
       Build_Location_String (Buf, Loc);
       return +Buf;
    end Build_Location_String;
+
+   ---------------------
+   -- C_Source_Buffer --
+   ---------------------
+
+   function C_Source_Buffer (S : SFI) return C_Array is
+      Length : constant Integer :=
+        Integer (Source_Last (S) - Source_First (S));
+
+      Text : constant Source_Buffer_Ptr := Source_Text (S);
+
+      Pointer : constant access constant Character :=
+        (if Length = 0 then null else
+          Text (Text'First)'Access);
+   begin
+      return (Pointer, Length);
+   end C_Source_Buffer;
 
    -------------------
    -- Check_For_BOM --
@@ -324,17 +354,17 @@ package body Sinput is
    -- Clear_Source_File_Table --
    -----------------------------
 
-   procedure Free is new Unchecked_Deallocation
+   procedure Free is new Ada.Unchecked_Deallocation
      (Lines_Table_Type, Lines_Table_Ptr);
 
-   procedure Free is new Unchecked_Deallocation
+   procedure Free is new Ada.Unchecked_Deallocation
      (Logical_Lines_Table_Type, Logical_Lines_Table_Ptr);
 
    procedure Clear_Source_File_Table is
    begin
       for X in 1 .. Source_File.Last loop
          declare
-            S  : Source_File_Record renames Source_File.Table (X);
+            S : Source_File_Record renames Source_File.Table (X);
          begin
             if S.Instance = No_Instance_Id then
                Free_Source_Buffer (S.Source_Text);
@@ -383,12 +413,12 @@ package body Sinput is
       --  to first Unchecked_Convert to access-to-variable.
 
       function To_Source_Buffer_Ptr_Var is new
-        Unchecked_Conversion (Source_Buffer_Ptr, Source_Buffer_Ptr_Var);
+        Ada.Unchecked_Conversion (Source_Buffer_Ptr, Source_Buffer_Ptr_Var);
 
       Temp : Source_Buffer_Ptr_Var := To_Source_Buffer_Ptr_Var (Src);
 
       procedure Free_Ptr is new
-        Unchecked_Deallocation (Source_Buffer, Source_Buffer_Ptr_Var);
+        Ada.Unchecked_Deallocation (Source_Buffer, Source_Buffer_Ptr_Var);
    begin
       Free_Ptr (Temp);
       Src := null;
@@ -464,19 +494,6 @@ package body Sinput is
          return SFR.Logical_Lines_Table (L);
       end if;
    end Get_Logical_Line_Number;
-
-   ---------------------------------
-   -- Get_Logical_Line_Number_Img --
-   ---------------------------------
-
-   function Get_Logical_Line_Number_Img
-     (P : Source_Ptr) return String
-   is
-   begin
-      Name_Len := 0;
-      Add_Nat_To_Name_Buffer (Nat (Get_Logical_Line_Number (P)));
-      return Name_Buffer (1 .. Name_Len);
-   end Get_Logical_Line_Number_Img;
 
    ------------------------------
    -- Get_Physical_Line_Number --
@@ -555,7 +572,7 @@ package body Sinput is
                        or else S = Standard_ASCII_Location
                        or else S = System_Location;
 
-         pragma Assert ((S > No_Location) xor Special);
+         pragma Assert (S > No_Location xor Special);
          pragma Assert (Result in Source_File.First .. Source_File.Last);
 
          SFR : Source_File_Record renames Source_File.Table (Result);
@@ -625,7 +642,6 @@ package body Sinput is
    -------------------------
 
    function Instantiation_Depth (S : Source_Ptr) return Nat is
-      Sind  : Source_File_Index;
       Sval  : Source_Ptr;
       Depth : Nat;
 
@@ -634,8 +650,7 @@ package body Sinput is
       Depth := 0;
 
       loop
-         Sind := Get_Source_File_Index (Sval);
-         Sval := Instantiation (Sind);
+         Sval := Instantiation_Location (Sval);
          exit when Sval = No_Location;
          Depth := Depth + 1;
       end loop;
@@ -927,7 +942,7 @@ package body Sinput is
       pragma Import (Ada, Dope);
       use System.Storage_Elements;
       for Dope'Address use Src + System.Address'Size / 8;
-      procedure Free is new Unchecked_Deallocation (Dope_Rec, Dope_Ptr);
+      procedure Free is new Ada.Unchecked_Deallocation (Dope_Rec, Dope_Ptr);
    begin
       Free (Dope);
    end Free_Dope;
@@ -937,6 +952,8 @@ package body Sinput is
    ----------------
 
    procedure Sloc_Range (N : Node_Id; Min, Max : out Source_Ptr) is
+
+      Indx : constant Source_File_Index := Get_Source_File_Index (Sloc (N));
 
       function Process (N : Node_Id) return Traverse_Result;
       --  Process function for traversing the node tree
@@ -948,17 +965,22 @@ package body Sinput is
       -------------
 
       function Process (N : Node_Id) return Traverse_Result is
-         Orig : constant Node_Id := Original_Node (N);
+         Loc : constant Source_Ptr := Sloc (Original_Node (N));
 
       begin
-         if Sloc (Orig) < Min then
-            if Sloc (Orig) > No_Location then
-               Min := Sloc (Orig);
-            end if;
+         --  Skip nodes that may have been added during expansion and
+         --  that originate in other units, such as code for contracts
+         --  in subprogram bodies.
 
-         elsif Sloc (Orig) > Max then
-            if Sloc (Orig) > No_Location then
-               Max := Sloc (Orig);
+         if Get_Source_File_Index (Loc) /= Indx then
+            return Skip;
+         end if;
+
+         if Loc > No_Location then
+            if Loc < Min then
+               Min := Loc;
+            elsif Loc > Max then
+               Max := Loc;
             end if;
          end if;
 
@@ -969,7 +991,7 @@ package body Sinput is
 
    begin
       Min := Sloc (N);
-      Max := Sloc (N);
+      Max := Min;
       Traverse (N);
    end Sloc_Range;
 
@@ -1004,160 +1026,6 @@ package body Sinput is
       return Oldloc;
    end Top_Level_Location;
 
-   ---------------
-   -- Tree_Read --
-   ---------------
-
-   procedure Tree_Read is
-   begin
-      --  First we must free any old source buffer pointers
-
-      for J in Source_File.First .. Source_File.Last loop
-         declare
-            S : Source_File_Record renames Source_File.Table (J);
-         begin
-            if S.Instance = No_Instance_Id then
-               Free_Source_Buffer (S.Source_Text);
-
-               if S.Lines_Table /= null then
-                  Memory.Free (To_Address (S.Lines_Table));
-                  S.Lines_Table := null;
-               end if;
-
-               if S.Logical_Lines_Table /= null then
-                  Memory.Free (To_Address (S.Logical_Lines_Table));
-                  S.Logical_Lines_Table := null;
-               end if;
-
-            else
-               Free_Dope (S.Source_Text'Address);
-               S.Source_Text := null;
-            end if;
-         end;
-      end loop;
-
-      --  Read in source file table and instance table
-
-      Source_File.Tree_Read;
-      Instances.Tree_Read;
-
-      --  The pointers we read in there for the source buffer and lines table
-      --  pointers are junk. We now read in the actual data that is referenced
-      --  by these two fields.
-
-      for J in Source_File.First .. Source_File.Last loop
-         declare
-            S : Source_File_Record renames Source_File.Table (J);
-         begin
-            --  Normal case (non-instantiation)
-
-            if S.Instance = No_Instance_Id then
-               S.Lines_Table := null;
-               S.Logical_Lines_Table := null;
-               Alloc_Line_Tables (S, Int (S.Last_Source_Line));
-
-               for J in 1 .. S.Last_Source_Line loop
-                  Tree_Read_Int (Int (S.Lines_Table (J)));
-               end loop;
-
-               if S.Num_SRef_Pragmas /= 0 then
-                  for J in 1 .. S.Last_Source_Line loop
-                     Tree_Read_Int (Int (S.Logical_Lines_Table (J)));
-                  end loop;
-               end if;
-
-               --  Allocate source buffer and read in the data
-
-               declare
-                  T : constant Source_Buffer_Ptr_Var :=
-                    new Source_Buffer (S.Source_First .. S.Source_Last);
-               begin
-                  Tree_Read_Data (T (S.Source_First)'Address,
-                     Int (S.Source_Last) - Int (S.Source_First) + 1);
-                  S.Source_Text := T.all'Access;
-               end;
-
-            --  For the instantiation case, we do not read in any data. Instead
-            --  we share the data for the generic template entry. Since the
-            --  template always occurs first, we can safely refer to its data.
-
-            else
-               declare
-                  ST : Source_File_Record renames
-                         Source_File.Table (S.Template);
-
-               begin
-                  --  The lines tables are copied from the template entry
-
-                  S.Lines_Table := ST.Lines_Table;
-                  S.Logical_Lines_Table := ST.Logical_Lines_Table;
-
-                  --  The Source_Text of the instance is the same data as that
-                  --  of the template, but with different bounds.
-
-                  declare
-                     Dope : constant Dope_Ptr :=
-                       new Dope_Rec'(S.Source_First, S.Source_Last);
-                  begin
-                     S.Source_Text := ST.Source_Text;
-                     Set_Dope (S.Source_Text'Address, Dope);
-                  end;
-               end;
-            end if;
-         end;
-
-         Set_Source_File_Index_Table (J);
-      end loop;
-   end Tree_Read;
-
-   ----------------
-   -- Tree_Write --
-   ----------------
-
-   procedure Tree_Write is
-   begin
-      Source_File.Tree_Write;
-      Instances.Tree_Write;
-
-      --  The pointers we wrote out there for the source buffer and lines
-      --  table pointers are junk, we now write out the actual data that
-      --  is referenced by these two fields.
-
-      for J in Source_File.First .. Source_File.Last loop
-         declare
-            S : Source_File_Record renames Source_File.Table (J);
-
-         begin
-            --  For instantiations, there is nothing to do, since the data is
-            --  shared with the generic template. When the tree is read, the
-            --  pointers must be set, but no extra data needs to be written.
-            --  For the normal case, write out the data of the tables.
-
-            if S.Instance = No_Instance_Id then
-               --  Lines table
-
-               for J in 1 .. S.Last_Source_Line loop
-                  Tree_Write_Int (Int (S.Lines_Table (J)));
-               end loop;
-
-               --  Logical lines table if present
-
-               if S.Num_SRef_Pragmas /= 0 then
-                  for J in 1 .. S.Last_Source_Line loop
-                     Tree_Write_Int (Int (S.Logical_Lines_Table (J)));
-                  end loop;
-               end if;
-
-               --  Source buffer
-
-               Tree_Write_Data
-                 (S.Source_Text (S.Source_First)'Address,
-                   Int (S.Source_Last) - Int (S.Source_First) + 1);
-            end if;
-         end;
-      end loop;
-   end Tree_Write;
-
    --------------------
    -- Write_Location --
    --------------------
@@ -1175,7 +1043,7 @@ package body Sinput is
             SI : constant Source_File_Index := Get_Source_File_Index (P);
 
          begin
-            Write_Name (Debug_Source_Name (SI));
+            Write_Name_For_Debug (Debug_Source_Name (SI));
             Write_Char (':');
             Write_Int (Int (Get_Logical_Line_Number (P)));
             Write_Char (':');

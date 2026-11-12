@@ -4,7 +4,7 @@
  * Translated from MinGW Windows headers
  *
  * License: $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source: $(DRUNTIMESRC src/core/sys/windows/_psapi.d)
+ * Source: $(DRUNTIMESRC core/sys/windows/_psapi.d)
  */
 /* Comment from MinGW
  *   Process status API (PSAPI)
@@ -16,29 +16,29 @@ version (Windows):
 
 version (ANSI) {} else version = Unicode;
 
-private import core.sys.windows.w32api;
-private import core.sys.windows.winbase;
-private import core.sys.windows.windef;
+import core.sys.windows.w32api;
+import core.sys.windows.winbase;
+import core.sys.windows.windef;
 
 struct MODULEINFO {
     LPVOID lpBaseOfDll;
     DWORD SizeOfImage;
     LPVOID EntryPoint;
 }
-alias MODULEINFO* LPMODULEINFO;
+alias LPMODULEINFO = MODULEINFO*;
 
 struct PSAPI_WS_WATCH_INFORMATION {
     LPVOID FaultingPc;
     LPVOID FaultingVa;
 }
-alias PSAPI_WS_WATCH_INFORMATION* PPSAPI_WS_WATCH_INFORMATION;
+alias PPSAPI_WS_WATCH_INFORMATION = PSAPI_WS_WATCH_INFORMATION*;
 
 struct PSAPI_WS_WATCH_INFORMATION_EX {
     PSAPI_WS_WATCH_INFORMATION BasicInfo;
     ULONG_PTR FaultingThreadId;
     ULONG_PTR Flags;
 }
-alias PSAPI_WS_WATCH_INFORMATION_EX* PPSAPI_WS_WATCH_INFORMATION_EX;
+alias PPSAPI_WS_WATCH_INFORMATION_EX = PSAPI_WS_WATCH_INFORMATION_EX*;
 
 struct PROCESS_MEMORY_COUNTERS {
     DWORD cb;
@@ -52,7 +52,7 @@ struct PROCESS_MEMORY_COUNTERS {
     SIZE_T PagefileUsage;
     SIZE_T PeakPagefileUsage;
 }
-alias PROCESS_MEMORY_COUNTERS* PPROCESS_MEMORY_COUNTERS;
+alias PPROCESS_MEMORY_COUNTERS = PROCESS_MEMORY_COUNTERS*;
 
 struct PERFORMANCE_INFORMATION {
     DWORD cb;
@@ -70,7 +70,7 @@ struct PERFORMANCE_INFORMATION {
     DWORD ProcessCount;
     DWORD ThreadCount;
 }
-alias PERFORMANCE_INFORMATION* PPERFORMANCE_INFORMATION;
+alias PPERFORMANCE_INFORMATION = PERFORMANCE_INFORMATION*;
 
 struct ENUM_PAGE_FILE_INFORMATION {
     DWORD cb;
@@ -79,20 +79,16 @@ struct ENUM_PAGE_FILE_INFORMATION {
     SIZE_T TotalInUse;
     SIZE_T PeakUsage;
 }
-alias ENUM_PAGE_FILE_INFORMATION* PENUM_PAGE_FILE_INFORMATION;
+alias PENUM_PAGE_FILE_INFORMATION = ENUM_PAGE_FILE_INFORMATION*;
 
 /* application-defined callback function used with the EnumPageFiles()
  * http://windowssdk.msdn.microsoft.com/library/ms682627.aspx */
-version (Unicode) {
-    alias BOOL function(LPVOID, PENUM_PAGE_FILE_INFORMATION, LPCWSTR)
-      PENUM_PAGE_FILE_CALLBACK;
-} else {
-    alias BOOL function(LPVOID, PENUM_PAGE_FILE_INFORMATION, LPCSTR)
-      PENUM_PAGE_FILE_CALLBACK;
-}
+alias PENUM_PAGE_FILE_CALLBACKW = BOOL function(LPVOID, PENUM_PAGE_FILE_INFORMATION, LPCWSTR);
+alias PENUM_PAGE_FILE_CALLBACKA = BOOL function(LPVOID, PENUM_PAGE_FILE_INFORMATION, LPCSTR);
+
 
 // Grouped by application, not in alphabetical order.
-extern (Windows) {
+extern (Windows) nothrow @nogc {
     /* Process Information
      * http://windowssdk.msdn.microsoft.com/library/ms684870.aspx */
     BOOL EnumProcesses(DWORD*, DWORD, DWORD*); /* NT/2000/XP/Server2003/Vista/Longhorn */
@@ -137,24 +133,26 @@ extern (Windows) {
 
     /* Resources Information */
     BOOL GetPerformanceInfo(PPERFORMANCE_INFORMATION, DWORD); /* XP/Server2003/Vista/Longhorn */
-    BOOL EnumPageFilesW(PENUM_PAGE_FILE_CALLBACK, LPVOID); /* 2000/XP/Server2003/Vista/Longhorn */
-    BOOL EnumPageFilesA(PENUM_PAGE_FILE_CALLBACK, LPVOID); /* 2000/XP/Server2003/Vista/Longhorn */
+    BOOL EnumPageFilesW(PENUM_PAGE_FILE_CALLBACKW, LPVOID); /* 2000/XP/Server2003/Vista/Longhorn */
+    BOOL EnumPageFilesA(PENUM_PAGE_FILE_CALLBACKA, LPVOID); /* 2000/XP/Server2003/Vista/Longhorn */
 }
 
 version (Unicode) {
-    alias GetModuleBaseNameW GetModuleBaseName;
-    alias GetModuleFileNameExW GetModuleFileNameEx;
-    alias GetMappedFileNameW GetMappedFileName;
-    alias GetDeviceDriverBaseNameW GetDeviceDriverBaseName;
-    alias GetDeviceDriverFileNameW GetDeviceDriverFileName;
-    alias EnumPageFilesW EnumPageFiles;
-    alias GetProcessImageFileNameW GetProcessImageFileName;
+    alias PENUM_PAGE_FILE_CALLBACK = PENUM_PAGE_FILE_CALLBACKW;
+    alias GetModuleBaseName = GetModuleBaseNameW;
+    alias GetModuleFileNameEx = GetModuleFileNameExW;
+    alias GetMappedFileName = GetMappedFileNameW;
+    alias GetDeviceDriverBaseName = GetDeviceDriverBaseNameW;
+    alias GetDeviceDriverFileName = GetDeviceDriverFileNameW;
+    alias EnumPageFiles = EnumPageFilesW;
+    alias GetProcessImageFileName = GetProcessImageFileNameW;
 } else {
-    alias GetModuleBaseNameA GetModuleBaseName;
-    alias GetModuleFileNameExA GetModuleFileNameEx;
-    alias GetMappedFileNameA GetMappedFileName;
-    alias GetDeviceDriverBaseNameA GetDeviceDriverBaseName;
-    alias GetDeviceDriverFileNameA GetDeviceDriverFileName;
-    alias EnumPageFilesA EnumPageFiles;
-    alias GetProcessImageFileNameA GetProcessImageFileName;
+    alias PENUM_PAGE_FILE_CALLBACK = PENUM_PAGE_FILE_CALLBACKA;
+    alias GetModuleBaseName = GetModuleBaseNameA;
+    alias GetModuleFileNameEx = GetModuleFileNameExA;
+    alias GetMappedFileName = GetMappedFileNameA;
+    alias GetDeviceDriverBaseName = GetDeviceDriverBaseNameA;
+    alias GetDeviceDriverFileName = GetDeviceDriverFileNameA;
+    alias EnumPageFiles = EnumPageFilesA;
+    alias GetProcessImageFileName = GetProcessImageFileNameA;
 }

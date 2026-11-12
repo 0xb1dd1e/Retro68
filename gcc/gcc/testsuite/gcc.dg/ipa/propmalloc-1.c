@@ -1,5 +1,6 @@
 /* { dg-do compile } */
 /* { dg-options "-O2 -fdump-ipa-pure-const-details -fdelete-null-pointer-checks" } */
+/* { dg-skip-if "" keeps_null_pointer_checks } */
 
 __attribute__((noinline, no_icf, used))
 static void *f(__SIZE_TYPE__ n)
@@ -17,5 +18,5 @@ static void *bar(__SIZE_TYPE__ n)
   return p;
 }
 
-/* { dg-final { scan-ipa-dump "Function f found to be malloc" "pure-const" } } */
-/* { dg-final { scan-ipa-dump "Function bar found to be malloc" "pure-const" } } */
+/* { dg-final { scan-ipa-dump "Function f/\[0-9+\]+ found to be malloc" "pure-const" } } */
+/* { dg-final { scan-ipa-dump "Function bar/\[0-9+\]+ found to be malloc" "pure-const" } } */

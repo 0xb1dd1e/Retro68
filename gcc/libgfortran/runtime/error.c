@@ -1,4 +1,4 @@
-/* Copyright (C) 2002-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2002-2026 Free Software Foundation, Inc.
    Contributed by Andy Vaught
 
 This file is part of the GNU Fortran runtime library (libgfortran).
@@ -142,15 +142,15 @@ gf_vsnprintf (char *str, size_t size, const char *format, va_list ap)
 {
   int written;
 
-  written = vsprintf(buffer, format, ap);
+  written = vsprintf(str, format, ap);
 
   if (written >= size - 1)
     {
-      /* The error message was longer than our buffer.  Ouch.  Because
+      /* The error message was longer than the string size.  Ouch.  Because
 	 we may have messed up things badly, report the error and
 	 quit.  */
-#define ERROR_MESSAGE "Internal error: buffer overrun in gf_vsnprintf()\n"
-      write (STDERR_FILENO, buffer, size - 1);
+#define ERROR_MESSAGE "Internal error: string overrun in gf_vsnprintf()\n"
+      write (STDERR_FILENO, str, size - 1);
       write (STDERR_FILENO, ERROR_MESSAGE, strlen (ERROR_MESSAGE));
       sys_abort ();
 #undef ERROR_MESSAGE
@@ -219,37 +219,6 @@ exit_error (int status)
 }
 
 
-
-/* gfc_xtoa()-- Integer to hexadecimal conversion.  */
-
-const char *
-gfc_xtoa (GFC_UINTEGER_LARGEST n, char *buffer, size_t len)
-{
-  int digit;
-  char *p;
-
-  assert (len >= GFC_XTOA_BUF_SIZE);
-
-  if (n == 0)
-    return "0";
-
-  p = buffer + GFC_XTOA_BUF_SIZE - 1;
-  *p = '\0';
-
-  while (n != 0)
-    {
-      digit = n & 0xF;
-      if (digit > 9)
-	digit += 'A' - '0' - 10;
-
-      *--p = '0' + digit;
-      n >>= 4;
-    }
-
-  return p;
-}
-
-
 /* Hopefully thread-safe wrapper for a strerror() style function.  */
 
 char *
@@ -272,7 +241,7 @@ gf_strerror (int errnum,
     p = strerror (errnum);
   return p;
 #elif defined(HAVE_STRERROR_R)
-#ifdef HAVE_USELOCALE
+#ifdef HAVE_POSIX_2008_LOCALE
   /* Some targets (Darwin at least) have the POSIX 2008 extended
      locale functions, but not strerror_l.  So reset the per-thread
      locale here.  */
@@ -403,7 +372,51 @@ os_error (const char *message)
   estr_writev (iov, 5);
   exit_error (1);
 }
-iexport(os_error);
+iexport(os_error); /* TODO, DEPRECATED, ABI: Should not be exported
+		      anymore when bumping so version.  */
+
+
+/* Improved version of os_error with a printf style format string and
+   a locus.  */
+
+void
+os_error_at (const char *where, const char *message, ...)
+{
+  char errmsg[STRERR_MAXSZ];
+  char buffer[STRERR_MAXSZ];
+  struct iovec iov[6];
+  va_list ap;
+  recursion_check ();
+  int written;
+
+  iov[0].iov_base = (char*) where;
+  iov[0].iov_len = strlen (where);
+
+  iov[1].iov_base = (char*) ": ";
+  iov[1].iov_len = strlen (iov[1].iov_base);
+
+  va_start (ap, message);
+  written = vsnprintf (buffer, STRERR_MAXSZ, message, ap);
+  va_end (ap);
+  iov[2].iov_base = buffer;
+  if (written >= 0)
+    iov[2].iov_len = written;
+  else
+    iov[2].iov_len = 0;
+
+  iov[3].iov_base = (char*) ": ";
+  iov[3].iov_len = strlen (iov[3].iov_base);
+
+  iov[4].iov_base = gf_strerror (errno, errmsg, STRERR_MAXSZ);
+  iov[4].iov_len = strlen (iov[4].iov_base);
+
+  iov[5].iov_base = (char*) "\n";
+  iov[5].iov_len = 1;
+
+  estr_writev (iov, 6);
+  exit_error (1);
+}
+iexport(os_error_at);
 
 
 /* void runtime_error()-- These are errors associated with an
@@ -614,6 +627,14 @@ translate_error (int code)
 
     case LIBERROR_INQUIRE_INTERNAL_UNIT:
       p = "Inquire statement identifies an internal file";
+      break;
+
+    case LIBERROR_BAD_WAIT_ID:
+      p = "Bad ID in WAIT statement";
+      break;
+
+    case LIBERROR_RECURSIVE_IO:
+      p = "Recursive I/O not allowed";
       break;
 
     default:

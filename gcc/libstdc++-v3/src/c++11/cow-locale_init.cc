@@ -1,4 +1,4 @@
-// Copyright (C) 2014-2019 Free Software Foundation, Inc.
+// Copyright (C) 2014-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -125,6 +125,7 @@ namespace
     _M_init_facet_unchecked(new (&messages_w) std::messages<wchar_t>(1));
 #endif
 
+    // The caches must be populated last, after creating all facets.
     _M_caches[numpunct<char>::id._M_id()] = __npc;
     _M_caches[moneypunct<char, false>::id._M_id()] = __mpcf;
     _M_caches[moneypunct<char, true>::id._M_id()] = __mpct;
@@ -136,8 +137,9 @@ namespace
   }
 
   void
-  locale::_Impl::_M_init_extra(void* cloc, void* clocm,
-                               const char* __s, const char* __smon)
+  locale::_Impl::_M_init_extra(void* cloc, [[maybe_unused]] void* clocm,
+			       const char* __s,
+			       [[maybe_unused]] const char* __smon)
   {
     auto& __cloc = *static_cast<__c_locale*>(cloc);
 

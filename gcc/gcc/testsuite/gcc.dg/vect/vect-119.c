@@ -1,3 +1,5 @@
+/* Disabling epilogues until we find a better way to deal with scans.  */
+/* { dg-additional-options "--param vect-epilogues-nomask=0 -fdump-tree-optimized-details-blocks" } */
 /* { dg-do compile } */
 /* { dg-require-effective-target vect_int } */
 
@@ -26,3 +28,4 @@ unsigned int foo (const unsigned int x[OUTER][INNER][2])
 }
 
 /* { dg-final { scan-tree-dump-times "Detected interleaving load of size 2" 1 "vect" } } */
+/* { dg-final { scan-tree-dump-not "Invalid sum" "optimized" } } */

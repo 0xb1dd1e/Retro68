@@ -1,3 +1,5 @@
+/* Disabling epilogues until we find a better way to deal with scans.  */
+/* { dg-additional-options "--param vect-epilogues-nomask=0" } */
 /* { dg-require-effective-target vect_long } */
 /* { dg-require-effective-target vect_shift } */
 /* { dg-additional-options "-fno-tree-scev-cprop" } */
@@ -46,6 +48,7 @@ main (void)
   if (ret != MAX - 1)
     abort ();
 
+#pragma GCC novector
   for (i=0; i<MAX; i++)
     {
       __asm__ volatile ("");
@@ -55,4 +58,4 @@ main (void)
 }
 
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect" } } */
-/* { dg-final { scan-tree-dump-times "vec_stmt_relevant_p: stmt live but not relevant" 1 "vect" } } */
+/* { dg-final { scan-tree-dump-times "vec_stmt_relevant_p: stmt live but not relevant(?:(?!Analysis failed).)*Analysis succeeded" 1 "vect" } } */

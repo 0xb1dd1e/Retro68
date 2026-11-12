@@ -29,11 +29,12 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <fstream>
-#include <sstream>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
+#include <string>
 
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/lexical_cast.hpp>
 
 #include "ResourceFork.h"
 #include "BinaryIO.h"
@@ -97,8 +98,8 @@ Object::Object(string input)
             if(boost::algorithm::starts_with(name,".rela."))
             {
                 string progbitsName = name.substr(5);
-                assert(sections.find(progbitsName) != sections.end());
-                sections[progbitsName]->SetRela(scn);
+                if(sections.find(progbitsName) != sections.end())
+                    sections[progbitsName]->SetRela(scn);
             }
         }
         if(shdr.sh_type == SHT_PROGBITS && (shdr.sh_flags & SHF_ALLOC))
@@ -218,6 +219,8 @@ void Object::SingleSegmentApp(string output)
     file.creator = ResType("????");
     file.type = ResType("APPL");
 
+    file.data = "Built using Retro68.";
+
     file.write(output);
 }
 
@@ -315,7 +318,12 @@ void Object::MultiSegmentApp(string output, SegmentMap& segmentMap)
 
         string exceptionInfoMarker = "__EH_FRAME_BEGIN__";
         if(id != 1)
-            exceptionInfoMarker += boost::lexical_cast<string>(id);
+        {
+            std::ostringstream ss;
+            ss << std::setw(5) << std::setfill('0') << id;
+            const std::string zero_padded_id = ss.str();
+            exceptionInfoMarker += zero_padded_id;
+        }
         int exceptionInfoSym = symtab->FindSym(exceptionInfoMarker);
         if(exceptionInfoSym != -1)
         {
@@ -395,6 +403,8 @@ void Object::MultiSegmentApp(string output, SegmentMap& segmentMap)
 
     file.creator = ResType("????");
     file.type = ResType("APPL");
+
+    file.data = "Built using Retro68,";
 
     file.write(output);
 }

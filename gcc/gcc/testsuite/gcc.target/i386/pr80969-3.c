@@ -5,8 +5,6 @@
 
 /* Test with alloca (and DRAP).  */
 
-#include <alloca.h>
-
 int a[56];
 volatile int b = -12345;
 volatile const int d = 42;
@@ -19,7 +17,7 @@ void (*volatile const foo_noinfo)(int *, int, int) = foo;
 
 int main (int argc, char *argv[]) {
   int c;
-  int *e = alloca (d);
+  int *e = __builtin_alloca (d);
   foo_noinfo (e, d, 0);
   for (; b; b++) {
     c = b;

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -29,14 +29,24 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  Integer exponentiation (checks on)
+--  This package implements Integer exponentiation (checks on)
 
-package System.Exp_Int is
-   pragma Pure;
+with System.Expont;
 
-   function Exp_Integer
-     (Left  : Integer;
-      Right : Natural)
-      return  Integer;
+package System.Exp_Int
+  with SPARK_Mode
+is
+   package Expont_Integer is new Expont (Integer);
+
+   function Exp_Integer (Left : Integer; Right : Natural) return Integer
+     renames Expont_Integer.Expon;
+   --  Return the power of ``Left`` by ``Right`` where ``Left`` is an
+   --  Integer.
+   --
+   --  This function is implemented using the standard logarithmic approach:
+   --  ``Right`` gets shifted right testing successive low order bits, and
+   --  ``Left`` is raised to the next power of 2.
+   --
+   --  In case of overflow, Constraint_Error is raised.
 
 end System.Exp_Int;

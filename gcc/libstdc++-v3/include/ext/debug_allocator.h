@@ -1,6 +1,6 @@
 // Allocators -*- C++ -*-
 
-// Copyright (C) 2001-2019 Free Software Foundation, Inc.
+// Copyright (C) 2001-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -42,15 +42,15 @@
 #ifndef _DEBUG_ALLOCATOR_H
 #define _DEBUG_ALLOCATOR_H 1
 
+#include <bits/requires_hosted.h> // GNU extensions are currently omitted
+
 #include <stdexcept>
-#include <bits/functexcept.h>
+#include <bits/stdexcept_throw.h>
 #include <ext/alloc_traits.h>
 
 namespace __gnu_cxx _GLIBCXX_VISIBILITY(default)
 {
 _GLIBCXX_BEGIN_NAMESPACE_VERSION
-
-  using std::size_t;
 
   /**
    *  @brief  A meta-allocator with debugging bits.
@@ -87,11 +87,12 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       // _M_extra is the number of objects that correspond to the
       // extra space where debug information is stored.
       size_type 		_M_extra;
-      
+
       _Alloc			_M_allocator;
 
       template<typename _Alloc2,
-	       typename = typename _Alloc2::template rebind<value_type>::other>
+	       typename = typename __alloc_traits<_Alloc2>::template
+			   rebind<value_type>::other>
 	struct __convertible
 	{ };
 
@@ -103,8 +104,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
       size_type _S_extra()
       {
-	const size_t __obj_size = sizeof(value_type);
-	return (sizeof(size_type) + __obj_size - 1) / __obj_size; 
+	const std::size_t __obj_size = sizeof(value_type);
+	return (sizeof(size_type) + __obj_size - 1) / __obj_size;
       }
 
     public:
@@ -113,15 +114,15 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       template<typename _Alloc2>
 	debug_allocator(const debug_allocator<_Alloc2>& __a2,
 			typename __convertible<_Alloc2>::__type = 0)
-	: _M_allocator(__a2._M_allocator), _M_extra(_S_extra()) { }
+	: _M_extra(_S_extra()), _M_allocator(__a2._M_allocator)  { }
 
       debug_allocator(const _Alloc& __a)
-      : _M_allocator(__a), _M_extra(_S_extra()) { }
+      : _M_extra(_S_extra()), _M_allocator(__a)  { }
 
       _GLIBCXX_NODISCARD pointer
       allocate(size_type __n)
       {
-        pointer __res = _M_allocator.allocate(__n + _M_extra);      
+        pointer __res = _M_allocator.allocate(__n + _M_extra);
 	size_type* __ps = reinterpret_cast<size_type*>(__res);
 	*__ps = __n;
         return __res + _M_extra;
@@ -180,11 +181,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 		   const debug_allocator<_Alloc2>& __rhs) _GLIBCXX_NOTHROW
 	{ return __lhs._M_allocator == debug_allocator(__rhs)._M_allocator; }
 
+#if __cpp_impl_three_way_comparison < 201907L
       template<typename _Alloc2>
 	friend bool
 	operator!=(const debug_allocator& __lhs,
 		   const debug_allocator<_Alloc2>& __rhs) _GLIBCXX_NOTHROW
 	{ return !(__lhs == __rhs); }
+#endif
     };
 
 _GLIBCXX_END_NAMESPACE_VERSION

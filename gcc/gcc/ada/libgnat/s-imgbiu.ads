@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -30,20 +30,26 @@
 ------------------------------------------------------------------------------
 
 --  Contains the routine for computing the image in based format of signed and
---  unsigned integers whose size <= Integer'Size for use by Text_IO.Integer_IO
---  and Text_IO.Modular_IO.
+--  unsigned integers up to ``Integer`` for use by ``Ada.Text_IO.Integer_IO``
+--  and ``Ada.Text_IO.Modular_IO``.
 
+with System.Image_B;
 with System.Unsigned_Types;
 
 package System.Img_BIU is
    pragma Pure;
+
+   subtype Unsigned is Unsigned_Types.Unsigned;
+
+   package Impl is new Image_B (Integer, Unsigned);
 
    procedure Set_Image_Based_Integer
      (V : Integer;
       B : Natural;
       W : Integer;
       S : out String;
-      P : in out Natural);
+      P : in out Natural)
+     renames Impl.Set_Image_Based_Integer;
    --  Sets the signed image of V in based format, using base value B (2..16)
    --  starting at S (P + 1), updating P to point to the last character stored.
    --  The image includes a leading minus sign if necessary, but no leading
@@ -55,11 +61,12 @@ package System.Img_BIU is
    --  checks off.
 
    procedure Set_Image_Based_Unsigned
-     (V : System.Unsigned_Types.Unsigned;
+     (V : Unsigned;
       B : Natural;
       W : Integer;
       S : out String;
-      P : in out Natural);
+      P : in out Natural)
+     renames Impl.Set_Image_Based_Unsigned;
    --  Sets the unsigned image of V in based format, using base value B (2..16)
    --  starting at S (P + 1), updating P to point to the last character stored.
    --  The image includes no leading spaces unless W is positive, in which case

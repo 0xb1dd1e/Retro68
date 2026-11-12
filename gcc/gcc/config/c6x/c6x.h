@@ -1,5 +1,5 @@
 /* Target Definitions for TI C6X.
-   Copyright (C) 2010-2019 Free Software Foundation, Inc.
+   Copyright (C) 2010-2026 Free Software Foundation, Inc.
    Contributed by Andrew Jenner <andrew@codesourcery.com>
    Contributed by Bernd Schmidt <bernds@codesourcery.com>
 
@@ -259,12 +259,7 @@ enum reg_class
 #define CROSS_OPERANDS(X0,X1) \
   (A_REG_P (X0) == A_REG_P (X1) ? CROSS_N : CROSS_Y)
 
-#define REGNO_REG_CLASS(reg) \
-    ((reg) >= REG_A1 && (reg) <= REG_A2 ? PREDICATE_A_REGS	\
-     : (reg) == REG_A0 && TARGET_INSNS_64 ? PREDICATE_A_REGS	\
-     : (reg) >= REG_B0 && (reg) <= REG_B2 ? PREDICATE_B_REGS	\
-     : A_REGNO_P (reg) ? NONPREDICATE_A_REGS			\
-     : call_used_regs[reg] ? CALL_USED_B_REGS : B_REGS)
+#define REGNO_REG_CLASS(reg) c6x_regno_reg_class (reg)
 
 #define BASE_REG_CLASS ALL_REGS
 #define INDEX_REG_CLASS ALL_REGS
@@ -449,11 +444,9 @@ struct GTY(()) machine_function
 #define TARG_VEC_PERMUTE_COST        1
 #endif
 
-/* ttype entries (the only interesting data references used) are
-   sb-relative got-indirect (aka .ehtype).  */
+/* .ehtype ttype entries are sb-relative.  */
 #define ASM_PREFERRED_EH_DATA_FORMAT(code, data) \
-  (((code) == 0 && (data) == 1) ? (DW_EH_PE_datarel | DW_EH_PE_indirect) \
-				: DW_EH_PE_absptr)
+  (((code) == 0 && (data) == 1) ? DW_EH_PE_datarel : DW_EH_PE_absptr)
 
 /* This should be the same as the definition in elfos.h, plus the call
    to output special unwinding directives.  */
@@ -464,7 +457,7 @@ struct GTY(()) machine_function
       c6x_output_file_unwind (FILE);				\
       ASM_OUTPUT_TYPE_DIRECTIVE (FILE, NAME, "function");	\
       ASM_DECLARE_RESULT (FILE, DECL_RESULT (DECL));		\
-      ASM_OUTPUT_LABEL (FILE, NAME);				\
+      ASM_OUTPUT_FUNCTION_LABEL (FILE, NAME, DECL);		\
     }								\
   while (0)
 
@@ -508,9 +501,9 @@ struct GTY(()) machine_function
     "B24", "B25", "B26", "B27", "B28", "B29", "B30", "B31",	\
     "FP", "ARGP", "ILC" }
 
-#define DBX_REGISTER_NUMBER(N) (dbx_register_map[(N)])
+#define DEBUGGER_REGNO(N) (debugger_register_map[(N)])
 
-extern unsigned const dbx_register_map[FIRST_PSEUDO_REGISTER];
+extern unsigned const debugger_register_map[FIRST_PSEUDO_REGISTER];
 
 #define FINAL_PRESCAN_INSN c6x_final_prescan_insn
 

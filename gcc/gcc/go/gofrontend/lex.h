@@ -12,6 +12,12 @@
 #include "operator.h"
 #include "go-linemap.h"
 
+#if __GNUC__ > 3 || (__GNUC__ == 3 && __GNUC_MINOR__ >= 4)
+# define GO_ATTRIBUTE_UNUSED __attribute__ ((__unused__))
+#else
+# define GO_ATTRIBUTE_UNUSED
+#endif
+
 struct Unicode_range;
 
 // The keywords.  These must be in sorted order, other than
@@ -380,7 +386,7 @@ class Lex
 
   struct Linkname
   {
-    std::string ext_name;	// External name.
+    std::string ext_name;	// External name; empty to just export.
     bool is_exported;		// Whether the internal name is exported.
     Location loc;		// Location of go:linkname directive.
 
@@ -404,6 +410,27 @@ class Lex
     this->linknames_ = NULL;
     return ret;
   }
+
+  // Return whether there are any current go:embed patterns.
+  bool
+  has_embeds() const
+  { return !this->embeds_.empty(); }
+
+  // If there are any go:embed patterns seen so far, store them in
+  // *EMBEDS and clear the saved set.  *EMBEDS must be an empty
+  // vector.
+  void
+  get_and_clear_embeds(std::vector<std::string>* embeds)
+  {
+    go_assert(embeds->empty());
+    std::swap(*embeds, this->embeds_);
+  }
+
+  // Clear any go:embed patterns seen so far.  This is used for
+  // erroneous cases.
+  void
+  clear_embeds()
+  { this->embeds_.clear(); }
 
   // Return whether the identifier NAME should be exported.  NAME is a
   // mangled name which includes only ASCII characters.
@@ -462,6 +489,9 @@ class Lex
   static bool
   is_hex_digit(char);
 
+  static bool
+  is_base_digit(int base, char);
+
   static unsigned char
   octal_value(char c)
   { return c - '0'; }
@@ -482,10 +512,13 @@ class Lex
   gather_identifier();
 
   static bool
-  could_be_exponent(const char*, const char*);
+  could_be_exponent(int base, const char*, const char*);
 
   Token
   gather_number();
+
+  void
+  skip_exponent();
 
   Token
   gather_character();
@@ -530,8 +563,11 @@ class Lex
   void
   skip_cpp_comment();
 
+  void
+  gather_embed(const char*, const char*);
+
   // The input file name.
-  const char* input_file_name_;
+  const char* input_file_name_ GO_ATTRIBUTE_UNUSED;
   // The input file.
   FILE* input_file_;
   // The object used to keep track of file names and line numbers.
@@ -555,6 +591,8 @@ class Lex
   std::string extern_;
   // The list of //go:linkname comments, if any.
   Linknames* linknames_;
+  // The list of //go:embed patterns, if any.
+  std::vector<std::string> embeds_;
 };
 
 #endif // !defined(GO_LEX_H)

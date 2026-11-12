@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -29,14 +29,27 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  Long_Long_Integer exponentiation (checks off)
+--  This package implements Long_Long_Integer exponentiation (checks off)
 
-package System.Exn_LLI is
-   pragma Pure;
+with System.Exponn;
+
+package System.Exn_LLI
+  with SPARK_Mode
+is
+
+   package Exponn_Integer is new Exponn (Long_Long_Integer);
 
    function Exn_Long_Long_Integer
-     (Left  : Long_Long_Integer;
-      Right : Natural)
-      return  Long_Long_Integer;
+     (Left : Long_Long_Integer; Right : Natural) return Long_Long_Integer
+     renames Exponn_Integer.Expon;
+   --  Return the power of ``Left`` by ``Right`` where ``Left`` is a
+   --  Long_Long_Integer. No check is made on the validity of the result.
+   --
+   --  This function is implemented using the standard logarithmic approach:
+   --  ``Right`` gets shifted right testing successive low order bits, and
+   --  ``Left`` is raised to the next power of 2.
+   --
+   --  As checks aren't enabled for this service, the result is not defined
+   --  in case of overflow.
 
 end System.Exn_LLI;

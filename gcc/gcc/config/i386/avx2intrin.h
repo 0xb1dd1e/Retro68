@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2011-2026 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -258,7 +258,7 @@ extern __inline __m256i
 __attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
 _mm256_cmpgt_epi8 (__m256i __A, __m256i __B)
 {
-  return (__m256i) ((__v32qi)__A > (__v32qi)__B);
+  return (__m256i) ((__v32qs)__A > (__v32qs)__B);
 }
 
 extern __inline __m256i
@@ -949,6 +949,9 @@ _mm256_broadcastsi128_si256 (__m128i __X)
 {
   return (__m256i) __builtin_ia32_vbroadcastsi256 ((__v2di)__X);
 }
+
+#define _mm_broadcastsi128_si256(X) _mm256_broadcastsi128_si256(X)
+#define _mm_broadcastsd_pd(X) _mm_movedup_pd(X)
 
 #ifdef __OPTIMIZE__
 extern __inline __m128i
@@ -1670,235 +1673,594 @@ _mm256_mask_i64gather_epi32 (__m128i __src, int const *__base,
 #else /* __OPTIMIZE__ */
 #define _mm_i32gather_pd(BASE, INDEX, SCALE)				\
   (__m128d) __builtin_ia32_gathersiv2df ((__v2df) _mm_setzero_pd (),	\
-					 (double const *)BASE,		\
-					 (__v4si)(__m128i)INDEX,	\
-					 (__v2df)_mm_set1_pd(		\
-					   (double)(long long int) -1), \
-					 (int)SCALE)
+					 (double const *) (BASE),	\
+					 (__v4si)(__m128i) (INDEX),	\
+					 (__v2df)			\
+					 _mm_cmpeq_pd (_mm_setzero_pd (),\
+						       _mm_setzero_pd ()),\
+					 (int) (SCALE))
 
-#define _mm_mask_i32gather_pd(SRC, BASE, INDEX, MASK, SCALE)	 \
-  (__m128d) __builtin_ia32_gathersiv2df ((__v2df)(__m128d)SRC,	 \
-					 (double const *)BASE,	 \
-					 (__v4si)(__m128i)INDEX, \
-					 (__v2df)(__m128d)MASK,	 \
-					 (int)SCALE)
+#define _mm_mask_i32gather_pd(SRC, BASE, INDEX, MASK, SCALE)	 	\
+  (__m128d) __builtin_ia32_gathersiv2df ((__v2df)(__m128d) (SRC),	\
+					 (double const *) (BASE),	\
+					 (__v4si)(__m128i) (INDEX),	\
+					 (__v2df)(__m128d) (MASK),	\
+					 (int) (SCALE))
 
 #define _mm256_i32gather_pd(BASE, INDEX, SCALE)				\
   (__m256d) __builtin_ia32_gathersiv4df ((__v4df) _mm256_setzero_pd (),	\
-					 (double const *)BASE,		\
-					 (__v4si)(__m128i)INDEX,	\
-					 (__v4df)_mm256_set1_pd(	\
-					   (double)(long long int) -1), \
-					 (int)SCALE)
+					 (double const *) (BASE),	\
+					 (__v4si)(__m128i) (INDEX),	\
+					 (__v4df)			\
+					 _mm256_cmp_pd (_mm256_setzero_pd (),\
+							_mm256_setzero_pd (),\
+							_CMP_EQ_OQ),	\
+					 (int) (SCALE))
 
-#define _mm256_mask_i32gather_pd(SRC, BASE, INDEX, MASK, SCALE)	 \
-  (__m256d) __builtin_ia32_gathersiv4df ((__v4df)(__m256d)SRC,	 \
-					 (double const *)BASE,	 \
-					 (__v4si)(__m128i)INDEX, \
-					 (__v4df)(__m256d)MASK,	 \
-					 (int)SCALE)
+#define _mm256_mask_i32gather_pd(SRC, BASE, INDEX, MASK, SCALE)		\
+  (__m256d) __builtin_ia32_gathersiv4df ((__v4df)(__m256d) (SRC),	\
+					 (double const *) (BASE),	\
+					 (__v4si)(__m128i) (INDEX),	\
+					 (__v4df)(__m256d) (MASK),	\
+					 (int) (SCALE))
 
 #define _mm_i64gather_pd(BASE, INDEX, SCALE)				\
   (__m128d) __builtin_ia32_gatherdiv2df ((__v2df) _mm_setzero_pd (),	\
-					 (double const *)BASE,		\
-					 (__v2di)(__m128i)INDEX,	\
-					 (__v2df)_mm_set1_pd(		\
-					   (double)(long long int) -1), \
-					 (int)SCALE)
+					 (double const *) (BASE),	\
+					 (__v2di)(__m128i) (INDEX),	\
+					 (__v2df)			\
+					 _mm_cmpeq_pd (_mm_setzero_pd (),\
+						       _mm_setzero_pd ()),\
+					 (int) (SCALE))
 
-#define _mm_mask_i64gather_pd(SRC, BASE, INDEX, MASK, SCALE)	 \
-  (__m128d) __builtin_ia32_gatherdiv2df ((__v2df)(__m128d)SRC,	 \
-					 (double const *)BASE,	 \
-					 (__v2di)(__m128i)INDEX, \
-					 (__v2df)(__m128d)MASK,	 \
-					 (int)SCALE)
+#define _mm_mask_i64gather_pd(SRC, BASE, INDEX, MASK, SCALE)		\
+  (__m128d) __builtin_ia32_gatherdiv2df ((__v2df)(__m128d) (SRC),	\
+					 (double const *) (BASE),	\
+					 (__v2di)(__m128i) (INDEX),	\
+					 (__v2df)(__m128d) (MASK),	\
+					 (int) (SCALE))
 
 #define _mm256_i64gather_pd(BASE, INDEX, SCALE)				\
   (__m256d) __builtin_ia32_gatherdiv4df ((__v4df) _mm256_setzero_pd (),	\
-					 (double const *)BASE,		\
-					 (__v4di)(__m256i)INDEX,	\
-					 (__v4df)_mm256_set1_pd(	\
-					   (double)(long long int) -1), \
-					 (int)SCALE)
+					 (double const *) (BASE),	\
+					 (__v4di)(__m256i) (INDEX),	\
+					 (__v4df)			\
+					 _mm256_cmp_pd (_mm256_setzero_pd (),\
+							_mm256_setzero_pd (),\
+							_CMP_EQ_OQ),	\
+					 (int) (SCALE))
 
-#define _mm256_mask_i64gather_pd(SRC, BASE, INDEX, MASK, SCALE)	 \
-  (__m256d) __builtin_ia32_gatherdiv4df ((__v4df)(__m256d)SRC,	 \
-					 (double const *)BASE,	 \
-					 (__v4di)(__m256i)INDEX, \
-					 (__v4df)(__m256d)MASK,	 \
-					 (int)SCALE)
+#define _mm256_mask_i64gather_pd(SRC, BASE, INDEX, MASK, SCALE)	 	\
+  (__m256d) __builtin_ia32_gatherdiv4df ((__v4df)(__m256d) (SRC),	\
+					 (double const *) (BASE),	\
+					 (__v4di)(__m256i) (INDEX),	\
+					 (__v4df)(__m256d) (MASK),	\
+					 (int) (SCALE))
 
 #define _mm_i32gather_ps(BASE, INDEX, SCALE)				\
   (__m128) __builtin_ia32_gathersiv4sf ((__v4sf) _mm_setzero_ps (),	\
-					(float const *)BASE,		\
-					(__v4si)(__m128i)INDEX,		\
-					_mm_set1_ps ((float)(int) -1),	\
-					(int)SCALE)
+					(float const *) (BASE),		\
+					(__v4si)(__m128i) (INDEX),	\
+					(__v4sf)			\
+					_mm_cmpeq_ps (_mm_setzero_ps (),\
+						      _mm_setzero_ps ()),\
+					(int) (SCALE))
 
-#define _mm_mask_i32gather_ps(SRC, BASE, INDEX, MASK, SCALE)	 \
-  (__m128) __builtin_ia32_gathersiv4sf ((__v4sf)(__m128d)SRC,	 \
-					(float const *)BASE,	 \
-					(__v4si)(__m128i)INDEX,	 \
-					(__v4sf)(__m128d)MASK,	 \
-					(int)SCALE)
+#define _mm_mask_i32gather_ps(SRC, BASE, INDEX, MASK, SCALE)	 	\
+  (__m128) __builtin_ia32_gathersiv4sf ((__v4sf)(__m128) (SRC),		\
+					(float const *) (BASE),		\
+					(__v4si)(__m128i) (INDEX),	\
+					(__v4sf)(__m128) (MASK),	\
+					(int) (SCALE))
 
-#define _mm256_i32gather_ps(BASE, INDEX, SCALE)			       \
-  (__m256) __builtin_ia32_gathersiv8sf ((__v8sf) _mm256_setzero_ps (), \
-					(float const *)BASE,	       \
-					(__v8si)(__m256i)INDEX,	       \
-					(__v8sf)_mm256_set1_ps (       \
-					  (float)(int) -1),	       \
-					(int)SCALE)
+#define _mm256_i32gather_ps(BASE, INDEX, SCALE)				\
+  (__m256) __builtin_ia32_gathersiv8sf ((__v8sf) _mm256_setzero_ps (),	\
+					(float const *) (BASE),		\
+					(__v8si)(__m256i) (INDEX),	\
+					(__v8sf)			\
+					_mm256_cmp_ps (_mm256_setzero_ps (),\
+						       _mm256_setzero_ps (),\
+						       _CMP_EQ_OQ),	\
+					(int) (SCALE))
 
-#define _mm256_mask_i32gather_ps(SRC, BASE, INDEX, MASK, SCALE) \
-  (__m256) __builtin_ia32_gathersiv8sf ((__v8sf)(__m256)SRC,	\
-					(float const *)BASE,	\
-					(__v8si)(__m256i)INDEX, \
-					(__v8sf)(__m256d)MASK,	\
-					(int)SCALE)
+#define _mm256_mask_i32gather_ps(SRC, BASE, INDEX, MASK, SCALE)		\
+  (__m256) __builtin_ia32_gathersiv8sf ((__v8sf)(__m256) (SRC),		\
+					(float const *) (BASE),		\
+					(__v8si)(__m256i) (INDEX),	\
+					(__v8sf)(__m256) (MASK),	\
+					(int) (SCALE))
 
 #define _mm_i64gather_ps(BASE, INDEX, SCALE)				\
   (__m128) __builtin_ia32_gatherdiv4sf ((__v4sf) _mm_setzero_pd (),	\
-					(float const *)BASE,		\
-					(__v2di)(__m128i)INDEX,		\
-					(__v4sf)_mm_set1_ps (		\
-					  (float)(int) -1),		\
-					(int)SCALE)
+					(float const *) (BASE),		\
+					(__v2di)(__m128i) (INDEX),	\
+					(__v4sf)			\
+					_mm_cmpeq_ps (_mm_setzero_ps (),\
+						      _mm_setzero_ps ()),\
+					(int) (SCALE))
 
-#define _mm_mask_i64gather_ps(SRC, BASE, INDEX, MASK, SCALE)	 \
-  (__m128) __builtin_ia32_gatherdiv4sf ((__v4sf)(__m128)SRC,	 \
-					(float const *)BASE,	 \
-					(__v2di)(__m128i)INDEX,	 \
-					(__v4sf)(__m128d)MASK,	 \
-					(int)SCALE)
+#define _mm_mask_i64gather_ps(SRC, BASE, INDEX, MASK, SCALE)		\
+  (__m128) __builtin_ia32_gatherdiv4sf ((__v4sf)(__m128) (SRC),		\
+					(float const *) (BASE),		\
+					(__v2di)(__m128i) (INDEX),	\
+					(__v4sf)(__m128) (MASK),	\
+					(int) (SCALE))
 
 #define _mm256_i64gather_ps(BASE, INDEX, SCALE)				\
   (__m128) __builtin_ia32_gatherdiv4sf256 ((__v4sf) _mm_setzero_ps (),	\
-					   (float const *)BASE,		\
-					   (__v4di)(__m256i)INDEX,	\
-					   (__v4sf)_mm_set1_ps(		\
-					     (float)(int) -1),		\
-					   (int)SCALE)
+					   (float const *) (BASE),	\
+					   (__v4di)(__m256i) (INDEX),	\
+					   (__v4sf)			\
+					   _mm_cmpeq_ps (_mm_setzero_ps (),\
+							 _mm_setzero_ps ()),\
+					   (int) (SCALE))
 
-#define _mm256_mask_i64gather_ps(SRC, BASE, INDEX, MASK, SCALE)	   \
-  (__m128) __builtin_ia32_gatherdiv4sf256 ((__v4sf)(__m128)SRC,	   \
-					   (float const *)BASE,	   \
-					   (__v4di)(__m256i)INDEX, \
-					   (__v4sf)(__m128)MASK,   \
-					   (int)SCALE)
+#define _mm256_mask_i64gather_ps(SRC, BASE, INDEX, MASK, SCALE)	   	\
+  (__m128) __builtin_ia32_gatherdiv4sf256 ((__v4sf)(__m128) (SRC),	\
+					   (float const *) (BASE),	\
+					   (__v4di)(__m256i) (INDEX),	\
+					   (__v4sf)(__m128) (MASK),	\
+					   (int) (SCALE))
 
 #define _mm_i32gather_epi64(BASE, INDEX, SCALE)				\
   (__m128i) __builtin_ia32_gathersiv2di ((__v2di) _mm_setzero_si128 (), \
-					 (long long const *)BASE,	\
-					 (__v4si)(__m128i)INDEX,	\
+					 (long long const *) (BASE),	\
+					 (__v4si)(__m128i) (INDEX),	\
 					 (__v2di)_mm_set1_epi64x (-1),	\
-					 (int)SCALE)
+					 (int) (SCALE))
 
-#define _mm_mask_i32gather_epi64(SRC, BASE, INDEX, MASK, SCALE)	  \
-  (__m128i) __builtin_ia32_gathersiv2di ((__v2di)(__m128i)SRC,	  \
-					 (long long const *)BASE, \
-					 (__v4si)(__m128i)INDEX,  \
-					 (__v2di)(__m128i)MASK,	  \
-					 (int)SCALE)
+#define _mm_mask_i32gather_epi64(SRC, BASE, INDEX, MASK, SCALE)	  	\
+  (__m128i) __builtin_ia32_gathersiv2di ((__v2di)(__m128i) (SRC),	\
+					 (long long const *) (BASE),	\
+					 (__v4si)(__m128i) (INDEX),	\
+					 (__v2di)(__m128i) (MASK),	\
+					 (int) (SCALE))
 
 #define _mm256_i32gather_epi64(BASE, INDEX, SCALE)			   \
   (__m256i) __builtin_ia32_gathersiv4di ((__v4di) _mm256_setzero_si256 (), \
-					 (long long const *)BASE,	   \
-					 (__v4si)(__m128i)INDEX,	   \
+					 (long long const *) (BASE),	   \
+					 (__v4si)(__m128i) (INDEX),	   \
 					 (__v4di)_mm256_set1_epi64x (-1),  \
-					 (int)SCALE)
+					 (int) (SCALE))
 
-#define _mm256_mask_i32gather_epi64(SRC, BASE, INDEX, MASK, SCALE) \
-  (__m256i) __builtin_ia32_gathersiv4di ((__v4di)(__m256i)SRC,	   \
-					 (long long const *)BASE,  \
-					 (__v4si)(__m128i)INDEX,   \
-					 (__v4di)(__m256i)MASK,	   \
-					 (int)SCALE)
+#define _mm256_mask_i32gather_epi64(SRC, BASE, INDEX, MASK, SCALE)	\
+  (__m256i) __builtin_ia32_gathersiv4di ((__v4di)(__m256i) (SRC),	\
+					 (long long const *) (BASE),	\
+					 (__v4si)(__m128i) (INDEX),	\
+					 (__v4di)(__m256i) (MASK),	\
+					 (int) (SCALE))
 
 #define _mm_i64gather_epi64(BASE, INDEX, SCALE)				\
   (__m128i) __builtin_ia32_gatherdiv2di ((__v2di) _mm_setzero_si128 (), \
-					 (long long const *)BASE,	\
-					 (__v2di)(__m128i)INDEX,	\
+					 (long long const *) (BASE),	\
+					 (__v2di)(__m128i) (INDEX),	\
 					 (__v2di)_mm_set1_epi64x (-1),	\
-					 (int)SCALE)
+					 (int) (SCALE))
 
-#define _mm_mask_i64gather_epi64(SRC, BASE, INDEX, MASK, SCALE)	  \
-  (__m128i) __builtin_ia32_gatherdiv2di ((__v2di)(__m128i)SRC,	  \
-					 (long long const *)BASE, \
-					 (__v2di)(__m128i)INDEX,  \
-					 (__v2di)(__m128i)MASK,	  \
-					 (int)SCALE)
+#define _mm_mask_i64gather_epi64(SRC, BASE, INDEX, MASK, SCALE)		\
+  (__m128i) __builtin_ia32_gatherdiv2di ((__v2di)(__m128i) (SRC),	\
+					 (long long const *) (BASE),	\
+					 (__v2di)(__m128i) (INDEX),	\
+					 (__v2di)(__m128i) (MASK),	\
+					 (int) (SCALE))
 
 #define _mm256_i64gather_epi64(BASE, INDEX, SCALE)			   \
   (__m256i) __builtin_ia32_gatherdiv4di ((__v4di) _mm256_setzero_si256 (), \
-					 (long long const *)BASE,	   \
-					 (__v4di)(__m256i)INDEX,	   \
+					 (long long const *) (BASE),	   \
+					 (__v4di)(__m256i) (INDEX),	   \
 					 (__v4di)_mm256_set1_epi64x (-1),  \
-					 (int)SCALE)
+					 (int) (SCALE))
 
-#define _mm256_mask_i64gather_epi64(SRC, BASE, INDEX, MASK, SCALE) \
-  (__m256i) __builtin_ia32_gatherdiv4di ((__v4di)(__m256i)SRC,	   \
-					 (long long const *)BASE,  \
-					 (__v4di)(__m256i)INDEX,   \
-					 (__v4di)(__m256i)MASK,	   \
-					 (int)SCALE)
+#define _mm256_mask_i64gather_epi64(SRC, BASE, INDEX, MASK, SCALE) 	\
+  (__m256i) __builtin_ia32_gatherdiv4di ((__v4di)(__m256i) (SRC),	\
+					 (long long const *) (BASE),	\
+					 (__v4di)(__m256i) (INDEX),	\
+					 (__v4di)(__m256i) (MASK),	\
+					 (int) (SCALE))
 
 #define _mm_i32gather_epi32(BASE, INDEX, SCALE)				\
   (__m128i) __builtin_ia32_gathersiv4si ((__v4si) _mm_setzero_si128 (),	\
-					 (int const *)BASE,		\
-					 (__v4si)(__m128i)INDEX,	\
+					 (int const *) (BASE),		\
+					 (__v4si)(__m128i) (INDEX),	\
 					 (__v4si)_mm_set1_epi32 (-1),	\
-					 (int)SCALE)
+					 (int) (SCALE))
 
-#define _mm_mask_i32gather_epi32(SRC, BASE, INDEX, MASK, SCALE) \
-  (__m128i) __builtin_ia32_gathersiv4si ((__v4si)(__m128i)SRC,	\
-					(int const *)BASE,	\
-					(__v4si)(__m128i)INDEX, \
-					(__v4si)(__m128i)MASK,	\
-					(int)SCALE)
+#define _mm_mask_i32gather_epi32(SRC, BASE, INDEX, MASK, SCALE)		\
+  (__m128i) __builtin_ia32_gathersiv4si ((__v4si)(__m128i) (SRC),	\
+					(int const *) (BASE),		\
+					(__v4si)(__m128i) (INDEX),	\
+					(__v4si)(__m128i) (MASK),	\
+					(int) (SCALE))
 
 #define _mm256_i32gather_epi32(BASE, INDEX, SCALE)			   \
   (__m256i) __builtin_ia32_gathersiv8si ((__v8si) _mm256_setzero_si256 (), \
-					 (int const *)BASE,		   \
-					 (__v8si)(__m256i)INDEX,	   \
+					 (int const *) (BASE),		   \
+					 (__v8si)(__m256i) (INDEX),	   \
 					 (__v8si)_mm256_set1_epi32 (-1),   \
-					 (int)SCALE)
+					 (int) (SCALE))
 
-#define _mm256_mask_i32gather_epi32(SRC, BASE, INDEX, MASK, SCALE) \
-  (__m256i) __builtin_ia32_gathersiv8si ((__v8si)(__m256i)SRC,	   \
-					(int const *)BASE,	   \
-					(__v8si)(__m256i)INDEX,	   \
-					(__v8si)(__m256i)MASK,	   \
-					(int)SCALE)
+#define _mm256_mask_i32gather_epi32(SRC, BASE, INDEX, MASK, SCALE)	\
+  (__m256i) __builtin_ia32_gathersiv8si ((__v8si)(__m256i) (SRC),	\
+					(int const *) (BASE),	   	\
+					(__v8si)(__m256i) (INDEX),	\
+					(__v8si)(__m256i) (MASK),	\
+					(int) (SCALE))
 
 #define _mm_i64gather_epi32(BASE, INDEX, SCALE)				\
   (__m128i) __builtin_ia32_gatherdiv4si ((__v4si) _mm_setzero_si128 (),	\
-					 (int const *)BASE,		\
-					 (__v2di)(__m128i)INDEX,	\
+					 (int const *) (BASE),		\
+					 (__v2di)(__m128i) (INDEX),	\
 					 (__v4si)_mm_set1_epi32 (-1),	\
-					 (int)SCALE)
+					 (int) (SCALE))
 
-#define _mm_mask_i64gather_epi32(SRC, BASE, INDEX, MASK, SCALE) \
-  (__m128i) __builtin_ia32_gatherdiv4si ((__v4si)(__m128i)SRC,	\
-					(int const *)BASE,	\
-					(__v2di)(__m128i)INDEX, \
-					(__v4si)(__m128i)MASK,	\
-					(int)SCALE)
+#define _mm_mask_i64gather_epi32(SRC, BASE, INDEX, MASK, SCALE)		\
+  (__m128i) __builtin_ia32_gatherdiv4si ((__v4si)(__m128i) (SRC),	\
+					(int const *) (BASE),		\
+					(__v2di)(__m128i) (INDEX),	\
+					(__v4si)(__m128i) (MASK),	\
+					(int) (SCALE))
 
 #define _mm256_i64gather_epi32(BASE, INDEX, SCALE)			   \
   (__m128i) __builtin_ia32_gatherdiv4si256 ((__v4si) _mm_setzero_si128 (), \
-					    (int const *)BASE,		   \
-					    (__v4di)(__m256i)INDEX,	   \
+					    (int const *) (BASE),	   \
+					    (__v4di)(__m256i) (INDEX),	   \
 					    (__v4si)_mm_set1_epi32(-1),	   \
-					    (int)SCALE)
+					    (int) (SCALE))
 
-#define _mm256_mask_i64gather_epi32(SRC, BASE, INDEX, MASK, SCALE) \
-  (__m128i) __builtin_ia32_gatherdiv4si256 ((__v4si)(__m128i)SRC,  \
-					   (int const *)BASE,	   \
-					   (__v4di)(__m256i)INDEX, \
-					   (__v4si)(__m128i)MASK,  \
-					   (int)SCALE)
+#define _mm256_mask_i64gather_epi32(SRC, BASE, INDEX, MASK, SCALE)	\
+  (__m128i) __builtin_ia32_gatherdiv4si256 ((__v4si)(__m128i) (SRC),	\
+					   (int const *) (BASE),	\
+					   (__v4di)(__m256i) (INDEX),	\
+					   (__v4si)(__m128i) (MASK),	\
+					   (int) (SCALE))
 #endif  /* __OPTIMIZE__ */
+
+#define _MM_REDUCE_OPERATOR_BASIC_EPI16(op) \
+  __v8hi __T1 = (__v8hi)__W; \
+  __v8hi __T2 = __builtin_shufflevector (__T1, __T1, 4, 5, 6, 7, 4, 5, 6, 7); \
+  __v8hi __T3 = __T1 op __T2; \
+  __v8hi __T4 = __builtin_shufflevector (__T3, __T3, 2, 3, 2, 3, 4, 5, 6, 7); \
+  __v8hi __T5 = __T3 op __T4; \
+  __v8hi __T6 = __builtin_shufflevector (__T5, __T5, 1, 1, 2, 3, 4, 5, 6, 7); \
+  __v8hi __T7 = __T5 op __T6; \
+  return __T7[0]
+
+extern __inline short
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_reduce_add_epi16 (__m128i __W)
+{
+  _MM_REDUCE_OPERATOR_BASIC_EPI16 (+);
+}
+
+extern __inline short
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_reduce_mul_epi16 (__m128i __W)
+{
+  _MM_REDUCE_OPERATOR_BASIC_EPI16 (*);
+}
+
+extern __inline short
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_reduce_and_epi16 (__m128i __W)
+{
+  _MM_REDUCE_OPERATOR_BASIC_EPI16 (&);
+}
+
+extern __inline short
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_reduce_or_epi16 (__m128i __W)
+{
+  _MM_REDUCE_OPERATOR_BASIC_EPI16 (|);
+}
+
+#define _MM_REDUCE_OPERATOR_MAX_MIN_EP16(op) \
+  __m128i __T1 = (__m128i)__builtin_shufflevector ((__v8hi)__V, \
+		  (__v8hi)__V, 4, 5, 6, 7, 4, 5, 6, 7); \
+  __m128i __T2 = _mm_##op (__V, __T1); \
+  __m128i __T3 = (__m128i)__builtin_shufflevector ((__v8hi)__T2, \
+		  (__v8hi)__T2, 2, 3, 2, 3, 4, 5, 6, 7); \
+  __m128i __T4 = _mm_##op (__T2, __T3); \
+  __m128i __T5 = (__m128i)__builtin_shufflevector ((__v8hi)__T4, \
+		  (__v8hi)__T4, 1, 1, 2, 3, 4, 5, 6, 7); \
+  __v8hi __T6 = (__v8hi)_mm_##op (__T4, __T5); \
+  return __T6[0]
+
+extern __inline short
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_reduce_max_epi16 (__m128i __V)
+{
+  _MM_REDUCE_OPERATOR_MAX_MIN_EP16 (max_epi16);
+}
+
+extern __inline unsigned short
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_reduce_max_epu16 (__m128i __V)
+{
+  _MM_REDUCE_OPERATOR_MAX_MIN_EP16 (max_epu16);
+}
+
+extern __inline short
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_reduce_min_epi16 (__m128i __V)
+{
+  _MM_REDUCE_OPERATOR_MAX_MIN_EP16 (min_epi16);
+}
+
+extern __inline unsigned short
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_reduce_min_epu16 (__m128i __V)
+{
+  _MM_REDUCE_OPERATOR_MAX_MIN_EP16 (min_epu16);
+}
+
+#define _MM256_REDUCE_OPERATOR_BASIC_EPI16(op) \
+  __v8hi __T1 = (__v8hi)_mm256_extracti128_si256 (__W, 0); \
+  __v8hi __T2 = (__v8hi)_mm256_extracti128_si256 (__W, 1); \
+  __v8hi __T3 = __T1 op __T2; \
+  __v8hi __T4 = __builtin_shufflevector (__T3, __T3, 4, 5, 6, 7, 4, 5, 6, 7); \
+  __v8hi __T5 = __T3 op __T4; \
+  __v8hi __T6 = __builtin_shufflevector (__T5, __T5, 2, 3, 2, 3, 4, 5, 6, 7); \
+  __v8hi __T7 = __T5 op __T6; \
+  __v8hi __T8 = __builtin_shufflevector (__T7, __T7, 1, 1, 2, 3, 4, 5, 6, 7); \
+  __v8hi __T9 = __T7 op __T8; \
+  return __T9[0]
+
+extern __inline short
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_reduce_add_epi16 (__m256i __W)
+{
+  _MM256_REDUCE_OPERATOR_BASIC_EPI16 (+);
+}
+
+extern __inline short
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_reduce_mul_epi16 (__m256i __W)
+{
+  _MM256_REDUCE_OPERATOR_BASIC_EPI16 (*);
+}
+
+extern __inline short
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_reduce_and_epi16 (__m256i __W)
+{
+  _MM256_REDUCE_OPERATOR_BASIC_EPI16 (&);
+}
+
+extern __inline short
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_reduce_or_epi16 (__m256i __W)
+{
+  _MM256_REDUCE_OPERATOR_BASIC_EPI16 (|);
+}
+
+#define _MM256_REDUCE_OPERATOR_MAX_MIN_EP16(op) \
+  __m128i __T1 = _mm256_extracti128_si256 (__V, 0); \
+  __m128i __T2 = _mm256_extracti128_si256 (__V, 1); \
+  __m128i __T3 = _mm_##op (__T1, __T2); \
+  __m128i __T4 = (__m128i)__builtin_shufflevector ((__v8hi)__T3, \
+		  (__v8hi)__T3, 4, 5, 6, 7, 4, 5, 6, 7); \
+  __m128i __T5 = _mm_##op (__T3, __T4); \
+  __m128i __T6 = (__m128i)__builtin_shufflevector ((__v8hi)__T5, \
+		  (__v8hi)__T5, 2, 3, 2, 3, 4, 5, 6, 7); \
+  __m128i __T7 = _mm_##op (__T5, __T6); \
+  __m128i __T8 = (__m128i)__builtin_shufflevector ((__v8hi)__T7, \
+		  (__v8hi)__T7, 1, 1, 2, 3, 4, 5, 6, 7); \
+  __v8hi __T9 = (__v8hi)_mm_##op (__T7, __T8); \
+  return __T9[0]
+
+extern __inline short
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_reduce_max_epi16 (__m256i __V)
+{
+  _MM256_REDUCE_OPERATOR_MAX_MIN_EP16 (max_epi16);
+}
+
+extern __inline unsigned short
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_reduce_max_epu16 (__m256i __V)
+{
+  _MM256_REDUCE_OPERATOR_MAX_MIN_EP16 (max_epu16);
+}
+
+extern __inline short
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_reduce_min_epi16 (__m256i __V)
+{
+  _MM256_REDUCE_OPERATOR_MAX_MIN_EP16 (min_epi16);
+}
+
+extern __inline unsigned short
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_reduce_min_epu16 (__m256i __V)
+{
+  _MM256_REDUCE_OPERATOR_MAX_MIN_EP16 (min_epu16);
+}
+
+#define _MM_REDUCE_OPERATOR_BASIC_EPI8(op) \
+  __v16qi __T1 = (__v16qi)__W; \
+  __v16qi __T2 = __builtin_shufflevector (__T1, __T1, \
+		  8, 9, 10, 11, 12, 13, 14, 15, 8, 9, 10, 11, 12, 13, 14, 15); \
+  __v16qi __T3 = __T1 op __T2; \
+  __v16qi __T4 = __builtin_shufflevector (__T3, __T3, \
+		  4, 5, 6, 7, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15); \
+  __v16qi __T5 = __T3 op __T4; \
+  __v16qi __T6 = __builtin_shufflevector (__T5, __T5, \
+		  2, 3, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15); \
+  __v16qi __T7 = __T5 op __T6; \
+  __v16qi __T8 = __builtin_shufflevector (__T7, __T7, \
+		  1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15); \
+  __v16qi __T9 = __T7 op __T8; \
+  return __T9[0]
+
+extern __inline char
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_reduce_add_epi8 (__m128i __W)
+{
+  _MM_REDUCE_OPERATOR_BASIC_EPI8 (+);
+}
+
+extern __inline char
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_reduce_mul_epi8 (__m128i __W)
+{
+  _MM_REDUCE_OPERATOR_BASIC_EPI8 (*);
+}
+
+extern __inline char
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_reduce_and_epi8 (__m128i __W)
+{
+  _MM_REDUCE_OPERATOR_BASIC_EPI8 (&);
+}
+
+extern __inline char
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_reduce_or_epi8 (__m128i __W)
+{
+  _MM_REDUCE_OPERATOR_BASIC_EPI8 (|);
+}
+
+#define _MM_REDUCE_OPERATOR_MAX_MIN_EP8(op) \
+  __m128i __T1 = (__m128i)__builtin_shufflevector ((__v16qi)__V, (__v16qi)__V, \
+		  8, 9, 10, 11, 12, 13, 14, 15, 8, 9, 10, 11, 12, 13, 14, 15); \
+  __m128i __T2 = _mm_##op (__V, __T1); \
+  __m128i __T3 = (__m128i)__builtin_shufflevector ((__v16qi)__T2, \
+		  (__v16qi)__T2, \
+		  4, 5, 6, 7, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15); \
+  __m128i __T4 = _mm_##op (__T2, __T3); \
+  __m128i __T5 = (__m128i)__builtin_shufflevector ((__v16qi)__T4, \
+		  (__v16qi)__T4, \
+		  2, 3, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15); \
+  __m128i __T6 = _mm_##op (__T4, __T5); \
+  __m128i __T7 = (__m128i)__builtin_shufflevector ((__v16qi)__T6, \
+		  (__v16qi)__T6, \
+		  1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15); \
+  __v16qi __T8 = (__v16qi)_mm_##op (__T6, __T7); \
+  return __T8[0]
+
+extern __inline signed char
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_reduce_max_epi8 (__m128i __V)
+{
+  _MM_REDUCE_OPERATOR_MAX_MIN_EP8 (max_epi8);
+}
+
+extern __inline unsigned char
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_reduce_max_epu8 (__m128i __V)
+{
+  _MM_REDUCE_OPERATOR_MAX_MIN_EP8 (max_epu8);
+}
+
+extern __inline signed char
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_reduce_min_epi8 (__m128i __V)
+{
+  _MM_REDUCE_OPERATOR_MAX_MIN_EP8 (min_epi8);
+}
+
+extern __inline unsigned char
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_reduce_min_epu8 (__m128i __V)
+{
+  _MM_REDUCE_OPERATOR_MAX_MIN_EP8 (min_epu8);
+}
+
+#define _MM256_REDUCE_OPERATOR_BASIC_EPI8(op) \
+  __v16qi __T1 = (__v16qi)_mm256_extracti128_si256 (__W, 0); \
+  __v16qi __T2 = (__v16qi)_mm256_extracti128_si256 (__W, 1); \
+  __v16qi __T3 = __T1 op __T2; \
+  __v16qi __T4 = __builtin_shufflevector (__T3, __T3, \
+		  8, 9, 10, 11, 12, 13, 14, 15, 8, 9, 10, 11, 12, 13, 14, 15); \
+  __v16qi __T5 = __T3 op __T4; \
+  __v16qi __T6 = __builtin_shufflevector (__T5, __T5, \
+		  4, 5, 6, 7, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15); \
+  __v16qi __T7 = __T5 op __T6; \
+  __v16qi __T8 = __builtin_shufflevector (__T7, __T7, \
+		  2, 3, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15); \
+  __v16qi __T9 = __T7 op __T8; \
+  __v16qi __T10 = __builtin_shufflevector (__T9, __T9, \
+		  1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15); \
+  __v16qi __T11 = __T9 op __T10; \
+  return __T11[0]
+
+extern __inline char
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_reduce_add_epi8 (__m256i __W)
+{
+  _MM256_REDUCE_OPERATOR_BASIC_EPI8 (+);
+}
+
+extern __inline char
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_reduce_mul_epi8 (__m256i __W)
+{
+  _MM256_REDUCE_OPERATOR_BASIC_EPI8 (*);
+}
+
+extern __inline char
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_reduce_and_epi8 (__m256i __W)
+{
+  _MM256_REDUCE_OPERATOR_BASIC_EPI8 (&);
+}
+
+extern __inline char
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_reduce_or_epi8 (__m256i __W)
+{
+  _MM256_REDUCE_OPERATOR_BASIC_EPI8 (|);
+}
+
+#define _MM256_REDUCE_OPERATOR_MAX_MIN_EP8(op) \
+  __m128i __T1 = _mm256_extracti128_si256 (__V, 0); \
+  __m128i __T2 = _mm256_extracti128_si256 (__V, 1); \
+  __m128i __T3 = _mm_##op (__T1, __T2); \
+  __m128i __T4 = (__m128i)__builtin_shufflevector ((__v16qi)__T3, \
+		  (__v16qi)__T3, \
+		  8, 9, 10, 11, 12, 13, 14, 15, 8, 9, 10, 11, 12, 13, 14, 15); \
+  __m128i __T5 = _mm_##op (__T3, __T4); \
+  __m128i __T6 = (__m128i)__builtin_shufflevector ((__v16qi)__T5, \
+		  (__v16qi)__T5, \
+		  4, 5, 6, 7, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15); \
+  __m128i __T7 = _mm_##op (__T5, __T6); \
+  __m128i __T8 = (__m128i)__builtin_shufflevector ((__v16qi)__T7, \
+		  (__v16qi)__T5, \
+		  2, 3, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15); \
+  __m128i __T9 = _mm_##op (__T7, __T8); \
+  __m128i __T10 = (__m128i)__builtin_shufflevector ((__v16qi)__T9, \
+		  (__v16qi)__T9, \
+		  1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15); \
+  __v16qi __T11 = (__v16qi)_mm_##op (__T9, __T10); \
+  return __T11[0]
+
+extern __inline signed char
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_reduce_max_epi8 (__m256i __V)
+{
+  _MM256_REDUCE_OPERATOR_MAX_MIN_EP8 (max_epi8);
+}
+
+extern __inline unsigned char
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_reduce_max_epu8 (__m256i __V)
+{
+  _MM256_REDUCE_OPERATOR_MAX_MIN_EP8 (max_epu8);
+}
+
+extern __inline signed char
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_reduce_min_epi8 (__m256i __V)
+{
+  _MM256_REDUCE_OPERATOR_MAX_MIN_EP8 (min_epi8);
+}
+
+extern __inline unsigned char
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_reduce_min_epu8 (__m256i __V)
+{
+  _MM256_REDUCE_OPERATOR_MAX_MIN_EP8 (min_epu8);
+}
 
 #ifdef __DISABLE_AVX2__
 #undef __DISABLE_AVX2__

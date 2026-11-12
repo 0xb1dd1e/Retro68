@@ -1,5 +1,5 @@
 /* .eh_frame section optimization.
-   Copyright (C) 2001-2018 Free Software Foundation, Inc.
+   Copyright (C) 2001-2026 Free Software Foundation, Inc.
    Written by Jakub Jelinek <jakub@redhat.com>.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -60,81 +60,81 @@ struct cie
 /* If *ITER hasn't reached END yet, read the next byte into *RESULT and
    move onto the next byte.  Return true on success.  */
 
-static inline bfd_boolean
+static inline bool
 read_byte (bfd_byte **iter, bfd_byte *end, unsigned char *result)
 {
   if (*iter >= end)
-    return FALSE;
+    return false;
   *result = *((*iter)++);
-  return TRUE;
+  return true;
 }
 
 /* Move *ITER over LENGTH bytes, or up to END, whichever is closer.
    Return true it was possible to move LENGTH bytes.  */
 
-static inline bfd_boolean
+static inline bool
 skip_bytes (bfd_byte **iter, bfd_byte *end, bfd_size_type length)
 {
   if ((bfd_size_type) (end - *iter) < length)
     {
       *iter = end;
-      return FALSE;
+      return false;
     }
   *iter += length;
-  return TRUE;
+  return true;
 }
 
 /* Move *ITER over an leb128, stopping at END.  Return true if the end
    of the leb128 was found.  */
 
-static bfd_boolean
+static bool
 skip_leb128 (bfd_byte **iter, bfd_byte *end)
 {
   unsigned char byte;
   do
     if (!read_byte (iter, end, &byte))
-      return FALSE;
+      return false;
   while (byte & 0x80);
-  return TRUE;
+  return true;
 }
 
 /* Like skip_leb128, but treat the leb128 as an unsigned value and
    store it in *VALUE.  */
 
-static bfd_boolean
+static bool
 read_uleb128 (bfd_byte **iter, bfd_byte *end, bfd_vma *value)
 {
   bfd_byte *start, *p;
 
   start = *iter;
   if (!skip_leb128 (iter, end))
-    return FALSE;
+    return false;
 
   p = *iter;
   *value = *--p;
   while (p > start)
     *value = (*value << 7) | (*--p & 0x7f);
 
-  return TRUE;
+  return true;
 }
 
 /* Like read_uleb128, but for signed values.  */
 
-static bfd_boolean
+static bool
 read_sleb128 (bfd_byte **iter, bfd_byte *end, bfd_signed_vma *value)
 {
   bfd_byte *start, *p;
 
   start = *iter;
   if (!skip_leb128 (iter, end))
-    return FALSE;
+    return false;
 
   p = *iter;
   *value = ((*--p & 0x7f) ^ 0x40) - 0x40;
   while (p > start)
     *value = (*value << 7) | (*--p & 0x7f);
 
-  return TRUE;
+  return true;
 }
 
 /* Return 0 if either encoding is variable width, or not yet known to bfd.  */
@@ -282,7 +282,7 @@ cie_compute_hash (struct cie *c)
 /* Return the number of extra bytes that we'll be inserting into
    ENTRY's augmentation string.  */
 
-static INLINE unsigned int
+static inline unsigned int
 extra_augmentation_string_bytes (struct eh_cie_fde *entry)
 {
   unsigned int size = 0;
@@ -298,7 +298,7 @@ extra_augmentation_string_bytes (struct eh_cie_fde *entry)
 
 /* Likewise ENTRY's augmentation data.  */
 
-static INLINE unsigned int
+static inline unsigned int
 extra_augmentation_data_bytes (struct eh_cie_fde *entry)
 {
   unsigned int size = 0;
@@ -342,14 +342,14 @@ next_cie_fde_offset (const struct eh_cie_fde *ent,
    Try to move *ITER past the first instruction and return true on
    success.  ENCODED_PTR_WIDTH gives the width of pointer entries.  */
 
-static bfd_boolean
+static bool
 skip_cfa_op (bfd_byte **iter, bfd_byte *end, unsigned int encoded_ptr_width)
 {
-  bfd_byte op;
+  bfd_byte op = 0;
   bfd_vma length;
 
   if (!read_byte (iter, end, &op))
-    return FALSE;
+    return false;
 
   switch (op & 0xc0 ? op & 0xc0 : op)
     {
@@ -359,8 +359,9 @@ skip_cfa_op (bfd_byte **iter, bfd_byte *end, unsigned int encoded_ptr_width)
     case DW_CFA_remember_state:
     case DW_CFA_restore_state:
     case DW_CFA_GNU_window_save:
+    case DW_CFA_AARCH64_negate_ra_state_with_pc:
       /* No arguments.  */
-      return TRUE;
+      return true;
 
     case DW_CFA_offset:
     case DW_CFA_restore_extended:
@@ -413,7 +414,7 @@ skip_cfa_op (bfd_byte **iter, bfd_byte *end, unsigned int encoded_ptr_width)
       return skip_bytes (iter, end, 8);
 
     default:
-      return FALSE;
+      return false;
     }
 }
 
@@ -497,7 +498,7 @@ bfd_elf_record_eh_frame_entry (struct eh_frame_hdr_info *hdr_info,
     {
       if (hdr_info->u.compact.allocated_entries == 0)
 	{
-	  hdr_info->frame_hdr_is_compact = TRUE;
+	  hdr_info->frame_hdr_is_compact = true;
 	  hdr_info->u.compact.allocated_entries = 2;
 	  hdr_info->u.compact.entries =
 	    bfd_malloc (hdr_info->u.compact.allocated_entries
@@ -521,7 +522,7 @@ bfd_elf_record_eh_frame_entry (struct eh_frame_hdr_info *hdr_info,
 /* Parse a .eh_frame_entry section.  Figure out which text section it
    references.  */
 
-bfd_boolean
+bool
 _bfd_elf_parse_eh_frame_entry (struct bfd_link_info *info,
 			       asection *sec, struct elf_reloc_cookie *cookie)
 {
@@ -536,28 +537,28 @@ _bfd_elf_parse_eh_frame_entry (struct bfd_link_info *info,
   if (sec->size == 0
       || sec->sec_info_type != SEC_INFO_TYPE_NONE)
     {
-      return TRUE;
+      return true;
     }
 
   if (sec->output_section && bfd_is_abs_section (sec->output_section))
     {
       /* At least one of the sections is being discarded from the
 	 link, so we should just ignore them.  */
-      return TRUE;
+      return true;
     }
 
   if (cookie->rel == cookie->relend)
-    return FALSE;
+    return false;
 
   /* The first relocation is the function start.  */
   r_symndx = cookie->rel->r_info >> cookie->r_sym_shift;
   if (r_symndx == STN_UNDEF)
-    return FALSE;
+    return false;
 
-  text_sec = _bfd_elf_section_for_symbol (cookie, r_symndx, FALSE);
+  text_sec = _bfd_elf_section_for_symbol (cookie, r_symndx);
 
   if (text_sec == NULL)
-    return FALSE;
+    return false;
 
   elf_section_eh_frame_entry (text_sec) = sec;
   if (text_sec->output_section
@@ -565,9 +566,9 @@ _bfd_elf_parse_eh_frame_entry (struct bfd_link_info *info,
     sec->flags |= SEC_EXCLUDE;
 
   sec->sec_info_type = SEC_INFO_TYPE_EH_FRAME_ENTRY;
-  elf_section_data (sec)->sec_info = text_sec;
+  sec->sec_info = text_sec;
   bfd_elf_record_eh_frame_entry (hdr_info, sec);
-  return TRUE;
+  return true;
 }
 
 /* Try to parse .eh_frame section SEC, which belongs to ABFD.  Store the
@@ -602,9 +603,12 @@ _bfd_elf_parse_eh_frame (bfd *abfd, struct bfd_link_info *info,
   hdr_info = &htab->eh_info;
 
   if (sec->size == 0
+      || (sec->flags & SEC_HAS_CONTENTS) == 0
       || sec->sec_info_type != SEC_INFO_TYPE_NONE)
     {
-      /* This file does not contain .eh_frame information.  */
+      /* This file does not contain .eh_frame information or
+	 .eh_frame has already been parsed, as can happen with
+	 --gc-sections.  */
       return;
     }
 
@@ -617,7 +621,7 @@ _bfd_elf_parse_eh_frame (bfd *abfd, struct bfd_link_info *info,
 
   /* Read the frame unwind information from abfd.  */
 
-  REQUIRE (bfd_malloc_and_get_section (abfd, sec, &ehbuf));
+  REQUIRE (_bfd_elf_mmap_section_contents (abfd, sec, &ehbuf));
 
   /* If .eh_frame section size doesn't fit into int, we cannot handle
      it (it would need to use 64-bit .eh_frame format anyway).  */
@@ -654,9 +658,9 @@ _bfd_elf_parse_eh_frame (bfd *abfd, struct bfd_link_info *info,
       REQUIRE (skip_bytes (&buf, end, hdr_length - 4));
     }
 
-  sec_info = (struct eh_frame_sec_info *)
-      bfd_zmalloc (sizeof (struct eh_frame_sec_info)
-		   + (num_entries - 1) * sizeof (struct eh_cie_fde));
+  sec_info = bfd_zalloc (abfd,
+			 (sizeof (struct eh_frame_sec_info)
+			  + (num_entries - 1) * sizeof (struct eh_cie_fde)));
   REQUIRE (sec_info);
 
   /* We need to have a "struct cie" for each CIE in this section.  */
@@ -733,6 +737,7 @@ _bfd_elf_parse_eh_frame (bfd *abfd, struct bfd_link_info *info,
       if (hdr_id == 0)
 	{
 	  unsigned int initial_insn_length;
+	  char *null_byte;
 
 	  /* CIE  */
 	  this_inf->cie = 1;
@@ -749,10 +754,14 @@ _bfd_elf_parse_eh_frame (bfd *abfd, struct bfd_link_info *info,
 	  REQUIRE (cie->version == 1
 		   || cie->version == 3
 		   || cie->version == 4);
-	  REQUIRE (strlen ((char *) buf) < sizeof (cie->augmentation));
+	  null_byte = memchr ((char *) buf, 0, end - buf);
+	  REQUIRE (null_byte != NULL);
+	  REQUIRE ((size_t) (null_byte - (char *) buf)
+		   < sizeof (cie->augmentation));
 
 	  strcpy (cie->augmentation, (char *) buf);
-	  buf = (bfd_byte *) strchr ((char *) buf, '\0') + 1;
+	  buf = (bfd_byte *) null_byte + 1;
+	  REQUIRE (buf + 1 < end);
 	  this_inf->u.cie.aug_str_len = buf - start - 1;
 	  ENSURE_NO_RELOCS (buf);
 	  if (buf[0] == 'e' && buf[1] == 'h')
@@ -797,6 +806,11 @@ _bfd_elf_parse_eh_frame (bfd *abfd, struct bfd_link_info *info,
 	      while (*aug != '\0')
 		switch (*aug++)
 		  {
+		  case 'B':
+		  case 'G':
+		    if (abfd->arch_info->arch != bfd_arch_aarch64)
+		      goto unrecognized;
+		    break;
 		  case 'L':
 		    REQUIRE (read_byte (&buf, end, &cie->lsda_encoding));
 		    ENSURE_NO_RELOCS (buf);
@@ -837,6 +851,7 @@ _bfd_elf_parse_eh_frame (bfd *abfd, struct bfd_link_info *info,
 		      REQUIRE (skip_bytes (&buf, end, per_width));
 		    }
 		    break;
+		  unrecognized:
 		  default:
 		    /* Unrecognized augmentation. Better bail out.  */
 		    goto free_no_table;
@@ -935,7 +950,7 @@ _bfd_elf_parse_eh_frame (bfd *abfd, struct bfd_link_info *info,
 
 	  SKIP_RELOCS (buf - length);
 	  if (!GET_RELOC (buf - length)
-	      && read_value (abfd, buf - length, length, FALSE) == 0)
+	      && read_value (abfd, buf - length, length, false) == 0)
 	    {
 	      (*info->callbacks->minfo)
 		/* xgettext:c-format */
@@ -1009,8 +1024,8 @@ _bfd_elf_parse_eh_frame (bfd *abfd, struct bfd_link_info *info,
 	  unsigned int cnt;
 	  bfd_byte *p;
 
-	  this_inf->set_loc = (unsigned int *)
-	      bfd_malloc ((set_loc_count + 1) * sizeof (unsigned int));
+	  this_inf->set_loc
+	    = bfd_alloc (abfd, (set_loc_count + 1) * sizeof (unsigned int));
 	  REQUIRE (this_inf->set_loc);
 	  this_inf->set_loc[0] = set_loc_count;
 	  p = insns;
@@ -1031,7 +1046,7 @@ _bfd_elf_parse_eh_frame (bfd *abfd, struct bfd_link_info *info,
   BFD_ASSERT (sec_info->count == num_entries);
   BFD_ASSERT (cie_count == num_cies);
 
-  elf_section_data (sec)->sec_info = sec_info;
+  sec->sec_info = sec_info;
   sec->sec_info_type = SEC_INFO_TYPE_EH_FRAME;
   if (!bfd_link_relocatable (info))
     {
@@ -1046,14 +1061,10 @@ _bfd_elf_parse_eh_frame (bfd *abfd, struct bfd_link_info *info,
     /* xgettext:c-format */
     (_("error in %pB(%pA); no .eh_frame_hdr table will be created"),
      abfd, sec);
-  hdr_info->u.dwarf.table = FALSE;
-  if (sec_info)
-    free (sec_info);
+  hdr_info->u.dwarf.table = false;
  success:
-  if (ehbuf)
-    free (ehbuf);
-  if (local_cies)
-    free (local_cies);
+  _bfd_elf_munmap_section_contents (sec, ehbuf);
+  free (local_cies);
 #undef REQUIRE
 }
 
@@ -1067,10 +1078,10 @@ cmp_eh_frame_hdr (const void *a, const void *b)
   asection *sec;
 
   sec = *(asection *const *)a;
-  sec = (asection *) elf_section_data (sec)->sec_info;
+  sec = sec->sec_info;
   text_a = sec->output_section->vma + sec->output_offset;
   sec = *(asection *const *)b;
-  sec = (asection *) elf_section_data (sec)->sec_info;
+  sec = sec->sec_info;
   text_b = sec->output_section->vma + sec->output_offset;
 
   if (text_a < text_b)
@@ -1094,10 +1105,10 @@ add_eh_frame_hdr_terminator (asection *sec,
     {
       /* See if there is a gap (presumably a text section without unwind info)
 	 between these two entries.  */
-      text_sec = (asection *) elf_section_data (sec)->sec_info;
+      text_sec = sec->sec_info;
       end = text_sec->output_section->vma + text_sec->output_offset
 	    + text_sec->size;
-      text_sec = (asection *) elf_section_data (next)->sec_info;
+      text_sec = next->sec_info;
       next_start = text_sec->output_section->vma + text_sec->output_offset;
       if (end == next_start)
 	return;
@@ -1107,12 +1118,12 @@ add_eh_frame_hdr_terminator (asection *sec,
   if (!sec->rawsize)
     sec->rawsize = sec->size;
 
-  bfd_set_section_size (sec->owner, sec, sec->size + 8);
+  bfd_set_section_size (sec, sec->size + 8);
 }
 
 /* Finish a pass over all .eh_frame_entry sections.  */
 
-bfd_boolean
+bool
 _bfd_elf_end_eh_frame_parsing (struct bfd_link_info *info)
 {
   struct eh_frame_hdr_info *hdr_info;
@@ -1122,7 +1133,7 @@ _bfd_elf_end_eh_frame_parsing (struct bfd_link_info *info)
 
   if (info->eh_frame_hdr_type != COMPACT_EH_HDR
       || hdr_info->array_count == 0)
-    return FALSE;
+    return false;
 
   bfd_elf_discard_eh_frame_entry (hdr_info);
 
@@ -1137,14 +1148,14 @@ _bfd_elf_end_eh_frame_parsing (struct bfd_link_info *info)
 
   /* Add a CANTUNWIND terminator after the last entry.  */
   add_eh_frame_hdr_terminator (hdr_info->u.compact.entries[i], NULL);
-  return TRUE;
+  return true;
 }
 
 /* Mark all relocations against CIE or FDE ENT, which occurs in
    .eh_frame section SEC.  COOKIE describes the relocations in SEC;
    its "rel" field can be changed freely.  */
 
-static bfd_boolean
+static bool
 mark_entry (struct bfd_link_info *info, asection *sec,
 	    struct eh_cie_fde *ent, elf_gc_mark_hook_fn gc_mark_hook,
 	    struct elf_reloc_cookie *cookie)
@@ -1155,16 +1166,16 @@ mark_entry (struct bfd_link_info *info, asection *sec,
 	 && cookie->rel->r_offset < ent->offset + ent->size;
        cookie->rel++)
     if (!_bfd_elf_gc_mark_reloc (info, sec, gc_mark_hook, cookie))
-      return FALSE;
+      return false;
 
-  return TRUE;
+  return true;
 }
 
 /* Mark all the relocations against FDEs that relate to code in input
    section SEC.  The FDEs belong to .eh_frame section EH_FRAME, whose
    relocations are described by COOKIE.  */
 
-bfd_boolean
+bool
 _bfd_elf_gc_mark_fdes (struct bfd_link_info *info, asection *sec,
 		       asection *eh_frame, elf_gc_mark_hook_fn gc_mark_hook,
 		       struct elf_reloc_cookie *cookie)
@@ -1174,7 +1185,7 @@ _bfd_elf_gc_mark_fdes (struct bfd_link_info *info, asection *sec,
   for (fde = elf_fde_list (sec); fde; fde = fde->u.fde.next_for_section)
     {
       if (!mark_entry (info, eh_frame, fde, gc_mark_hook, cookie))
-	return FALSE;
+	return false;
 
       /* At this stage, all cie_inf fields point to local CIEs, so we
 	 can use the same cookie to refer to them.  */
@@ -1183,10 +1194,10 @@ _bfd_elf_gc_mark_fdes (struct bfd_link_info *info, asection *sec,
 	{
 	  cie->u.cie.gc_mark = 1;
 	  if (!mark_entry (info, eh_frame, cie, gc_mark_hook, cookie))
-	    return FALSE;
+	    return false;
 	}
     }
-  return TRUE;
+  return true;
 }
 
 /* Input section SEC of ABFD is an .eh_frame section that contains the
@@ -1227,7 +1238,8 @@ find_merged_cie (bfd *abfd, struct bfd_link_info *info, asection *sec,
 
   if (cie->per_encoding != DW_EH_PE_omit)
     {
-      bfd_boolean per_binds_local;
+      struct elf_link_hash_entry *h;
+      bool per_binds_local;
 
       /* Work out the address of personality routine, or at least
 	 enough info that we could calculate the address had we made a
@@ -1243,14 +1255,15 @@ find_merged_cie (bfd *abfd, struct bfd_link_info *info, asection *sec,
       else
 #endif
 	r_symndx = ELF32_R_SYM (rel->r_info);
-      if (r_symndx >= cookie->locsymcount
-	  || ELF_ST_BIND (cookie->locsyms[r_symndx].st_info) != STB_LOCAL)
+
+      if (r_symndx > cookie->num_sym)
+	return cie_inf;
+      h = NULL;
+      if (r_symndx >= cookie->extsymoff)
+	h = elf_sym_hashes (cookie->abfd)[r_symndx - cookie->extsymoff];
+
+      if (h != NULL)
 	{
-	  struct elf_link_hash_entry *h;
-
-	  r_symndx -= cookie->extsymoff;
-	  h = cookie->sym_hashes[r_symndx];
-
 	  while (h->root.type == bfd_link_hash_indirect
 		 || h->root.type == bfd_link_hash_warning)
 	    h = (struct elf_link_hash_entry *) h->root.u.i.link;
@@ -1260,11 +1273,7 @@ find_merged_cie (bfd *abfd, struct bfd_link_info *info, asection *sec,
 	}
       else
 	{
-	  Elf_Internal_Sym *sym;
-	  asection *sym_sec;
-
-	  sym = &cookie->locsyms[r_symndx];
-	  sym_sec = bfd_section_from_elf_index (abfd, sym->st_shndx);
+	  asection *sym_sec = _bfd_get_local_sym_section (cookie, r_symndx);
 	  if (sym_sec == NULL)
 	    return cie_inf;
 
@@ -1276,7 +1285,7 @@ find_merged_cie (bfd *abfd, struct bfd_link_info *info, asection *sec,
 	  cie->local_personality = 1;
 	  cie->personality.sym.bfd_id = abfd->id;
 	  cie->personality.sym.index = r_symndx;
-	  per_binds_local = TRUE;
+	  per_binds_local = true;
 	}
 
       if (per_binds_local
@@ -1307,7 +1316,7 @@ find_merged_cie (bfd *abfd, struct bfd_link_info *info, asection *sec,
   if (new_cie == NULL)
     {
       /* Keep CIE_INF and record it in the hash table.  */
-      new_cie = (struct cie *) malloc (sizeof (struct cie));
+      new_cie = bfd_malloc (sizeof (*new_cie));
       if (new_cie == NULL)
 	return cie_inf;
 
@@ -1332,8 +1341,7 @@ find_merged_cie (bfd *abfd, struct bfd_link_info *info, asection *sec,
 static bfd_signed_vma
 offset_adjust (bfd_vma offset, const asection *sec)
 {
-  struct eh_frame_sec_info *sec_info
-    = (struct eh_frame_sec_info *) elf_section_data (sec)->sec_info;
+  struct eh_frame_sec_info *sec_info = sec->sec_info;
   unsigned int lo, hi, mid;
   struct eh_cie_fde *ent = NULL;
   bfd_signed_vma delta;
@@ -1412,7 +1420,7 @@ offset_adjust (bfd_vma offset, const asection *sec)
    when a CIE is merged with a previous CIE, since the symbol is
    moved to the merged CIE.  */
 
-bfd_boolean
+bool
 _bfd_elf_adjust_eh_frame_global_symbol (struct elf_link_hash_entry *h,
 					void *arg ATTRIBUTE_UNUSED)
 {
@@ -1421,34 +1429,52 @@ _bfd_elf_adjust_eh_frame_global_symbol (struct elf_link_hash_entry *h,
 
   if (h->root.type != bfd_link_hash_defined
       && h->root.type != bfd_link_hash_defweak)
-    return TRUE;
+    return true;
 
   sym_sec = h->root.u.def.section;
   if (sym_sec->sec_info_type != SEC_INFO_TYPE_EH_FRAME
-      || elf_section_data (sym_sec)->sec_info == NULL)
-    return TRUE;
+      || sym_sec->sec_info == NULL)
+    return true;
 
   delta = offset_adjust (h->root.u.def.value, sym_sec);
   h->root.u.def.value += delta;
 
-  return TRUE;
+  return true;
 }
 
-/* The same for all local symbols defined in .eh_frame.  Returns true
-   if any symbol was changed.  */
+/* The same for all local symbols defined in .eh_frame.  Returns the
+   local symbols if any symbol was changed.  */
 
-static int
+static Elf_Internal_Sym *
 adjust_eh_frame_local_symbols (const asection *sec,
 			       struct elf_reloc_cookie *cookie)
 {
-  unsigned int shndx;
-  Elf_Internal_Sym *sym;
-  Elf_Internal_Sym *end_sym;
-  int adjusted = 0;
+  bfd *abfd = cookie->abfd;
+  unsigned int *loc_shndx = elf_loc_shndx (abfd);
+  unsigned int shndx = elf_section_data (sec)->this_idx;
 
-  shndx = elf_section_data (sec)->this_idx;
-  end_sym = cookie->locsyms + cookie->locsymcount;
-  for (sym = cookie->locsyms + 1; sym < end_sym; ++sym)
+  if (loc_shndx != NULL)
+    {
+      unsigned int i;
+
+      for (i = 1; i < cookie->locsymcount; i++)
+	if (loc_shndx[i] == shndx)
+	  break;
+      if (i >= cookie->locsymcount)
+	return NULL;
+    }
+
+  Elf_Internal_Shdr *symtab_hdr = &elf_symtab_hdr (abfd);
+  Elf_Internal_Sym *locsyms = bfd_elf_get_elf_syms (abfd, symtab_hdr,
+						    cookie->locsymcount, 0,
+						    NULL, NULL, NULL);
+  if (locsyms == NULL)
+    return NULL;
+
+  bool adjusted = false;
+  Elf_Internal_Sym *sym;
+  Elf_Internal_Sym *end_sym = locsyms + cookie->locsymcount;
+  for (sym = locsyms + 1; sym < end_sym; ++sym)
     if (sym->st_info <= ELF_ST_INFO (STB_LOCAL, STT_OBJECT)
 	&& sym->st_shndx == shndx)
       {
@@ -1456,22 +1482,26 @@ adjust_eh_frame_local_symbols (const asection *sec,
 
 	if (delta != 0)
 	  {
-	    adjusted = 1;
+	    adjusted = true;
 	    sym->st_value += delta;
 	  }
       }
-  return adjusted;
+  if (adjusted)
+    return locsyms;
+  free (locsyms);
+  return NULL;
 }
 
 /* This function is called for each input file before the .eh_frame
-   section is relocated.  It discards duplicate CIEs and FDEs for discarded
-   functions.  The function returns TRUE iff any entries have been
-   deleted.  */
+   section is relocated.  It discards duplicate CIEs and FDEs for
+   discarded functions.  The function returns 0 when no changes are
+   made, 1 when .eh_frame data has been edited and 2 when the editing
+   results in a section size change.  */
 
-bfd_boolean
+int
 _bfd_elf_discard_section_eh_frame
    (bfd *abfd, struct bfd_link_info *info, asection *sec,
-    bfd_boolean (*reloc_symbol_deleted_p) (bfd_vma, void *),
+    bool (*reloc_symbol_deleted_p) (bfd_vma, void *),
     struct elf_reloc_cookie *cookie)
 {
   struct eh_cie_fde *ent;
@@ -1481,11 +1511,11 @@ _bfd_elf_discard_section_eh_frame
   int changed;
 
   if (sec->sec_info_type != SEC_INFO_TYPE_EH_FRAME)
-    return FALSE;
+    return false;
 
-  sec_info = (struct eh_frame_sec_info *) elf_section_data (sec)->sec_info;
+  sec_info = sec->sec_info;
   if (sec_info == NULL)
-    return FALSE;
+    return false;
 
   ptr_size = (get_elf_backend_data (sec->owner)
 	      ->elf_backend_eh_frame_address_size (sec->owner, sec));
@@ -1498,7 +1528,7 @@ _bfd_elf_discard_section_eh_frame
       ent->removed = sec->map_head.s != NULL;
     else if (!ent->cie && ent->u.fde.cie_inf != NULL)
       {
-	bfd_boolean keep;
+	bool keep;
 	if ((sec->flags & SEC_LINKER_CREATED) != 0 && cookie->rels == NULL)
 	  {
 	    unsigned int width
@@ -1529,20 +1559,24 @@ _bfd_elf_discard_section_eh_frame
 		   which we cannot turn into PC relative,
 		   don't create the binary search table,
 		   since it is affected by runtime relocations.  */
-		hdr_info->u.dwarf.table = FALSE;
-		if (num_warnings_issued < 10)
+		hdr_info->u.dwarf.table = false;
+		/* Only warn if --eh-frame-hdr was specified.  */
+		if (info->eh_frame_hdr_type != 0)
 		  {
-		    _bfd_error_handler
-		      /* xgettext:c-format */
-		      (_("FDE encoding in %pB(%pA) prevents .eh_frame_hdr"
-			 " table being created"), abfd, sec);
-		    num_warnings_issued ++;
-		  }
-		else if (num_warnings_issued == 10)
-		  {
-		    _bfd_error_handler
-		      (_("further warnings about FDE encoding preventing .eh_frame_hdr generation dropped"));
-		    num_warnings_issued ++;
+		    if (num_warnings_issued < 10)
+		      {
+			_bfd_error_handler
+			  /* xgettext:c-format */
+			  (_("FDE encoding in %pB(%pA) prevents .eh_frame_hdr"
+			     " table being created"), abfd, sec);
+			num_warnings_issued ++;
+		      }
+		    else if (num_warnings_issued == 10)
+		      {
+			_bfd_error_handler
+			  (_("further warnings about FDE encoding preventing .eh_frame_hdr generation dropped"));
+			num_warnings_issued ++;
+		      }
 		  }
 	      }
 	    ent->removed = 0;
@@ -1552,11 +1586,8 @@ _bfd_elf_discard_section_eh_frame
 	  }
       }
 
-  if (sec_info->cies)
-    {
-      free (sec_info->cies);
-      sec_info->cies = NULL;
-    }
+  free (sec_info->cies);
+  sec_info->cies = NULL;
 
   /* It may be that some .eh_frame input section has greater alignment
      than other .eh_frame sections.  In that case we run the risk of
@@ -1592,15 +1623,20 @@ _bfd_elf_discard_section_eh_frame
 
   eh_alignment = 4;
   offset = (offset + eh_alignment - 1) & -eh_alignment;
-  sec->rawsize = sec->size;
+  if (sec->rawsize == 0)
+    sec->rawsize = sec->size;
+  if (sec->size != offset)
+    changed = 2;
   sec->size = offset;
-  if (sec->size != sec->rawsize)
-    changed = 1;
 
-  if (changed && adjust_eh_frame_local_symbols (sec, cookie))
+  if (changed)
     {
-      Elf_Internal_Shdr *symtab_hdr = &elf_tdata (abfd)->symtab_hdr;
-      symtab_hdr->contents = (unsigned char *) cookie->locsyms;
+      Elf_Internal_Sym *locsyms = adjust_eh_frame_local_symbols (sec, cookie);
+      if (locsyms != NULL)
+	{
+	  Elf_Internal_Shdr *symtab_hdr = &elf_symtab_hdr (abfd);
+	  symtab_hdr->contents = (unsigned char *) locsyms;
+	}
     }
   return changed;
 }
@@ -1609,8 +1645,8 @@ _bfd_elf_discard_section_eh_frame
    _bfd_elf_discard_section_eh_frame has been called on all .eh_frame
    input sections.  It finalizes the size of .eh_frame_hdr section.  */
 
-bfd_boolean
-_bfd_elf_discard_section_eh_frame_hdr (bfd *abfd, struct bfd_link_info *info)
+bool
+_bfd_elf_discard_section_eh_frame_hdr (struct bfd_link_info *info)
 {
   struct elf_link_hash_table *htab;
   struct eh_frame_hdr_info *hdr_info;
@@ -1625,9 +1661,13 @@ _bfd_elf_discard_section_eh_frame_hdr (bfd *abfd, struct bfd_link_info *info)
       hdr_info->u.dwarf.cies = NULL;
     }
 
+  if (info->eh_frame_hdr_type == 0
+      || bfd_link_relocatable (info))
+    return false;
+
   sec = hdr_info->hdr_sec;
   if (sec == NULL)
-    return FALSE;
+    return false;
 
   if (info->eh_frame_hdr_type == COMPACT_EH_HDR)
     {
@@ -1642,35 +1682,34 @@ _bfd_elf_discard_section_eh_frame_hdr (bfd *abfd, struct bfd_link_info *info)
 	sec->size += 4 + hdr_info->u.dwarf.fde_count * 8;
     }
 
-  elf_eh_frame_hdr (abfd) = sec;
-  return TRUE;
+  return true;
 }
 
 /* Return true if there is at least one non-empty .eh_frame section in
    input files.  Can only be called after ld has mapped input to
    output sections, and before sections are stripped.  */
 
-bfd_boolean
+bool
 _bfd_elf_eh_frame_present (struct bfd_link_info *info)
 {
   asection *eh = bfd_get_section_by_name (info->output_bfd, ".eh_frame");
 
   if (eh == NULL)
-    return FALSE;
+    return false;
 
   /* Count only sections which have at least a single CIE or FDE.
      There cannot be any CIE or FDE <= 8 bytes.  */
   for (eh = eh->map_head.s; eh != NULL; eh = eh->map_head.s)
     if (eh->size > 8)
-      return TRUE;
+      return true;
 
-  return FALSE;
+  return false;
 }
 
 /* Return true if there is at least one .eh_frame_entry section in
    input files.  */
 
-bfd_boolean
+bool
 _bfd_elf_eh_frame_entry_present (struct bfd_link_info *info)
 {
   asection *o;
@@ -1680,14 +1719,14 @@ _bfd_elf_eh_frame_entry_present (struct bfd_link_info *info)
     {
       for (o = abfd->sections; o; o = o->next)
 	{
-	  const char *name = bfd_get_section_name (abfd, o);
+	  const char *name = bfd_section_name (o);
 
 	  if (strcmp (name, ".eh_frame_entry")
 	      && !bfd_is_abs_section (o->output_section))
-	    return TRUE;
+	    return true;
 	}
     }
-  return FALSE;
+  return false;
 }
 
 /* This function is called from size_dynamic_sections.
@@ -1695,7 +1734,7 @@ _bfd_elf_eh_frame_entry_present (struct bfd_link_info *info)
    because when the dynamic symbol table has been sized it is too late
    to strip sections.  */
 
-bfd_boolean
+bool
 _bfd_elf_maybe_strip_eh_frame_hdr (struct bfd_link_info *info)
 {
   struct elf_link_hash_table *htab;
@@ -1706,7 +1745,7 @@ _bfd_elf_maybe_strip_eh_frame_hdr (struct bfd_link_info *info)
   htab = elf_hash_table (info);
   hdr_info = &htab->eh_info;
   if (hdr_info->hdr_sec == NULL)
-    return TRUE;
+    return true;
 
   if (bfd_is_abs_section (hdr_info->hdr_sec->output_section)
       || info->eh_frame_hdr_type == 0
@@ -1717,25 +1756,25 @@ _bfd_elf_maybe_strip_eh_frame_hdr (struct bfd_link_info *info)
     {
       hdr_info->hdr_sec->flags |= SEC_EXCLUDE;
       hdr_info->hdr_sec = NULL;
-      return TRUE;
+      return true;
     }
 
   /* Add a hidden symbol so that systems without access to PHDRs can
      find the table.  */
   if (! (_bfd_generic_link_add_one_symbol
 	 (info, info->output_bfd, "__GNU_EH_FRAME_HDR", BSF_LOCAL,
-	  hdr_info->hdr_sec, 0, NULL, FALSE, FALSE, &bh)))
-    return FALSE;
+	  hdr_info->hdr_sec, 0, NULL, false, false, &bh)))
+    return false;
 
   h = (struct elf_link_hash_entry *) bh;
   h->def_regular = 1;
   h->other = STV_HIDDEN;
   get_elf_backend_data
-    (info->output_bfd)->elf_backend_hide_symbol (info, h, TRUE);
+    (info->output_bfd)->elf_backend_hide_symbol (info, h, true);
 
   if (!hdr_info->frame_hdr_is_compact)
-    hdr_info->u.dwarf.table = TRUE;
-  return TRUE;
+    hdr_info->u.dwarf.table = true;
+  return true;
 }
 
 /* Adjust an address in the .eh_frame section.  Given OFFSET within
@@ -1754,7 +1793,19 @@ _bfd_elf_eh_frame_section_offset (bfd *output_bfd ATTRIBUTE_UNUSED,
 
   if (sec->sec_info_type != SEC_INFO_TYPE_EH_FRAME)
     return offset;
-  sec_info = (struct eh_frame_sec_info *) elf_section_data (sec)->sec_info;
+  sec_info = sec->sec_info;
+
+  if (sec->rawsize == 0)
+    /* The .eh_frame section was parsed (which happens with --gc-sections
+       in bfd_elf_gc_sections) but has not been edited by
+       _bfd_elf_discard_section_eh_frame.  That function is only called
+       for input sections mapped to an output section named .eh_frame;
+       a custom linker script may place .eh_frame input sections in some
+       other output section.  In that case the contents and the offsets
+       of the entries are unchanged, so the offset needs no adjustment.
+       Without this the branch below would add the whole section size to
+       every relocation offset, corrupting the relocation list.  */
+    return offset;
 
   if (offset >= sec->rawsize)
     return offset - sec->rawsize + sec->size;
@@ -1828,16 +1879,16 @@ _bfd_elf_eh_frame_section_offset (bfd *output_bfd ATTRIBUTE_UNUSED,
 /* Write out .eh_frame_entry section.  Add CANTUNWIND terminator if needed.
    Also check that the contents look sane.  */
 
-bfd_boolean
+bool
 _bfd_elf_write_section_eh_frame_entry (bfd *abfd, struct bfd_link_info *info,
 				       asection *sec, bfd_byte *contents)
 {
-  const struct elf_backend_data *bed;
+  elf_backend_data *bed;
   bfd_byte cantunwind[8];
   bfd_vma addr;
   bfd_vma last_addr;
   bfd_vma offset;
-  asection *text_sec = (asection *) elf_section_data (sec)->sec_info;
+  asection *text_sec = sec->sec_info;
 
   if (!sec->rawsize)
     sec->rawsize = sec->size;
@@ -1849,11 +1900,11 @@ _bfd_elf_write_section_eh_frame_entry (bfd *abfd, struct bfd_link_info *info,
      excluded outside of the normal process.  */
   if (sec->flags & SEC_EXCLUDE
       || text_sec->flags & SEC_EXCLUDE)
-    return TRUE;
+    return true;
 
   if (!bfd_set_section_contents (abfd, sec->output_section, contents,
 				 sec->output_offset, sec->rawsize))
-      return FALSE;
+      return false;
 
   last_addr = bfd_get_signed_32 (abfd, contents);
   /* Check that all the entries are in order.  */
@@ -1864,7 +1915,7 @@ _bfd_elf_write_section_eh_frame_entry (bfd *abfd, struct bfd_link_info *info,
 	{
 	  /* xgettext:c-format */
 	  _bfd_error_handler (_("%pB: %pA not in order"), sec->owner, sec);
-	  return FALSE;
+	  return false;
 	}
 
       last_addr = addr;
@@ -1880,7 +1931,7 @@ _bfd_elf_write_section_eh_frame_entry (bfd *abfd, struct bfd_link_info *info,
       _bfd_error_handler (_("%pB: %pA invalid input section size"),
 			  sec->owner, sec);
       bfd_set_error (bfd_error_bad_value);
-      return FALSE;
+      return false;
     }
   if (last_addr >= addr + sec->rawsize)
     {
@@ -1888,11 +1939,11 @@ _bfd_elf_write_section_eh_frame_entry (bfd *abfd, struct bfd_link_info *info,
       _bfd_error_handler (_("%pB: %pA points past end of text section"),
 			  sec->owner, sec);
       bfd_set_error (bfd_error_bad_value);
-      return FALSE;
+      return false;
     }
 
   if (sec->size == sec->rawsize)
-    return TRUE;
+    return true;
 
   bed = get_elf_backend_data (abfd);
   BFD_ASSERT (sec->size == sec->rawsize + 8);
@@ -1908,7 +1959,7 @@ _bfd_elf_write_section_eh_frame_entry (bfd *abfd, struct bfd_link_info *info,
 /* Write out .eh_frame section.  This is called with the relocated
    contents.  */
 
-bfd_boolean
+bool
 _bfd_elf_write_section_eh_frame (bfd *abfd,
 				 struct bfd_link_info *info,
 				 asection *sec,
@@ -1929,13 +1980,13 @@ _bfd_elf_write_section_eh_frame (bfd *abfd,
 	      ->elf_backend_eh_frame_address_size (abfd, sec));
   BFD_ASSERT (ptr_size != 0);
 
-  sec_info = (struct eh_frame_sec_info *) elf_section_data (sec)->sec_info;
+  sec_info = sec->sec_info;
   htab = elf_hash_table (info);
   hdr_info = &htab->eh_info;
 
   if (hdr_info->u.dwarf.table && hdr_info->u.dwarf.array == NULL)
     {
-      hdr_info->frame_hdr_is_compact = FALSE;
+      hdr_info->frame_hdr_is_compact = false;
       hdr_info->u.dwarf.array = (struct eh_frame_array_ent *)
 	bfd_malloc (hdr_info->u.dwarf.fde_count
 		    * sizeof (*hdr_info->u.dwarf.array));
@@ -1991,7 +2042,7 @@ _bfd_elf_write_section_eh_frame (bfd *abfd,
 	      || ent->u.cie.per_encoding_relative)
 	    {
 	      char *aug;
-	      unsigned int action, extra_string, extra_data;
+	      unsigned int version, action, extra_string, extra_data;
 	      unsigned int per_width, per_encoding;
 
 	      /* Need to find 'R' or 'L' augmentation's argument and modify
@@ -2002,13 +2053,17 @@ _bfd_elf_write_section_eh_frame (bfd *abfd,
 	      extra_string = extra_augmentation_string_bytes (ent);
 	      extra_data = extra_augmentation_data_bytes (ent);
 
-	      /* Skip length, id and version.  */
-	      buf += 9;
+	      /* Skip length, id.  */
+	      buf += 8;
+	      version = *buf++;
 	      aug = (char *) buf;
 	      buf += strlen (aug) + 1;
 	      skip_leb128 (&buf, end);
 	      skip_leb128 (&buf, end);
-	      skip_leb128 (&buf, end);
+	      if (version == 1)
+		skip_bytes (&buf, end, 1);
+	      else
+		skip_leb128 (&buf, end);
 	      if (*aug == 'z')
 		{
 		  /* The uleb128 will always be a single byte for the kind
@@ -2179,7 +2234,7 @@ _bfd_elf_write_section_eh_frame (bfd *abfd,
 	      hdr_info->u.dwarf.array[hdr_info->array_count].initial_loc
 		= address;
 	      hdr_info->u.dwarf.array[hdr_info->array_count].range
-		= read_value (abfd, buf + width, width, FALSE);
+		= read_value (abfd, buf + width, width, false);
 	      hdr_info->u.dwarf.array[hdr_info->array_count++].fde
 		= (sec->output_section->vma
 		   + sec->output_offset
@@ -2251,6 +2306,34 @@ _bfd_elf_write_section_eh_frame (bfd *abfd,
 				   sec->size);
 }
 
+/* A handy wrapper for writing linker generated .eh_frame sections
+   with contents that may need to be extended beyond the initial size
+   allocated.  */
+
+bool
+_bfd_elf_write_linker_section_eh_frame (bfd *obfd, struct bfd_link_info *info,
+					asection *sec, bfd_byte *bigbuf)
+{
+  bfd_size_type initial_size = sec->rawsize != 0 ? sec->rawsize : sec->size;
+  memcpy (bigbuf, sec->contents, initial_size);
+  if (!_bfd_elf_write_section_eh_frame (obfd, info, sec, bigbuf))
+    return false;
+  if (sec->size > initial_size)
+    {
+      if (sec->alloced)
+	sec->contents = bfd_alloc (sec->owner, sec->size);
+      else
+	{
+	  free (sec->contents);
+	  sec->contents = bfd_malloc (sec->size);
+	}
+      if (sec->contents == NULL)
+	return false;
+    }
+  memcpy (sec->contents, bigbuf, sec->size);
+  return true;
+}
+
 /* Helper function used to sort .eh_frame_hdr search table by increasing
    VMA of FDE initial location.  */
 
@@ -2278,7 +2361,7 @@ vma_compare (const void *a, const void *b)
    invalid for a linker script to try to force a particular order of
    .eh_frame_entry sections.  */
 
-bfd_boolean
+bool
 _bfd_elf_fixup_eh_frame_hdr (struct bfd_link_info *info)
 {
   asection *sec = NULL;
@@ -2293,7 +2376,7 @@ _bfd_elf_fixup_eh_frame_hdr (struct bfd_link_info *info)
   if (hdr_info->hdr_sec == NULL
       || info->eh_frame_hdr_type != COMPACT_EH_HDR
       || hdr_info->array_count == 0)
-    return TRUE;
+    return true;
 
   /* Change section output offsets to be in text section order.  */
   offset = 8;
@@ -2306,7 +2389,7 @@ _bfd_elf_fixup_eh_frame_hdr (struct bfd_link_info *info)
 	  _bfd_error_handler
 	    (_("invalid output section for .eh_frame_entry: %pA"),
 	     sec->output_section);
-	  return FALSE;
+	  return false;
 	}
       sec->output_offset = offset;
       offset += sec->size;
@@ -2328,10 +2411,10 @@ _bfd_elf_fixup_eh_frame_hdr (struct bfd_link_info *info)
     {
       _bfd_error_handler
 	(_("invalid contents in %pA section"), osec);
-      return FALSE;
+      return false;
     }
 
-  return TRUE;
+  return true;
 }
 
 /* The .eh_frame_hdr format for Compact EH frames:
@@ -2340,13 +2423,13 @@ _bfd_elf_fixup_eh_frame_hdr (struct bfd_link_info *info)
    uint32_t count		(Number of entries in table)
    [array from .eh_frame_entry sections]  */
 
-static bfd_boolean
+static bool
 write_compact_eh_frame_hdr (bfd *abfd, struct bfd_link_info *info)
 {
   struct elf_link_hash_table *htab;
   struct eh_frame_hdr_info *hdr_info;
   asection *sec;
-  const struct elf_backend_data *bed;
+  elf_backend_data *bed;
   bfd_vma count;
   bfd_byte contents[8];
   unsigned int i;
@@ -2393,13 +2476,13 @@ write_compact_eh_frame_hdr (bfd *abfd, struct bfd_link_info *info)
 				 FDE initial_location field and FDE address,
 				 sorted by increasing initial_loc).  */
 
-static bfd_boolean
+static bool
 write_dwarf_eh_frame_hdr (bfd *abfd, struct bfd_link_info *info)
 {
   struct elf_link_hash_table *htab;
   struct eh_frame_hdr_info *hdr_info;
   asection *sec;
-  bfd_boolean retval = TRUE;
+  bool retval = false;
 
   htab = elf_hash_table (info);
   hdr_info = &htab->eh_info;
@@ -2415,14 +2498,11 @@ write_dwarf_eh_frame_hdr (bfd *abfd, struct bfd_link_info *info)
     size += 4 + hdr_info->u.dwarf.fde_count * 8;
   contents = (bfd_byte *) bfd_malloc (size);
   if (contents == NULL)
-    return FALSE;
+    goto out;
 
   eh_frame_sec = bfd_get_section_by_name (abfd, ".eh_frame");
   if (eh_frame_sec == NULL)
-    {
-      free (contents);
-      return FALSE;
-    }
+    goto out;
 
   memset (contents, 0, EH_FRAME_HDR_SIZE);
   /* Version.  */
@@ -2446,17 +2526,18 @@ write_dwarf_eh_frame_hdr (bfd *abfd, struct bfd_link_info *info)
     }
   bfd_put_32 (abfd, encoded_eh_frame, contents + 4);
 
+  retval = true;
   if (contents[2] != DW_EH_PE_omit)
     {
       unsigned int i;
-      bfd_boolean overlap, overflow;
+      bool overlap, overflow;
 
       bfd_put_32 (abfd, hdr_info->u.dwarf.fde_count,
 		  contents + EH_FRAME_HDR_SIZE);
       qsort (hdr_info->u.dwarf.array, hdr_info->u.dwarf.fde_count,
 	     sizeof (*hdr_info->u.dwarf.array), vma_compare);
-      overlap = FALSE;
-      overflow = FALSE;
+      overlap = false;
+      overflow = false;
       for (i = 0; i < hdr_info->u.dwarf.fde_count; i++)
 	{
 	  bfd_vma val;
@@ -2467,20 +2548,20 @@ write_dwarf_eh_frame_hdr (bfd *abfd, struct bfd_link_info *info)
 	  if (elf_elfheader (abfd)->e_ident[EI_CLASS] == ELFCLASS64
 	      && (hdr_info->u.dwarf.array[i].initial_loc
 		  != sec->output_section->vma + val))
-	    overflow = TRUE;
+	    overflow = true;
 	  bfd_put_32 (abfd, val, contents + EH_FRAME_HDR_SIZE + i * 8 + 4);
 	  val = hdr_info->u.dwarf.array[i].fde - sec->output_section->vma;
 	  val = ((val & 0xffffffff) ^ 0x80000000) - 0x80000000;
 	  if (elf_elfheader (abfd)->e_ident[EI_CLASS] == ELFCLASS64
 	      && (hdr_info->u.dwarf.array[i].fde
 		  != sec->output_section->vma + val))
-	    overflow = TRUE;
+	    overflow = true;
 	  bfd_put_32 (abfd, val, contents + EH_FRAME_HDR_SIZE + i * 8 + 8);
 	  if (i != 0
 	      && (hdr_info->u.dwarf.array[i].initial_loc
 		  < (hdr_info->u.dwarf.array[i - 1].initial_loc
 		     + hdr_info->u.dwarf.array[i - 1].range)))
-	    overlap = TRUE;
+	    overlap = true;
 	}
       if (overflow)
 	_bfd_error_handler (_(".eh_frame_hdr entry overflow"));
@@ -2489,19 +2570,19 @@ write_dwarf_eh_frame_hdr (bfd *abfd, struct bfd_link_info *info)
       if (overflow || overlap)
 	{
 	  bfd_set_error (bfd_error_bad_value);
-	  retval = FALSE;
+	  retval = false;
 	}
     }
 
   /* FIXME: octets_per_byte.  */
   if (!bfd_set_section_contents (abfd, sec->output_section, contents,
 				 (file_ptr) sec->output_offset,
-				 sec->size))
-    retval = FALSE;
+				 size))
+    retval = false;
+ out:
   free (contents);
-
-  if (hdr_info->u.dwarf.array != NULL)
-    free (hdr_info->u.dwarf.array);
+  free (hdr_info->u.dwarf.array);
+  hdr_info->u.dwarf.array = NULL;
   return retval;
 }
 
@@ -2509,7 +2590,7 @@ write_dwarf_eh_frame_hdr (bfd *abfd, struct bfd_link_info *info)
    _bfd_elf_write_section_eh_frame has been called on all input
    .eh_frame sections.  */
 
-bfd_boolean
+bool
 _bfd_elf_write_section_eh_frame_hdr (bfd *abfd, struct bfd_link_info *info)
 {
   struct elf_link_hash_table *htab;
@@ -2521,7 +2602,7 @@ _bfd_elf_write_section_eh_frame_hdr (bfd *abfd, struct bfd_link_info *info)
   sec = hdr_info->hdr_sec;
 
   if (info->eh_frame_hdr_type == 0 || sec == NULL)
-    return TRUE;
+    return true;
 
   if (info->eh_frame_hdr_type == COMPACT_EH_HDR)
     return write_compact_eh_frame_hdr (abfd, info);
@@ -2540,12 +2621,12 @@ _bfd_elf_eh_frame_address_size (bfd *abfd, const asection *sec ATTRIBUTE_UNUSED)
 /* Decide whether we can use a PC-relative encoding within the given
    EH frame section.  This is the default implementation.  */
 
-bfd_boolean
+bool
 _bfd_elf_can_make_relative (bfd *input_bfd ATTRIBUTE_UNUSED,
 			    struct bfd_link_info *info ATTRIBUTE_UNUSED,
 			    asection *eh_frame_section ATTRIBUTE_UNUSED)
 {
-  return TRUE;
+  return true;
 }
 
 /* Select an encoding for the given address.  Preference is given to

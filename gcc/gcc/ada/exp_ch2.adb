@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -23,27 +23,35 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with Atree;    use Atree;
-with Checks;   use Checks;
-with Debug;    use Debug;
-with Einfo;    use Einfo;
-with Elists;   use Elists;
-with Exp_Smem; use Exp_Smem;
-with Exp_Tss;  use Exp_Tss;
-with Exp_Util; use Exp_Util;
-with Namet;    use Namet;
-with Nmake;    use Nmake;
-with Opt;      use Opt;
-with Output;   use Output;
-with Sem;      use Sem;
-with Sem_Eval; use Sem_Eval;
-with Sem_Res;  use Sem_Res;
-with Sem_Util; use Sem_Util;
-with Sem_Warn; use Sem_Warn;
-with Sinfo;    use Sinfo;
-with Sinput;   use Sinput;
-with Snames;   use Snames;
-with Tbuild;   use Tbuild;
+with Aspects;        use Aspects;
+with Atree;          use Atree;
+with Checks;         use Checks;
+with Debug;          use Debug;
+with Einfo.Entities; use Einfo.Entities;
+with Einfo.Utils;    use Einfo.Utils;
+with Elists;         use Elists;
+with Exp_Smem;       use Exp_Smem;
+with Exp_Tss;        use Exp_Tss;
+with Exp_Util;       use Exp_Util;
+with Namet;          use Namet;
+with Nlists;         use Nlists;
+with Nmake;          use Nmake;
+with Opt;            use Opt;
+with Output;         use Output;
+with Rtsfind;        use Rtsfind;
+with Sem;            use Sem;
+with Sem_Eval;       use Sem_Eval;
+with Sem_Res;        use Sem_Res;
+with Sem_Util;       use Sem_Util;
+with Sem_Warn;       use Sem_Warn;
+with Sinfo.Nodes;    use Sinfo.Nodes;
+with Sinfo.Utils;    use Sinfo.Utils;
+with Sinput;         use Sinput;
+with Snames;         use Snames;
+with Stand;
+with Stringt;        use Stringt;
+with Tbuild;         use Tbuild;
+with Uintp;           use Uintp;
 
 package body Exp_Ch2 is
 
@@ -107,8 +115,7 @@ package body Exp_Ch2 is
    procedure Expand_Renaming (N : Node_Id);
    --  For renamings, just replace the identifier by the corresponding
    --  named expression. Note that this has been evaluated (see routine
-   --  Exp_Ch8.Expand_N_Object_Renaming.Evaluate_Name) so this gives
-   --  the correct renaming semantics.
+   --  Exp_Util.Evaluate_Name) so this gives correct renaming semantics.
 
    --------------------------
    -- Expand_Current_Value --
@@ -121,8 +128,6 @@ package body Exp_Ch2 is
       T   : constant Entity_Id  := Etype (N);
       Val : Node_Id;
       Op  : Node_Kind;
-
-   --  Start of processing for Expand_Current_Value
 
    begin
       if True
@@ -142,18 +147,11 @@ package body Exp_Ch2 is
 
          --  Do not replace lvalues
 
-         and then not May_Be_Lvalue (N)
+         and then not Known_To_Be_Assigned (N)
 
          --  Check that entity is suitable for replacement
 
          and then OK_To_Do_Constant_Replacement (E)
-
-         --  Do not replace occurrences in pragmas (where names typically
-         --  appear not as values, but as simply names. If there are cases
-         --  where values are required, it is only a very minor efficiency
-         --  issue that they do not get replaced when they could be).
-
-         and then Nkind (Parent (N)) /= N_Pragma_Argument_Association
 
          --  Do not replace the prefixes of attribute references, since this
          --  causes trouble with cases like 4'Size. Also for Name_Asm_Input and
@@ -162,11 +160,9 @@ package body Exp_Ch2 is
 
          and then not (Nkind (Parent (N)) = N_Attribute_Reference
                         and then
-                          (Nam_In (Attribute_Name (Parent (N)),
-                                   Name_Asm_Input,
-                                   Name_Asm_Output)
+                          (Attribute_Name (Parent (N)) in Name_Asm_Input
+                                                        | Name_Asm_Output
                             or else Prefix (Parent (N)) = N))
-
       then
          --  Case of Current_Value is a compile time known value
 
@@ -342,7 +338,42 @@ package body Exp_Ch2 is
    -----------------------------
 
    procedure Expand_Entity_Reference (N : Node_Id) is
+
+      function Is_Object_Renaming_Name (N : Node_Id) return Boolean;
+      --  Indicates that N occurs (after accounting for qualified expressions
+      --  and type conversions) as the name of an object renaming declaration.
+      --  We don't want to fold values in that case.
+
+      -----------------------------
+      -- Is_Object_Renaming_Name --
+      -----------------------------
+
+      function Is_Object_Renaming_Name (N : Node_Id) return Boolean is
+         Trailer : Node_Id := N;
+         Rover   : Node_Id;
+      begin
+         loop
+            Rover := Parent (Trailer);
+            case Nkind (Rover) is
+               when N_Qualified_Expression | N_Type_Conversion =>
+                  --  Conservative for type conversions; only necessary if
+                  --  conversion does not introduce a new object (as opposed
+                  --  to a new view of an existing object).
+                  null;
+               when N_Object_Renaming_Declaration =>
+                  return Trailer = Name (Rover);
+               when others =>
+                  return False; -- the usual case
+            end case;
+            Trailer := Rover;
+         end loop;
+      end Is_Object_Renaming_Name;
+
+      --  Local variables
+
       E : constant Entity_Id := Entity (N);
+
+   --  Start of processing for Expand_Entity_Reference
 
    begin
       --  Defend against errors
@@ -388,7 +419,7 @@ package body Exp_Ch2 is
         and then Is_Scalar_Type (Etype (N))
         and then (Is_Assignable (E) or else Is_Constant_Object (E))
         and then Comes_From_Source (N)
-        and then Is_LHS (N) = No
+        and then not Known_To_Be_Assigned (N)
         and then not Is_Actual_Out_Parameter (N)
         and then (Nkind (Parent (N)) /= N_Attribute_Reference
                    or else Attribute_Name (Parent (N)) /= Name_Valid)
@@ -408,7 +439,7 @@ package body Exp_Ch2 is
       --  Set Atomic_Sync_Required if necessary for atomic variable. Note that
       --  this processing does NOT apply to Volatile_Full_Access variables.
 
-      if Nkind_In (N, N_Identifier, N_Expanded_Name)
+      if Nkind (N) in N_Identifier | N_Expanded_Name
         and then Ekind (E) = E_Variable
         and then (Is_Atomic (E) or else Is_Atomic (Etype (E)))
       then
@@ -432,9 +463,9 @@ package body Exp_Ch2 is
             --  disable if either variable or its type have sync disabled.
 
             else
-               Set := (not Atomic_Synchronization_Disabled (E))
+               Set := not Atomic_Synchronization_Disabled (E)
                         and then
-                      (not Atomic_Synchronization_Disabled (Etype (E)));
+                      not Atomic_Synchronization_Disabled (Etype (E));
             end if;
 
             --  Set flag if required
@@ -445,10 +476,17 @@ package body Exp_Ch2 is
          end;
       end if;
 
-      --  Interpret possible Current_Value for variable case
+      --  Interpret possible Current_Value for variable case. The
+      --  Is_Object_Renaming_Name test is needed for cases such as
+      --    X : Integer := 1;
+      --    Y : Integer renames Integer'(X);
+      --  where the value of Y is changed by any subsequent assignments to X.
+      --  In cases like this, we do not want to use Current_Value even though
+      --  it is available.
 
       if Is_Assignable (E)
         and then Present (Current_Value (E))
+        and then not Is_Object_Renaming_Name (N)
       then
          Expand_Current_Value (N);
 
@@ -499,52 +537,6 @@ package body Exp_Ch2 is
       Addr_Ent   : constant Entity_Id  := Node (Last_Elmt (Acc_Stack));
       P_Comp_Ref : Entity_Id;
 
-      function In_Assignment_Context (N : Node_Id) return Boolean;
-      --  Check whether this is a context in which the entry formal may be
-      --  assigned to.
-
-      ---------------------------
-      -- In_Assignment_Context --
-      ---------------------------
-
-      function In_Assignment_Context (N : Node_Id) return Boolean is
-      begin
-         --  Case of use in a call
-
-         --  ??? passing a formal as actual for a mode IN formal is
-         --  considered as an assignment?
-
-         if Nkind_In (Parent (N), N_Procedure_Call_Statement,
-                                  N_Entry_Call_Statement)
-           or else (Nkind (Parent (N)) = N_Assignment_Statement
-                      and then N = Name (Parent (N)))
-         then
-            return True;
-
-         --  Case of a parameter association: climb up to enclosing call
-
-         elsif Nkind (Parent (N)) = N_Parameter_Association then
-            return In_Assignment_Context (Parent (N));
-
-         --  Case of a selected component, indexed component or slice prefix:
-         --  climb up the tree, unless the prefix is of an access type (in
-         --  which case there is an implicit dereference, and the formal itself
-         --  is not being assigned to).
-
-         elsif Nkind_In (Parent (N), N_Selected_Component,
-                                     N_Indexed_Component,
-                                     N_Slice)
-           and then N = Prefix (Parent (N))
-           and then not Is_Access_Type (Etype (N))
-           and then In_Assignment_Context (Parent (N))
-         then
-            return True;
-
-         else
-            return False;
-         end if;
-      end In_Assignment_Context;
-
    --  Start of processing for Expand_Entry_Parameter
 
    begin
@@ -563,7 +555,7 @@ package body Exp_Ch2 is
          --  done during semantic processing so it is called in -gnatc mode???
 
          if Ekind (Entity (N)) /= E_In_Parameter
-           and then In_Assignment_Context (N)
+           and then Known_To_Be_Assigned (N)
          then
             Note_Possible_Modification (N, Sure => True);
          end if;
@@ -711,9 +703,15 @@ package body Exp_Ch2 is
       T : constant Entity_Id := Etype (N);
 
    begin
+      --  Mark the entity as referenced since this reference is going away
+
+      Set_Referenced (E);
+
+      --  Now rewrite the reference as a copy of the renamed object
+
       Rewrite (N, New_Copy_Tree (Renamed_Object (E)));
 
-      --  We mark the copy as unanalyzed, so that it is sure to be reanalyzed
+      --  Mark the copy as unanalyzed to make sure that it is reanalyzed
       --  at the top level. This is needed in the packed case since we
       --  specifically avoided expanding packed array references when the
       --  renaming declaration was analyzed.
@@ -722,98 +720,195 @@ package body Exp_Ch2 is
       Analyze_And_Resolve (N, T);
    end Expand_Renaming;
 
-   ------------------
-   -- Param_Entity --
-   ------------------
+   ------------------------------------------
+   -- Expand_N_Interpolated_String_Literal --
+   ------------------------------------------
 
-   --  This would be trivial, simply a test for an identifier that was a
-   --  reference to a formal, if it were not for the fact that a previous call
-   --  to Expand_Entry_Parameter will have modified the reference to the
-   --  identifier. A formal of a protected entity is rewritten as
+   procedure Expand_N_Interpolated_String_Literal (N : Node_Id) is
 
-   --    typ!(recobj).rec.all'Constrained
+      procedure Apply_Static_Length_Check (Typ : Entity_Id);
+      --  Tries to determine statically whether the length of the interpolated
+      --  string N exceeds the length of the target subtype Typ. If it can be
+      --  determined at compile time then an N_Raise_Constraint_Error node
+      --  replaces the interpolated string N, and a warning message is issued.
 
-   --  where rec is a selector whose Entry_Formal link points to the formal
+      function Build_Interpolated_String_Image (N : Node_Id) return Node_Id;
+      --  Build the following Expression_With_Actions node:
+      --     do
+      --        Sink : Buffer;
+      --        [ Set_Trim_Leading_Spaces (Sink); ]
+      --        Type'Put_Image (Sink, X);
+      --        { [ Set_Trim_Leading_Spaces (Sink); ]
+      --          Type'Put_Image (Sink, X); }
+      --        Result : constant String := Get (Sink);
+      --        Destroy (Sink);
+      --     in Result end
 
-   --  If the type of the entry parameter has a representation clause, then an
-   --  extra temp is involved (see below).
+      -------------------------------
+      -- Apply_Static_Length_Check --
+      -------------------------------
 
-   --  For a formal of a task entity, the formal is rewritten as a local
-   --  renaming.
+      procedure Apply_Static_Length_Check (Typ : Entity_Id) is
+         HB         : constant Node_Id := High_Bound (First_Index (Typ));
+         LB         : constant Node_Id := Low_Bound (First_Index (Typ));
+         Str_Elem   : Node_Id;
+         Str_Length : Nat;
+         Typ_Length : Nat;
 
-   --  In addition, a formal that is marked volatile because it is aliased
-   --  through an address clause is rewritten as dereference as well.
+      begin
+         if Compile_Time_Known_Value (LB)
+           and then Compile_Time_Known_Value (HB)
+         then
+            Typ_Length := UI_To_Int (Expr_Value (HB) - Expr_Value (LB) + 1);
 
-   function Param_Entity (N : Node_Id) return Entity_Id is
-      Renamed_Obj : Node_Id;
+            --  Compute the minimum length of the interpolated string: the
+            --  length of the concatenation of the string literals composing
+            --  the interpolated string.
 
-   begin
-      --  Simple reference case
+            Str_Length := 0;
+            Str_Elem   := First (Expressions (N));
+            while Present (Str_Elem) loop
+               if Nkind (Str_Elem) = N_String_Literal then
+                  Str_Length := Str_Length + String_Length (Strval (Str_Elem));
+               end if;
 
-      if Nkind_In (N, N_Identifier, N_Expanded_Name) then
-         if Is_Formal (Entity (N)) then
-            return Entity (N);
+               Next (Str_Elem);
+            end loop;
 
-         --  Handle renamings of formal parameters and formals of tasks that
-         --  are rewritten as renamings.
-
-         elsif Nkind (Parent (Entity (N))) = N_Object_Renaming_Declaration then
-            Renamed_Obj := Get_Referenced_Object (Renamed_Object (Entity (N)));
-
-            if Is_Entity_Name (Renamed_Obj)
-              and then Is_Formal (Entity (Renamed_Obj))
-            then
-               return Entity (Renamed_Obj);
-
-            elsif
-              Nkind (Parent (Parent (Entity (N)))) = N_Accept_Statement
-            then
-               return Entity (N);
+            if Str_Length > Typ_Length then
+               Apply_Compile_Time_Constraint_Error
+                 (N, "wrong length for interpolated string of}??",
+                  CE_Length_Check_Failed,
+                  Ent => Typ,
+                  Typ => Typ);
             end if;
          end if;
+      end Apply_Static_Length_Check;
 
-      else
-         if Nkind (N) = N_Explicit_Dereference then
-            declare
-               P    : Node_Id := Prefix (N);
-               S    : Node_Id;
-               E    : Entity_Id;
-               Decl : Node_Id;
+      -------------------------------------
+      -- Build_Interpolated_String_Image --
+      -------------------------------------
 
-            begin
-               --  If the type of an entry parameter has a representation
-               --  clause, then the prefix is not a selected component, but
-               --  instead a reference to a temp pointing at the selected
-               --  component. In this case, set P to be the initial value of
-               --  that temp.
+      function Build_Interpolated_String_Image (N : Node_Id) return Node_Id
+      is
+         Loc           : constant Source_Ptr := Sloc (N);
+         Sink_Entity   : constant Entity_Id  := Make_Temporary (Loc, 'S');
+         Sink_Decl     : constant Node_Id :=
+                           Make_Object_Declaration (Loc,
+                             Defining_Identifier => Sink_Entity,
+                             Object_Definition =>
+                               New_Occurrence_Of (RTE (RE_Buffer_Type), Loc));
 
-               if Nkind (P) = N_Identifier then
-                  E := Entity (P);
+         B_Type        : constant Entity_Id := Base_Type (Etype (N));
+         Get_Id        : constant RE_Id :=
+                           (if B_Type = Stand.Standard_String then
+                               RE_Get
+                            elsif B_Type = Stand.Standard_Wide_String then
+                               RE_Wide_Get
+                            else
+                               RE_Wide_Wide_Get);
 
-                  if Ekind (E) = E_Constant then
-                     Decl := Parent (E);
+         Result_Entity : constant Entity_Id := Make_Temporary (Loc, 'R');
+         Result_Decl   : constant Node_Id :=
+                           Make_Object_Declaration (Loc,
+                             Defining_Identifier => Result_Entity,
+                             Object_Definition =>
+                               New_Occurrence_Of (B_Type, Loc),
+                             Expression =>
+                               Make_Function_Call (Loc,
+                                 Name => New_Occurrence_Of (RTE (Get_Id), Loc),
+                                 Parameter_Associations => New_List (
+                                   New_Occurrence_Of (Sink_Entity, Loc))));
 
-                     if Nkind (Decl) = N_Object_Declaration then
-                        P := Expression (Decl);
-                     end if;
-                  end if;
-               end if;
+         Actions  : constant List_Id := New_List;
+         U_Type   : constant Entity_Id := Underlying_Type (Etype (N));
+         Elem_Typ : Entity_Id;
+         Str_Elem : Node_Id;
 
-               if Nkind (P) = N_Selected_Component then
-                  S := Selector_Name (P);
+      begin
+         pragma Assert (Etype (N) /= Stand.Any_String);
 
-                  if Present (Entry_Formal (Entity (S))) then
-                     return Entry_Formal (Entity (S));
-                  end if;
+         Append_To (Actions, Sink_Decl);
 
-               elsif Nkind (Original_Node (N)) = N_Identifier then
-                  return Param_Entity (Original_Node (N));
-               end if;
-            end;
+         Str_Elem := First (Expressions (N));
+         while Present (Str_Elem) loop
+            Elem_Typ := Etype (Str_Elem);
+
+            --  If the type is numeric or has a specified Integer_Literal or
+            --  Real_Literal aspect, then prior to invoking Put_Image, the
+            --  Trim_Leading_Spaces flag is set on the text buffer.
+
+            if Is_Numeric_Type (Underlying_Type (Elem_Typ))
+              or else Has_Aspect (Elem_Typ, Aspect_Integer_Literal)
+              or else Has_Aspect (Elem_Typ, Aspect_Real_Literal)
+            then
+               Append_To (Actions,
+                 Make_Procedure_Call_Statement (Loc,
+                   Name                   =>
+                     New_Occurrence_Of
+                       (RTE (RE_Set_Trim_Leading_Spaces), Loc),
+                   Parameter_Associations => New_List (
+                     Convert_To (RTE (RE_Root_Buffer_Type),
+                       New_Occurrence_Of (Sink_Entity, Loc)),
+                     New_Occurrence_Of (Stand.Standard_True, Loc))));
+            end if;
+
+            Append_To (Actions,
+              Make_Attribute_Reference (Loc,
+                Prefix         => New_Occurrence_Of (Elem_Typ, Loc),
+                Attribute_Name => Name_Put_Image,
+                Expressions    => New_List (
+                  New_Occurrence_Of (Sink_Entity, Loc),
+                  Duplicate_Subexpr (Str_Elem))));
+
+            Next (Str_Elem);
+         end loop;
+
+         --  Add a type conversion to the result object declaration of custom
+         --  string types.
+
+         if not Is_Standard_String_Type (U_Type)
+           and then (not RTU_Loaded (Interfaces_C)
+                       or else Enclosing_Lib_Unit_Entity (U_Type)
+                                 /= RTU_Entity (Interfaces_C))
+         then
+            Set_Expression (Result_Decl,
+              Convert_To (Etype (N),
+                Relocate_Node (Expression (Result_Decl))));
+         end if;
+
+         Append_To (Actions, Result_Decl);
+
+         return Make_Expression_With_Actions (Loc,
+           Actions    => Actions,
+           Expression => New_Occurrence_Of (Result_Entity, Loc));
+      end Build_Interpolated_String_Image;
+
+      --  Local variables
+
+      Typ : constant Entity_Id := Etype (N);
+
+   --  Start of processing for Expand_N_Interpolated_String_Literal
+
+   begin
+      --  If the type imposed by the context is constrained then check that
+      --  the statically known length of the interpolated string does not
+      --  exceed the length of its type.
+
+      if Is_Constrained (Typ) then
+         Apply_Static_Length_Check (Typ);
+
+         if Nkind (N) = N_Raise_Constraint_Error then
+            return;
          end if;
       end if;
 
-      return (Empty);
-   end Param_Entity;
+      Rewrite (N, Build_Interpolated_String_Image (N));
+      Analyze_And_Resolve (N, Typ);
+
+      if Is_Constrained (Typ) then
+         Apply_Length_Check (Expression (N), Typ);
+      end if;
+   end Expand_N_Interpolated_String_Literal;
 
 end Exp_Ch2;

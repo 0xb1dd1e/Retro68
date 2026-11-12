@@ -1,5 +1,6 @@
 #source: gc-start.s
 #source: gc-relocs-257.s
+#target: [check_shared_lib_support]
 #ld: --defsym tempy=0x11012 --defsym tempy2=0x45034 --defsym tempy3=0x1234   -T aarch64.ld   -shared  --gc-sections
 #objdump: -R -d
 
@@ -12,5 +13,5 @@
 
 Disassembly of section .text:
 
-0+8000 \<_start\>:
-    8000:	d503201f 	nop
+0+10000 \<_start\>:
+   10000:	d503201f 	nop

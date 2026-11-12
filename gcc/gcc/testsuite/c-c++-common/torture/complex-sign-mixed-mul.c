@@ -2,6 +2,7 @@
    multiplication.  */
 /* { dg-do run } */
 /* { dg-options "-std=gnu99" { target c } } */
+/* { dg-skip-if "double support is incomplete" { "avr-*-*" } } */
 
 #include "complex-sign.h"
 
@@ -28,9 +29,7 @@
 void
 check_mul_float (void)
 {
-#ifndef __SPU__
   CHECK_MUL (float, __builtin_copysignf, 0.0f, 0.0if);
-#endif
 }
 
 void

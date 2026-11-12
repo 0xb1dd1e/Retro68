@@ -1,4 +1,5 @@
 /* { dg-require-effective-target vect_int } */
+/* { dg-require-effective-target vect_perm } */
 
 #include "tree-vect.h"
 
@@ -38,3 +39,4 @@ int main()
 }
 
 /* { dg-final { scan-tree-dump "vectorizing stmts using SLP" "vect" } } */
+/* { dg-final { scan-tree-dump-times "VEC_PERM_EXPR" 0 "vect" } } */

@@ -15,7 +15,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with Retro68.  If not, see <http://www.gnu.org/licenses/>.
 
-cmake_minimum_required(VERSION 3.9)
+cmake_minimum_required(VERSION 3.10)
 project(Retro)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
@@ -23,8 +23,18 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED TRUE)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Werror=return-type -Wno-multichar")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror=return-type -Werror=strict-prototypes -Wno-multichar")
 
 enable_testing()
+if(CMAKE_SYSTEM_NAME MATCHES "RetroCarbon")
+    set(TESTCASE_PREFIX "Carbon.")
+elseif(CMAKE_SYSTEM_NAME MATCHES "Retro68")
+    set(TESTCASE_PREFIX "M68K.")
+elseif(CMAKE_SYSTEM_NAME MATCHES "RetroPPC")
+    set(TESTCASE_PREFIX "PPC.")
+else()
+    set(TESTCASE_PREFIX)
+endif()
 
 if(CMAKE_SYSTEM_NAME MATCHES Retro.*)
 
@@ -33,7 +43,7 @@ include(add_application)
 
 string(TOLOWER ${CMAKE_SYSTEM_NAME} SYSLOWER)
 configure_file(cmake/${SYSLOWER}.toolchain.cmake.in cmake/${SYSLOWER}.toolchain.cmake @ONLY)
-install(DIRECTORY cmake/ DESTINATION cmake FILES_MATCHING PATTERN "*.cmake")
+install(DIRECTORY cmake/ DESTINATION cmake FILES_MATCHING PATTERN "*.cmake" PATTERN "*.lds")
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/cmake/${SYSLOWER}.toolchain.cmake DESTINATION cmake)
 
 add_subdirectory(libretro)
@@ -54,6 +64,10 @@ add_subdirectory(Samples/Launcher)
 add_subdirectory(Samples/SystemExtension)
 else()
 add_subdirectory(Samples/SharedLibrary)
+endif()
+
+if(CMAKE_SYSTEM_NAME MATCHES RetroPPC)
+add_subdirectory(Samples/NDRV)
 endif()
 
 if(CMAKE_SYSTEM_NAME MATCHES RetroCarbon)

@@ -1,8 +1,7 @@
 // { dg-do run { target c++14 } }
 // { dg-options "-g -O0" }
-// { dg-skip-if "" { *-*-* } { "-D_GLIBCXX_PROFILE" } }
 
-// Copyright (C) 2014-2019 Free Software Foundation, Inc.
+// Copyright (C) 2014-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -19,9 +18,6 @@
 // with this library; see the file COPYING3.  If not see
 // <http://www.gnu.org/licenses/>.
 
-// Type printers only recognize the old std::string for now.
-#define _GLIBCXX_USE_CXX11_ABI 0
-
 #include <experimental/any>
 #include <experimental/optional>
 #include <experimental/string_view>
@@ -36,22 +32,28 @@ using std::experimental::string_view;
 int
 main()
 {
+  // Ensure debug info for std::string is issued in the local
+  // translation unit, so that GDB won't pick up any alternate
+  // std::string notion that might be present in libstdc++.so.
+  std::string bah = "hi";
+  (void)bah;
+
   string_view str = "string";
 // { dg-final { note-test str "\"string\"" } }
 
   optional<int> o;
-// { dg-final { note-test o {std::experimental::optional<int> [no contained value]} } }
+// { dg-final { note-test o {std::experimental::optional [no contained value]} } }
   optional<bool> ob{false};
-// { dg-final { note-test ob {std::experimental::optional<bool> = {[contained value] = false}} } }
+// { dg-final { note-test ob {std::experimental::optional = {[contained value] = false}} } }
   optional<int> oi{5};
-// { dg-final { note-test oi {std::experimental::optional<int> = {[contained value] = 5}} } }
+// { dg-final { note-test oi {std::experimental::optional = {[contained value] = 5}} } }
   optional<void*> op{nullptr};
-// { dg-final { note-test op {std::experimental::optional<void *> = {[contained value] = 0x0}} } }
+// { dg-final { note-test op {std::experimental::optional = {[contained value] = 0x0}} } }
   optional<std::map<int, double>> om;
   om = std::map<int, double>{ {1, 2.}, {3, 4.}, {5, 6.} };
-// { dg-final { note-test om {std::experimental::optional<std::map<int, double>> containing std::map with 3 elements = {[1] = 2, [3] = 4, [5] = 6}} } }
+// { dg-final { regexp-test om {std::experimental::optional containing std::(__debug::)?map with 3 elements = {\[1\] = 2, \[3\] = 4, \[5\] = 6}} } }
   optional<std::string> os{ "stringy" };
-// { dg-final { note-test os {std::experimental::optional<std::string> = {[contained value] = "stringy"}} } }
+// { dg-final { note-test os {std::experimental::optional = {[contained value] = "stringy"}} } }
 
   any a;
 // { dg-final { note-test a {std::experimental::any [no contained value]} } }
@@ -66,7 +68,7 @@ main()
   any as2("stringiest");
 // { dg-final { regexp-test as2 {std::experimental::any containing const char \* = {\[contained value\] = 0x[[:xdigit:]]+ "stringiest"}} } }
   any am = *om;
-// { dg-final { note-test am {std::experimental::any containing std::map with 3 elements = {[1] = 2, [3] = 4, [5] = 6}} } }
+// { dg-final { regexp-test am {std::experimental::any containing std::(__debug::)?map with 3 elements = {\[1\] = 2, \[3\] = 4, \[5\] = 6}} } }
 
   std::cout << "\n";
   return 0;			// Mark SPOT

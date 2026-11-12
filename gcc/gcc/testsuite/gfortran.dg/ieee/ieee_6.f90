@@ -1,4 +1,5 @@
 ! { dg-do run }
+! { dg-skip-if "PR libfortran/78314" { aarch64*-*-gnu* arm*-*-gnueabi arm*-*-gnueabihf } }
 !
 ! This test will fail on older x86_64 glibc (< 2.20), due to this bug:
 ! https://sourceware.org/bugzilla/show_bug.cgi?id=16198
@@ -11,7 +12,7 @@
   type(ieee_status_type) :: s1, s2
   logical :: flags(5), halt(5), haltworks
   type(ieee_round_type) :: mode
-  real :: x
+  real, volatile :: x
 
   ! Test IEEE_GET_STATUS and IEEE_SET_STATUS
 

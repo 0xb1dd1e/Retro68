@@ -1,5 +1,5 @@
 /* Definitions of floating-point access for GNU compiler.
-   Copyright (C) 1989-2019 Free Software Foundation, Inc.
+   Copyright (C) 1989-2026 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -41,11 +41,18 @@ struct GTY(()) real_value {
      sure they're packed together, otherwise REAL_VALUE_TYPE_SIZE will
      be miscomputed.  */
   unsigned int /* ENUM_BITFIELD (real_value_class) */ cl : 2;
+  /* 1 if number is decimal floating point.  */
   unsigned int decimal : 1;
+  /* 1 if number is negative.  */
   unsigned int sign : 1;
+  /* 1 if number is signalling.  */
   unsigned int signalling : 1;
+  /* 1 if number is canonical
+  All are generally used for handling cases in real.cc.  */
   unsigned int canonical : 1;
+  /* unbiased exponent of the number.  */
   unsigned int uexp : EXP_BITS;
+  /* significand of the number.  */
   unsigned long sig[SIGSZ];
 };
 
@@ -171,13 +178,12 @@ struct real_format
    decimal float modes indexed by (MODE - first decimal float mode) +
    the number of float modes.  */
 extern const struct real_format *
-  real_format_for_mode[MAX_MODE_FLOAT - MIN_MODE_FLOAT + 1
-		       + MAX_MODE_DECIMAL_FLOAT - MIN_MODE_DECIMAL_FLOAT + 1];
+  real_format_for_mode[NUM_MODE_FLOAT + NUM_MODE_DECIMAL_FLOAT];
 
 #define REAL_MODE_FORMAT(MODE)						\
   (real_format_for_mode[DECIMAL_FLOAT_MODE_P (MODE)			\
 			? (((MODE) - MIN_MODE_DECIMAL_FLOAT)		\
-			   + (MAX_MODE_FLOAT - MIN_MODE_FLOAT + 1))	\
+			   + NUM_MODE_FLOAT)				\
 			: GET_MODE_CLASS (MODE) == MODE_FLOAT		\
 			? ((MODE) - MIN_MODE_FLOAT)			\
 			: (gcc_unreachable (), 0)])
@@ -227,7 +233,7 @@ inline format_helper::format_helper (const T &m)
   : m_format (m == VOIDmode ? 0 : REAL_MODE_FORMAT (m))
 {}
 
-/* Declare functions in real.c.  */
+/* Declare functions in real.cc.  */
 
 /* True if the given mode has a NaN representation and the treatment of
    NaN operands is important.  Certain optimizations, such as folding
@@ -271,11 +277,22 @@ extern bool real_compare (int, const REAL_VALUE_TYPE *, const REAL_VALUE_TYPE *)
 /* Determine whether a floating-point value X is infinite.  */
 extern bool real_isinf (const REAL_VALUE_TYPE *);
 
+/* Determine whether a floating-point value X is infinite with SIGN.  */
+extern bool real_isinf (const REAL_VALUE_TYPE *, bool sign);
+
 /* Determine whether a floating-point value X is a NaN.  */
 extern bool real_isnan (const REAL_VALUE_TYPE *);
 
 /* Determine whether a floating-point value X is a signaling NaN.  */
 extern bool real_issignaling_nan (const REAL_VALUE_TYPE *);
+
+/* Determine whether floating-point value R is a denormal.  This
+   function is only valid for normalized values.  */
+inline bool
+real_isdenormal (const REAL_VALUE_TYPE *r, machine_mode mode)
+{
+  return r->cl == rvc_normal && REAL_EXP (r) < REAL_MODE_FORMAT (mode)->emin;
+}
 
 /* Determine whether a floating-point value X is finite.  */
 extern bool real_isfinite (const REAL_VALUE_TYPE *);
@@ -285,6 +302,12 @@ extern bool real_isneg (const REAL_VALUE_TYPE *);
 
 /* Determine whether a floating-point value X is minus zero.  */
 extern bool real_isnegzero (const REAL_VALUE_TYPE *);
+
+/* Determine whether a floating-point value X is plus or minus zero.  */
+extern bool real_iszero (const REAL_VALUE_TYPE *);
+
+/* Determine whether a floating-point value X is zero with SIGN.  */
+extern bool real_iszero (const REAL_VALUE_TYPE *, bool sign);
 
 /* Test relationships between reals.  */
 extern bool real_identical (const REAL_VALUE_TYPE *, const REAL_VALUE_TYPE *);
@@ -325,7 +348,7 @@ extern long real_to_target (long *, const REAL_VALUE_TYPE *, format_helper);
 extern void real_from_target (REAL_VALUE_TYPE *, const long *,
 			      format_helper);
 
-extern void real_inf (REAL_VALUE_TYPE *);
+extern void real_inf (REAL_VALUE_TYPE *, bool sign = false);
 
 extern bool real_nan (REAL_VALUE_TYPE *, const char *, int, format_helper);
 
@@ -336,7 +359,7 @@ extern void real_2expN (REAL_VALUE_TYPE *, int, format_helper);
 extern unsigned int real_hash (const REAL_VALUE_TYPE *);
 
 
-/* Target formats defined in real.c.  */
+/* Target formats defined in real.cc.  */
 extern const struct real_format ieee_single_format;
 extern const struct real_format mips_single_format;
 extern const struct real_format motorola_single_format;
@@ -361,6 +384,7 @@ extern const struct real_format decimal_double_format;
 extern const struct real_format decimal_quad_format;
 extern const struct real_format ieee_half_format;
 extern const struct real_format arm_half_format;
+extern const struct real_format arm_bfloat_half_format;
 
 
 /* ====================================================================== */
@@ -372,7 +396,7 @@ extern const struct real_format arm_half_format;
 /* Determine whether a floating-point value X is a NaN.  */
 #define REAL_VALUE_ISNAN(x)		real_isnan (&(x))
 
-/* Determine whether a floating-point value X is a signaling NaN.  */ 
+/* Determine whether a floating-point value X is a signaling NaN.  */
 #define REAL_VALUE_ISSIGNALING_NAN(x)  real_issignaling_nan (&(x))
 
 /* Determine whether a floating-point value X is negative.  */
@@ -382,9 +406,10 @@ extern const struct real_format arm_half_format;
 #define REAL_VALUE_MINUS_ZERO(x)	real_isnegzero (&(x))
 
 /* IN is a REAL_VALUE_TYPE.  OUT is an array of longs.  */
-#define REAL_VALUE_TO_TARGET_LONG_DOUBLE(IN, OUT)			\
-  real_to_target (OUT, &(IN),						\
-		  float_mode_for_size (LONG_DOUBLE_TYPE_SIZE).require ())
+#define REAL_VALUE_TO_TARGET_LONG_DOUBLE(IN, OUT)			   \
+  real_to_target (OUT, &(IN),						   \
+		  float_mode_for_size (TYPE_PRECISION			   \
+				       (long_double_type_node)).require ())
 
 #define REAL_VALUE_TO_TARGET_DOUBLE(IN, OUT) \
   real_to_target (OUT, &(IN), float_mode_for_size (64).require ())
@@ -444,8 +469,11 @@ extern void real_ldexp (REAL_VALUE_TYPE *, const REAL_VALUE_TYPE *, int);
 extern REAL_VALUE_TYPE dconst0;
 extern REAL_VALUE_TYPE dconst1;
 extern REAL_VALUE_TYPE dconst2;
+extern REAL_VALUE_TYPE dconstm0;
 extern REAL_VALUE_TYPE dconstm1;
 extern REAL_VALUE_TYPE dconsthalf;
+extern REAL_VALUE_TYPE dconstinf;
+extern REAL_VALUE_TYPE dconstninf;
 
 #define dconst_e() (*dconst_e_ptr ())
 #define dconst_third() (*dconst_third_ptr ())
@@ -453,9 +481,13 @@ extern REAL_VALUE_TYPE dconsthalf;
 #define dconst_sixth() (*dconst_sixth_ptr ())
 #define dconst_ninth() (*dconst_ninth_ptr ())
 #define dconst_sqrt2() (*dconst_sqrt2_ptr ())
+#define dconst_pi() (*dconst_pi_ptr ())
 
 /* Function to return the real value special constant 'e'.  */
-extern const REAL_VALUE_TYPE * dconst_e_ptr (void);
+extern const REAL_VALUE_TYPE *dconst_e_ptr (void);
+
+/* Function to return the real value special constant 'pi'.  */
+extern const REAL_VALUE_TYPE *dconst_pi_ptr (void);
 
 /* Returns a cached REAL_VALUE_TYPE corresponding to 1/n, for various n.  */
 extern const REAL_VALUE_TYPE *dconst_third_ptr (void);
@@ -481,7 +513,7 @@ extern bool exact_real_inverse (format_helper, REAL_VALUE_TYPE *);
    in TMODE.  */
 bool real_can_shorten_arithmetic (machine_mode, machine_mode);
 
-/* In tree.c: wrap up a REAL_VALUE_TYPE in a tree node.  */
+/* In tree.cc: wrap up a REAL_VALUE_TYPE in a tree node.  */
 extern tree build_real (tree, REAL_VALUE_TYPE);
 
 /* Likewise, but first truncate the value to the type.  */
@@ -500,6 +532,8 @@ extern void real_ceil (REAL_VALUE_TYPE *, format_helper,
 		       const REAL_VALUE_TYPE *);
 extern void real_round (REAL_VALUE_TYPE *, format_helper,
 			const REAL_VALUE_TYPE *);
+extern void real_roundeven (REAL_VALUE_TYPE *, format_helper,
+			    const REAL_VALUE_TYPE *);
 
 /* Set the sign of R to the sign of X.  */
 extern void real_copysign (REAL_VALUE_TYPE *, const REAL_VALUE_TYPE *);
@@ -515,7 +549,7 @@ extern bool real_nextafter (REAL_VALUE_TYPE *, format_helper,
 /* Write into BUF the maximum representable finite floating-point
    number, (1 - b**-p) * b**emax for a given FP format FMT as a hex
    float string.  BUF must be large enough to contain the result.  */
-extern void get_max_float (const struct real_format *, char *, size_t);
+extern void get_max_float (const struct real_format *, char *, size_t, bool);
 
 #ifndef GENERATOR_FILE
 /* real related routines.  */
@@ -526,6 +560,6 @@ extern void real_from_integer (REAL_VALUE_TYPE *, format_helper,
 
 /* Fills r with the largest value such that 1 + r*r won't overflow.
    This is used in both sin (atan (x)) and cos (atan(x)) optimizations. */
-extern void build_sinatan_real (REAL_VALUE_TYPE *, tree); 
+extern void build_sinatan_real (REAL_VALUE_TYPE *, tree);
 
 #endif /* ! GCC_REAL_H */

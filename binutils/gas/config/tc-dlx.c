@@ -1,5 +1,5 @@
 /* tc-dlx.c -- Assemble for the DLX
-   Copyright (C) 2002-2018 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -43,7 +43,7 @@
 #define RELOC_DLX_VTENTRY   BFD_RELOC_VTABLE_ENTRY
 
 /* handle of the OPCODE hash table */
-static struct hash_control *op_hash = NULL;
+static htab_t op_hash = NULL;
 
 struct machine_it
 {
@@ -92,14 +92,14 @@ insert_sreg (const char *regname, int regnum)
   char buf[80];
   int i;
 
-  symbol_table_insert (symbol_new (regname, reg_section, (valueT) regnum,
-				   &zero_address_frag));
+  symbol_table_insert (symbol_new (regname, reg_section,
+				   &zero_address_frag, regnum));
   for (i = 0; regname[i]; i++)
     buf[i] = ISLOWER (regname[i]) ? TOUPPER (regname[i]) : regname[i];
   buf[i] = '\0';
 
-  symbol_table_insert (symbol_new (buf, reg_section, (valueT) regnum,
-				   &zero_address_frag));
+  symbol_table_insert (symbol_new (buf, reg_section,
+				   &zero_address_frag, regnum));
 }
 
 /* Install symbol definitions for assorted special registers.
@@ -187,7 +187,7 @@ is_ldst_registers (char *name)
 
   /* The first character of the register name got to be either %, $, r of R.  */
   if ((ptr[0] == '%' || ptr[0] == '$' || ptr[0] == 'r' || ptr[0] == 'R')
-      && ISDIGIT ((unsigned char) ptr[1]))
+      && ISDIGIT (ptr[1]))
     return 1;
 
   /* Now check the software register representation.  */
@@ -217,7 +217,7 @@ s_proc (int end_p)
 
       current_name = current_label = NULL;
       SKIP_WHITESPACE ();
-      while (!is_end_of_line[(unsigned char) *input_line_pointer])
+      while (!is_end_of_stmt (*input_line_pointer))
         input_line_pointer++;
     }
   else
@@ -234,8 +234,8 @@ s_proc (int end_p)
 
       delim1 = get_symbol_name (&name);
       name = xstrdup (name);
-      *input_line_pointer = delim1;
-      SKIP_WHITESPACE_AFTER_NAME ();
+      restore_line_pointer (delim1);
+      SKIP_WHITESPACE ();
 
       if (*input_line_pointer != ',')
 	{
@@ -276,30 +276,18 @@ s_proc (int end_p)
 void
 md_begin (void)
 {
-  const char *retval = NULL;
-  int lose = 0;
   unsigned int i;
 
   /* Create a new hash table.  */
-  op_hash = hash_new ();
+  op_hash = str_htab_create ();
 
   /* Hash up all the opcodes for fast use later.  */
   for (i = 0; i < num_dlx_opcodes; i++)
     {
       const char *name = machine_opcodes[i].name;
-
-      retval = hash_insert (op_hash, name, (void *) &machine_opcodes[i]);
-
-      if (retval != NULL)
-	{
-	  fprintf (stderr, _("internal error: can't hash `%s': %s\n"),
-		   machine_opcodes[i].name, retval);
-	  lose = 1;
-	}
+      if (str_hash_insert (op_hash, name, &machine_opcodes[i], 0) != NULL)
+	as_fatal (_("duplicate %s"), name);
     }
-
-  if (lose)
-    as_fatal (_("Broken assembler.  No assembly attempted."));
 
   define_some_regs ();
 }
@@ -511,12 +499,12 @@ dlx_parse_storeop (char * str)
 	pb = comma;
 
       /* Duplicate the first register.  */
-      for (i = comma + 1; (str[i] == ' ' || str[i] == '\t'); i++)
+      for (i = comma + 1; is_whitespace (str[i]); i++)
 	;
 
       for (m2 = 0; (m2 < 7 && str[i] != '\0'); i++, m2++)
 	{
-	  if (str[i] != ' ' && str[i] != '\t')
+	  if (!is_whitespace (str[i]))
 	    rd[m2] = str[i];
 	  else
 	    goto badoperand_store;
@@ -551,7 +539,7 @@ static char *
 fix_ld_st_operand (unsigned long opcode, char* str)
 {
   /* Check the opcode.  */
-  switch ((int) opcode)
+  switch (opcode)
     {
     case  LBOP:
     case  LBUOP:
@@ -604,14 +592,14 @@ parse_operand (char *s, expressionS *operandp)
   the_insn.HI = the_insn.LO = 0;
 
   /* Search for %hi and %lo, make a mark and skip it.  */
-  if (strncmp (s, "%hi", 3) == 0)
+  if (startswith (s, "%hi"))
     {
       s += 3;
       the_insn.HI = 1;
     }
   else
     {
-      if (strncmp (s, "%lo", 3) == 0)
+      if (startswith (s, "%lo"))
 	{
 	  s += 3;
 	  the_insn.LO = 1;
@@ -628,7 +616,7 @@ parse_operand (char *s, expressionS *operandp)
 
   /* Check for the % and $ register representation    */
   if ((s[0] == '%' || s[0] == '$' || s[0] == 'r' || s[0] == 'R')
-      && ISDIGIT ((unsigned char) s[1]))
+      && ISDIGIT (s[1]))
     {
       /* We have a numeric register expression.  No biggy.  */
       s += 1;
@@ -644,6 +632,7 @@ parse_operand (char *s, expressionS *operandp)
       /* Normal operand parsing.  */
       input_line_pointer = s;
       (void) expression (operandp);
+      resolve_register (operandp);
     }
 
   new_pos = input_line_pointer;
@@ -683,18 +672,18 @@ machine_ip (char *str)
     case '\0':
       break;
 
-      /* FIXME-SOMEDAY more whitespace.  */
-    case ' ':
-      *s++ = '\0';
-      break;
-
     default:
+      if (is_whitespace (*s))
+	{
+	  *s++ = '\0';
+	  break;
+	}
       as_bad (_("Unknown opcode: `%s'"), str);
       return;
     }
 
   /* Hash the opcode, insn will have the string from opcode table.  */
-  if ((insn = (struct machine_opcode *) hash_find (op_hash, str)) == NULL)
+  if ((insn = str_hash_find (op_hash, str)) == NULL)
     {
       /* Handle the ret and return macro here.  */
       if ((strcmp (str, "ret") == 0) || (strcmp (str, "return") == 0))
@@ -980,7 +969,7 @@ md_assemble (char *str)
 const char *
 md_atof (int type, char *litP, int *sizeP)
 {
-  return ieee_md_atof (type, litP, sizeP, TRUE);
+  return ieee_md_atof (type, litP, sizeP, true);
 }
 
 /* Write out big-endian.  */
@@ -990,7 +979,7 @@ md_number_to_chars (char *buf, valueT val, int n)
   number_to_chars_bigendian (buf, val, n);
 }
 
-bfd_boolean
+bool
 md_dlx_fix_adjustable (fixS *fixP)
 {
   /* We need the symbol name for the VTABLE entries.  */
@@ -1014,10 +1003,6 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
 	  free (fixP->fx_bit_fixP);
 	  fixP->fx_bit_fixP = NULL;
 	}
-#ifdef DEBUG
-      else
-	know ((fixP->fx_bit_fixP != NULL));
-#endif
       break;
 
     case RELOC_DLX_HI16:
@@ -1027,10 +1012,6 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
 	  free (fixP->fx_bit_fixP);
 	  fixP->fx_bit_fixP = NULL;
 	}
-#ifdef DEBUG
-      else
-	know ((fixP->fx_bit_fixP != NULL));
-#endif
       break;
 
     case RELOC_DLX_REL26:
@@ -1040,10 +1021,6 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
 	  free (fixP->fx_bit_fixP);
 	  fixP->fx_bit_fixP = NULL;
 	}
-#ifdef DEBUG
-      else
-	know ((fixP->fx_bit_fixP != NULL));
-#endif
       break;
 
     case BFD_RELOC_VTABLE_INHERIT:
@@ -1066,16 +1043,18 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
   number_to_chars_bigendian (place, val, fixP->fx_size);
   if (fixP->fx_addsy == NULL)
     fixP->fx_done = 1;
+  if (fixP->fx_bit_fixP != NULL)
+    fixP->fx_no_overflow = 1;
 }
 
-const char *md_shortopts = "";
+const char md_shortopts[] = "";
 
-struct option md_longopts[] =
+const struct option md_longopts[] =
   {
     {NULL, no_argument, NULL, 0}
   };
 
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 int
 md_parse_option (int c     ATTRIBUTE_UNUSED,
@@ -1145,7 +1124,7 @@ md_operand (expressionS* expressionP)
 {
   /* Check for the #number representation    */
   if (input_line_pointer[0] == '#' &&
-      ISDIGIT ((unsigned char) input_line_pointer[1]))
+      ISDIGIT (input_line_pointer[1]))
     {
       /* We have a numeric number expression.  No biggy.  */
       input_line_pointer += 1;	/* Skip # */
@@ -1190,9 +1169,11 @@ tc_gen_reloc (asection *section ATTRIBUTE_UNUSED,
 {
   arelent * reloc;
 
-  reloc = XNEW (arelent);
-  reloc->howto = bfd_reloc_type_lookup (stdoutput, fixP->fx_r_type);
+  reloc = notes_alloc (sizeof (arelent));
+  reloc->sym_ptr_ptr = notes_alloc (sizeof (asymbol *));
+  *reloc->sym_ptr_ptr = symbol_get_bfdsym (fixP->fx_addsy);
 
+  reloc->howto = bfd_reloc_type_lookup (stdoutput, fixP->fx_r_type);
   if (reloc->howto == NULL)
     {
       as_bad_where (fixP->fx_file, fixP->fx_line,
@@ -1204,8 +1185,6 @@ tc_gen_reloc (asection *section ATTRIBUTE_UNUSED,
 
   gas_assert (!fixP->fx_pcrel == !reloc->howto->pc_relative);
 
-  reloc->sym_ptr_ptr = XNEW (asymbol *);
-  *reloc->sym_ptr_ptr = symbol_get_bfdsym (fixP->fx_addsy);
   reloc->address = fixP->fx_frag->fr_address + fixP->fx_where;
 
   if (fixP->fx_r_type == BFD_RELOC_VTABLE_ENTRY)

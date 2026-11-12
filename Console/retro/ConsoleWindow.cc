@@ -22,17 +22,24 @@
 */
 
 #include "ConsoleWindow.h"
+#include "MacUtils.h"
 #include "Events.h"
 #include <unordered_map>
 #include <cstring>
 #include <TextUtils.h>
+#include <functional>
+#include <OSUtils.h>
+#include <Traps.h>
 
+using namespace std;
 using namespace retro;
 
 namespace
 {
     std::unordered_map<WindowPtr, ConsoleWindow*>    *windows = NULL;
+    function<bool(EventRecord *)> getEvent;
 }
+static void setupEventFunction();
 
 ConsoleWindow::ConsoleWindow(Rect r, ConstStr255Param title)
 {
@@ -56,6 +63,7 @@ ConsoleWindow::ConsoleWindow(Rect r, ConstStr255Param title)
     (*windows)[win] = this;
 
     Init(port, portRect);
+    setupEventFunction();
 }
 
 ConsoleWindow::~ConsoleWindow()
@@ -101,7 +109,7 @@ char ConsoleWindow::WaitNextChar()
         #endif
         SystemTask();
         Idle();
-        while(!GetNextEvent(everyEvent, &event))
+        while(!getEvent(&event))
         {
             SystemTask();
             Idle();
@@ -115,6 +123,11 @@ char ConsoleWindow::WaitNextChar()
                 if(realConsole)
                 {
                     Rect updateRect;
+#if TARGET_API_MAC_CARBON
+                    PortSetter setport(GetWindowPort(eventWin));
+#else
+                    PortSetter setport((GrafPtr)eventWin);
+#endif
                     BeginUpdate(eventWin);
 #if TARGET_API_MAC_CARBON
                     RgnHandle rgn = NewRgn();
@@ -153,4 +166,63 @@ char ConsoleWindow::WaitNextChar()
     } while(event.what != keyDown && event.what != autoKey);
 
     return event.message & charCodeMask;
+}
+
+// Wrapper for the WaitNextEvent() function
+static bool waitNextEventWrapper(EventRecord *event)
+{
+    const int sleepValue = 5;
+    const RgnHandle mouseRegion = nil;
+    return WaitNextEvent(everyEvent, event, sleepValue, mouseRegion);
+}
+
+#if !(TARGET_API_MAC_CARBON)
+
+    // Wrapper for the GetNextEvent() function
+    static bool getNextEventWrapper(EventRecord *event)
+    {
+        return GetNextEvent(everyEvent, event);
+    }
+
+    // Determines if a Toolbox routine is available
+    static bool routineAvailable(int trapWord) {
+        TrapType trType;
+        int OSTrap = 0;
+        int ToolTrap = 1;
+    
+        // Determine whether it is an Operating System or Toolbox routine
+        if ((trapWord & 0x0800) == 0) {
+            trType = OSTrap;
+        } 
+        else {
+            trType = ToolTrap;
+        }
+    
+        // Filter cases where older systems mask with 0x1FF rather than 0x3FF
+        if ((trType == ToolTrap) &&
+            ((trapWord & 0x03FF) >= 0x200) &&
+            (GetToolboxTrapAddress(0xA86E) == GetToolboxTrapAddress(0xAA6E))) {
+            return false;
+        }
+        else {
+            return (NGetTrapAddress(trapWord, trType) != GetToolboxTrapAddress(_Unimplemented));
+        }
+    }
+
+#endif /* TARGET_API_MAC_CARBON */
+
+
+// Decides which event retrieving function to use
+static void setupEventFunction()
+{
+    #if TARGET_API_MAC_CARBON
+        getEvent = waitNextEventWrapper;
+    #else
+        if (routineAvailable(_WaitNextEvent) == true) {
+            getEvent = waitNextEventWrapper;
+        }
+        else {
+            getEvent = getNextEventWrapper;
+        }
+    #endif
 }

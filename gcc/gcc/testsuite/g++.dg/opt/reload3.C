@@ -1,8 +1,11 @@
 // PR target/38287
 // { dg-do run }
 // { dg-options "-O2 -mcpu=v8 -fPIC" { target { { sparc*-*-* } && { ilp32 && fpic } } } }
+// { dg-skip-if "requires hosted libstdc++ for cstdlib abort" { ! hostedlib } }
 
 #include <cstdlib>
+
+typedef unsigned uint32_t __attribute__((mode (__SI__)));
 
 class QTime
 {
@@ -15,7 +18,7 @@ private:
     unsigned ds;
 };
 
-static const unsigned MSECS_PER_DAY = 86400000;
+static const uint32_t MSECS_PER_DAY = 86400000;
 
 QTime QTime::addMSecs(int ms) const
 {

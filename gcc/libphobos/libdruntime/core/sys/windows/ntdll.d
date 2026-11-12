@@ -5,12 +5,12 @@
  *
  * Authors: Stewart Gordon
  * License: $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source: $(DRUNTIMESRC src/core/sys/windows/_ntdll.d)
+ * Source: $(DRUNTIMESRC core/sys/windows/_ntdll.d)
  */
 module core.sys.windows.ntdll;
 version (Windows):
 
-private import core.sys.windows.w32api;
+import core.sys.windows.w32api;
 
 
 enum SHUTDOWN_ACTION {
@@ -19,4 +19,4 @@ enum SHUTDOWN_ACTION {
     ShutdownPowerOff
 }
 
-extern (Windows) uint NtShutdownSystem(SHUTDOWN_ACTION Action);
+extern (Windows) nothrow @nogc uint NtShutdownSystem(SHUTDOWN_ACTION Action);

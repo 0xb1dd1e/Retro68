@@ -5,6 +5,7 @@
 /* FIXME: remove me after PR sanitizer/82501 is resolved.  */
 /* { dg-additional-options "-fno-section-anchors" } */
 /* { dg-additional-options "-msdata=none" { target { powerpc*-*-* } } } */
+/* { dg-additional-options "-msmall-data-limit=0" { target { riscv*-*-* } } } */
 
 volatile int v;
 
@@ -14,12 +15,13 @@ foo (char *p, char *q)
   v = p > q;
 }
 
-char global1[100] = {}, global2[100] = {};
+char __attribute__((used)) global1[100] = {};
+char __attribute__((used)) global2[100] = {};
 char __attribute__((used)) smallest_global[5] = {};
-char small_global[7] = {};
+char __attribute__((used)) small_global[7] = {};
 char __attribute__((used)) little_global[10] = {};
 char __attribute__((used)) medium_global[4000] = {};
-char large_global[5000] = {};
+char __attribute__((used)) large_global[5000] = {};
 char __attribute__((used)) largest_global[6000] = {};
 
 int

@@ -1,9 +1,9 @@
 /* Verify that overloaded built-ins for vec_splat with int
    inputs produce the right code.  */
 
-/* { dg-do compile { target { powerpc*-*-linux* && lp64 } } } */
-/* { dg-require-effective-target powerpc_altivec_ok } */
+/* { dg-do compile { target lp64 } } */
 /* { dg-options "-maltivec -O2 " } */
+/* { dg-require-effective-target powerpc_altivec } */
 
 #include <altivec.h>
 

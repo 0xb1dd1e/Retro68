@@ -1,6 +1,6 @@
 /* symtab.c
 
-   Copyright (C) 1999-2018 Free Software Foundation, Inc.
+   Copyright (C) 1999-2026 Free Software Foundation, Inc.
 
    This file is part of GNU Binutils.
 
@@ -18,7 +18,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA
    02110-1301, USA.  */
-
+
 #include "gprof.h"
 #include "search_list.h"
 #include "source.h"
@@ -26,10 +26,42 @@
 #include "cg_arcs.h"
 #include "corefile.h"
 
-static int cmp_addr (const PTR, const PTR);
+static int cmp_addr (const void *, const void *);
 
-Sym_Table symtab;
+/* The symbol table.  */
+static Sym_Table symtab;
 
+/* Return the pointer to the symbol table.  */
+
+Sym_Table *
+get_symtab_direct (void)
+{
+  return &symtab;
+}
+
+/* Return the pointer to the symbol table and initialize it if it isn't
+   initialized yet.  */
+
+Sym_Table *
+get_symtab (void)
+{
+  static Sym_Table *symtab_p;
+  if (!symtab_p)
+    {
+      symtab_init ();
+
+      symtab_p = &symtab;
+    }
+  return symtab_p;
+}
+
+/* Set the symbol table to *LTAB.  */
+
+void
+set_symtab (Sym_Table *ltab)
+{
+  symtab = *ltab;
+}
 
 /* Initialize a symbol (so it's empty).  */
 
@@ -58,7 +90,7 @@ sym_init (Sym *sym)
    the global symbol survives.  */
 
 static int
-cmp_addr (const PTR lp, const PTR rp)
+cmp_addr (const void *lp, const void *rp)
 {
   const Sym *left = (const Sym *) lp;
   const Sym *right = (const Sym *) rp;
@@ -89,7 +121,7 @@ symtab_finalize (Sym_Table *tab)
 
   /* Remove duplicate entries to speed-up later processing and
      set end_addr if its not set yet.  */
-  prev_addr = tab->base[0].addr + 1;
+  prev_addr = tab->base[0].addr - 1;
 
   for (src = dst = tab->base; src < tab->limit; ++src)
     {
@@ -107,7 +139,7 @@ symtab_finalize (Sym_Table *tab)
 		  && ((src->is_func && !dst[-1].is_func)
 		      || ((src->is_func == dst[-1].is_func)
 			  && ((src->name[0] != '_' && dst[-1].name[0] == '_')
-			      || (src->name[0]
+			      || (src->name[0] == '_' && dst[-1].name[0] == '_'
 				  && src->name[1] != '_'
 				  && dst[-1].name[1] == '_'))))))
 	    {
@@ -147,9 +179,9 @@ symtab_finalize (Sym_Table *tab)
 	}
     }
 
-  if (tab->len > 0 && dst[-1].end_addr == 0)
+  if (tab->len > 0 && dst > tab->base && dst[-1].end_addr == 0)
     dst[-1].end_addr
-      = core_text_sect->vma + bfd_get_section_size (core_text_sect) - 1;
+      = core_text_sect->vma + bfd_section_size (core_text_sect) - 1;
 
   DBG (AOUTDEBUG | IDDEBUG,
        printf ("[symtab_finalize]: removed %d duplicate entries\n",

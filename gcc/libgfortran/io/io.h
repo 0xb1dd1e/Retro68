@@ -1,4 +1,4 @@
-/* Copyright (C) 2002-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2002-2026 Free Software Foundation, Inc.
    Contributed by Andy Vaught
    F2003 I/O support contributed by Jerry DeLisle
 
@@ -32,6 +32,10 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 
 #include <gthr.h>
 
+#define gcc_unreachable() __builtin_unreachable ()
+
+/* Used for building error message strings.  */
+#define IOMSG_LEN 256
 
 /* POSIX 2008 specifies that the extended locale stuff is found in
    locale.h, but some systems have them in xlocale.h.  */
@@ -51,8 +55,12 @@ struct format_data;
 typedef struct fnode fnode;
 struct gfc_unit;
 
-#ifdef HAVE_NEWLOCALE
-/* We have POSIX 2008 extended locale stuff.  */
+#if defined (HAVE_FREELOCALE) && defined (HAVE_NEWLOCALE) \
+  && defined (HAVE_USELOCALE)
+/* We have POSIX 2008 extended locale stuff.  We only choose to use it
+   if all the functions required are present as some systems, e.g. NetBSD
+   do not have `uselocale'.  */
+#define HAVE_POSIX_2008_LOCALE
 extern locale_t c_locale;
 internal_proto(c_locale);
 #else
@@ -94,10 +102,6 @@ typedef struct array_loop_spec
 }
 array_loop_spec;
 
-/* User defined input/output iomsg length. */
-
-#define IOMSG_LEN 256
-
 /* Subroutine formatted_dtio (struct, unit, iotype, v_list, iostat,
 			      iomsg, (_iotype), (_iomsg))  */
 typedef void (*formatted_dtio)(void *, GFC_INTEGER_4 *, char *,
@@ -130,6 +134,20 @@ typedef struct format_hash_entry
   struct format_data *hashed_fmt;
 }
 format_hash_entry;
+
+/* Format tokens.  Only about half of these can be stored in the
+   format nodes.  */
+
+typedef enum
+{
+  FMT_NONE = 0, FMT_UNKNOWN, FMT_SIGNED_INT, FMT_ZERO, FMT_POSINT, FMT_PERIOD,
+  FMT_COMMA, FMT_COLON, FMT_SLASH, FMT_DOLLAR, FMT_T, FMT_TR, FMT_TL,
+  FMT_LPAREN, FMT_RPAREN, FMT_X, FMT_S, FMT_SS, FMT_SP, FMT_STRING,
+  FMT_BADSTRING, FMT_P, FMT_I, FMT_B, FMT_BN, FMT_BZ, FMT_O, FMT_Z, FMT_F,
+  FMT_E, FMT_EN, FMT_ES, FMT_G, FMT_L, FMT_A, FMT_D, FMT_H, FMT_END, FMT_DC,
+  FMT_DP, FMT_STAR, FMT_RC, FMT_RD, FMT_RN, FMT_RP, FMT_RU, FMT_RZ, FMT_DT
+}
+format_token;
 
 /* Representation of a namelist object in libgfortran
 
@@ -547,7 +565,7 @@ typedef struct st_parameter_dt
 	  char *line_buffer;
 	  struct format_data *fmt;
 	  namelist_info *ionml;
-#ifdef HAVE_NEWLOCALE
+#ifdef HAVE_POSIX_2008_LOCALE
 	  locale_t old_locale;
 #endif
 	  /* Current position within the look-ahead line buffer.  */
@@ -671,7 +689,7 @@ typedef struct gfc_unit
      from the UNIT_ROOT tree, but doesn't free it and the
      last of the waiting threads will do that.
      This must be either atomically increased/decreased, or
-     always guarded by UNIT_LOCK.  */
+     always guarded by UNIT_RWLOCK.  */
   int waiting;
   /* Flag set by close_unit if the unit as been closed.
      Must be manipulated under unit's lock.  */
@@ -710,6 +728,7 @@ typedef struct gfc_unit
   int last_char;
   bool has_size;
   GFC_IO_INT size_used;
+  intptr_t self;
 }
 gfc_unit;
 
@@ -750,8 +769,13 @@ internal_proto(default_recl);
 extern gfc_unit *unit_root;
 internal_proto(unit_root);
 
-extern __gthread_mutex_t unit_lock;
-internal_proto(unit_lock);
+#ifdef __GTHREAD_RWLOCK_INIT
+extern __gthread_rwlock_t unit_rwlock;
+internal_proto(unit_rwlock);
+#else
+extern __gthread_mutex_t unit_rwlock;
+internal_proto(unit_rwlock);
+#endif
 
 extern int close_unit (gfc_unit *);
 internal_proto(close_unit);
@@ -759,8 +783,8 @@ internal_proto(close_unit);
 extern gfc_unit *set_internal_unit (st_parameter_dt *, gfc_unit *, int);
 internal_proto(set_internal_unit);
 
-extern void stash_internal_unit (st_parameter_dt *);
-internal_proto(stash_internal_unit);
+extern void check_for_recursive (st_parameter_dt *dtp);
+internal_proto(check_for_recursive);
 
 extern gfc_unit *find_unit (int);
 internal_proto(find_unit);
@@ -838,8 +862,14 @@ internal_proto (transfer_array_inner);
 extern void set_integer (void *, GFC_INTEGER_LARGEST, int);
 internal_proto(set_integer);
 
+extern void set_unsigned (void *, GFC_UINTEGER_LARGEST, int);
+internal_proto(set_unsigned);
+
 extern GFC_UINTEGER_LARGEST si_max (int);
 internal_proto(si_max);
+
+extern GFC_UINTEGER_LARGEST us_max (int);
+internal_proto(us_max);
 
 extern int convert_real (st_parameter_dt *, void *, const char *, int);
 internal_proto(convert_real);
@@ -867,6 +897,10 @@ internal_proto(read_radix);
 
 extern void read_decimal (st_parameter_dt *, const fnode *, char *, int);
 internal_proto(read_decimal);
+
+extern void read_decimal_unsigned (st_parameter_dt *, const fnode *, char *,
+				   int);
+internal_proto(read_decimal_unsigned);
 
 extern void read_user_defined (st_parameter_dt *, void *);
 internal_proto(read_user_defined);
@@ -918,6 +952,9 @@ internal_proto(write_f);
 extern void write_i (st_parameter_dt *, const fnode *, const char *, int);
 internal_proto(write_i);
 
+extern void write_iu (st_parameter_dt *, const fnode *, const char *, int);
+internal_proto(write_iu);
+
 extern void write_l (st_parameter_dt *, const fnode *, char *, int);
 internal_proto(write_l);
 
@@ -927,8 +964,8 @@ internal_proto(write_o);
 extern void write_real (st_parameter_dt *, const char *, int);
 internal_proto(write_real);
 
-extern void write_real_g0 (st_parameter_dt *, const char *, int, int);
-internal_proto(write_real_g0);
+extern void write_real_w0 (st_parameter_dt *, const char *, int, const fnode*);
+internal_proto(write_real_w0);
 
 extern void write_x (st_parameter_dt *, int, int);
 internal_proto(write_x);
@@ -996,9 +1033,15 @@ dec_waiting_unlocked (gfc_unit *u)
 #ifdef HAVE_ATOMIC_FETCH_ADD
   (void) __atomic_fetch_add (&u->waiting, -1, __ATOMIC_RELAXED);
 #else
-  __gthread_mutex_lock (&unit_lock);
+#ifdef __GTHREAD_RWLOCK_INIT
+  __gthread_rwlock_wrlock (&unit_rwlock);
   u->waiting--;
-  __gthread_mutex_unlock (&unit_lock);
+  __gthread_rwlock_unlock (&unit_rwlock);
+#else
+  __gthread_mutex_lock (&unit_rwlock);
+  u->waiting--;
+  __gthread_mutex_unlock (&unit_rwlock);
+#endif
 #endif
 }
 
@@ -1011,14 +1054,66 @@ memset4 (gfc_char4_t *p, gfc_char4_t c, int k)
     *p++ = c;
 }
 
+/* Used in width fields to indicate that the default should be used */
+#define DEFAULT_WIDTH -1
+
+/* Defaults for certain format field descriptors. These are decided based on
+ * the type of the value being formatted.
+ *
+ * The behaviour here is modelled on the Oracle Fortran compiler. At the time
+ * of writing, the details were available at this URL:
+ *
+ *   https://docs.oracle.com/cd/E19957-01/805-4939/6j4m0vnc3/index.html#z4000743746d
+ */
+
+static inline int
+default_width_for_integer (int kind)
+{
+  switch (kind)
+    {
+    case 1:
+    case 2:  return  7;
+    case 4:  return 12;
+    case 8:  return 23;
+    case 16: return 44;
+    default: return  0;
+    }
+}
+
+static inline int
+default_width_for_float (int kind)
+{
+  switch (kind)
+    {
+    case 4:  return 15;
+    case 8:  return 25;
+    case 16:
+    case 17: return 42;
+    default: return  0;
+    }
+}
+
+static inline int
+default_precision_for_float (int kind)
+{
+  switch (kind)
+    {
+    case 4:  return 7;
+    case 8:  return 16;
+    case 16:
+    case 17: return 33;
+    default: return 0;
+    }
+}
+
 #endif
 
 extern void
-st_write_done_worker (st_parameter_dt *);
+st_write_done_worker (st_parameter_dt *, bool);
 internal_proto (st_write_done_worker);
 
 extern void
-st_read_done_worker (st_parameter_dt *);
+st_read_done_worker (st_parameter_dt *, bool);
 internal_proto (st_read_done_worker);
 
 extern void

@@ -29,7 +29,7 @@
 #include <string.h>
 #include <MacMemory.h>
 
-void referenceMyMalloc() {}
+void referenceMyMalloc(void) {}
 
 void *_malloc_r(struct _reent *reent_ptr, size_t sz)
 {
@@ -69,27 +69,30 @@ void *_realloc_r(struct _reent *reent_ptr, void *ptr, size_t sz)
     }
     else
     {
+        if(sz == 0)
+        {
+            DisposePtr(ptr);
+            return NULL;
+        }
+
+        /* Save this now in case the block has to be moved. */
+        size_t oldSz = GetPtrSize(ptr);
+
         MemError();
         SetPtrSize(ptr, sz);
         if(MemError())
         {
-            size_t oldSz = GetPtrSize(ptr);
-            if(sz > oldSz)
-            {
-                void *newPtr = NewPtr(sz);
-                if(!newPtr)
-                {
-                    reent_ptr->_errno = ENOMEM;
-                    return NULL;
-                }
-                memcpy(newPtr, ptr, oldSz);
-                return newPtr;
-            }
-            else
+            void *newPtr = NewPtr(sz);
+            if(!newPtr)
             {
                 reent_ptr->_errno = ENOMEM;
                 return NULL;
             }
+
+            memcpy(newPtr, ptr, sz < oldSz ? sz : oldSz);
+            /* The new block owns the data, so the old one can be released. */
+            DisposePtr(ptr);
+            return newPtr;
         }
         else
             return ptr;

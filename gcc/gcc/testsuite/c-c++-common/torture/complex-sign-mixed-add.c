@@ -2,7 +2,7 @@
    addition.  */
 /* { dg-do run } */
 /* { dg-options "-std=gnu99" { target c } } */
-/* { dg-skip-if "ptx can elide zero additions" { "nvptx-*-*" } { "-O0" } { "" } } */
+/* { dg-skip-if "double support is incomplete" { "avr-*-*" } } */
 
 #include "complex-sign.h"
 
@@ -29,9 +29,7 @@
 void
 check_add_float (void)
 {
-#ifndef __SPU__
   CHECK_ADD (float, __builtin_copysignf, 0.0f, 0.0if);
-#endif
 }
 
 void

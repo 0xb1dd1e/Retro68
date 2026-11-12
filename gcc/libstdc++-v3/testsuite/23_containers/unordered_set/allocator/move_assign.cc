@@ -1,4 +1,4 @@
-// Copyright (C) 2013-2019 Free Software Foundation, Inc.
+// Copyright (C) 2013-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -52,8 +52,9 @@ void test01()
     VERIFY( 1 == v1.get_allocator().get_personality() );
     VERIFY( 2 == v2.get_allocator().get_personality() );
 
-    VERIFY( counter_type::move_count == 1  );
-    VERIFY( counter_type::destructor_count == 2 );
+    VERIFY( counter_type::move_count == 0  );
+  // 1 element in v1 destroyed.
+    VERIFY( counter_type::destructor_count == 1 );
   }
 
   // Check there's nothing left allocated or constructed.
@@ -86,7 +87,7 @@ void test02()
 
     v2 = std::move(v1);
 
-    VERIFY(0 == v1.get_allocator().get_personality());
+    VERIFY(1 == v1.get_allocator().get_personality());
     VERIFY(1 == v2.get_allocator().get_personality());
 
     VERIFY( counter_type::move_count == 0 );
@@ -130,8 +131,9 @@ void test03()
     VERIFY( 1 == v1.get_allocator().get_personality() );
     VERIFY( 2 == v2.get_allocator().get_personality() );
 
-    VERIFY( counter_type::move_count == 1  );
-    VERIFY( counter_type::destructor_count == i + 1 );
+    VERIFY( counter_type::move_count == 0  );
+    // (i - 1) elements in v2 destroyed, and 1 element in v1 destroyed.
+    VERIFY( counter_type::destructor_count == i );
   }
 
   // Check there's nothing left allocated or constructed.

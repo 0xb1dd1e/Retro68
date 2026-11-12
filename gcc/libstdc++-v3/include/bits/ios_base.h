@@ -1,6 +1,6 @@
 // Iostreams base classes -*- C++ -*-
 
-// Copyright (C) 1997-2019 Free Software Foundation, Inc.
+// Copyright (C) 1997-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -34,7 +34,9 @@
 #ifndef _IOS_BASE_H
 #define _IOS_BASE_H 1
 
+#ifdef _GLIBCXX_SYSHDR
 #pragma GCC system_header
+#endif
 
 #include <ext/atomicity.h>
 #include <bits/localefwd.h>
@@ -54,8 +56,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   // as permitted (but not required) in the standard, in order to provide
   // better type safety in iostream calls.  A side effect is that in C++98
   // expressions involving them are not compile-time constants.
-  enum _Ios_Fmtflags 
-    { 
+  enum __attribute__((__flag_enum__)) _Ios_Fmtflags
+    {
       _S_boolalpha 	= 1L << 0,
       _S_dec 		= 1L << 1,
       _S_fixed 		= 1L << 2,
@@ -74,128 +76,159 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       _S_adjustfield 	= _S_left | _S_right | _S_internal,
       _S_basefield 	= _S_dec | _S_oct | _S_hex,
       _S_floatfield 	= _S_scientific | _S_fixed,
-      _S_ios_fmtflags_end = 1L << 16,
-      _S_ios_fmtflags_max = __INT_MAX__,
-      _S_ios_fmtflags_min = ~__INT_MAX__
+      _S_ios_fmtflags_end __attribute__((__unused__)) = 1L << 16,
+      _S_ios_fmtflags_max __attribute__((__unused__)) = __INT_MAX__,
+      _S_ios_fmtflags_min __attribute__((__unused__)) = ~__INT_MAX__
     };
 
-  inline _GLIBCXX_CONSTEXPR _Ios_Fmtflags
-  operator&(_Ios_Fmtflags __a, _Ios_Fmtflags __b)
+  _GLIBCXX_NODISCARD _GLIBCXX_CONSTEXPR
+  inline _Ios_Fmtflags
+  operator&(_Ios_Fmtflags __a, _Ios_Fmtflags __b) _GLIBCXX_NOTHROW
   { return _Ios_Fmtflags(static_cast<int>(__a) & static_cast<int>(__b)); }
 
-  inline _GLIBCXX_CONSTEXPR _Ios_Fmtflags
-  operator|(_Ios_Fmtflags __a, _Ios_Fmtflags __b)
+  _GLIBCXX_NODISCARD _GLIBCXX_CONSTEXPR
+  inline _Ios_Fmtflags
+  operator|(_Ios_Fmtflags __a, _Ios_Fmtflags __b) _GLIBCXX_NOTHROW
   { return _Ios_Fmtflags(static_cast<int>(__a) | static_cast<int>(__b)); }
 
-  inline _GLIBCXX_CONSTEXPR _Ios_Fmtflags
-  operator^(_Ios_Fmtflags __a, _Ios_Fmtflags __b)
+  _GLIBCXX_NODISCARD _GLIBCXX_CONSTEXPR
+  inline _Ios_Fmtflags
+  operator^(_Ios_Fmtflags __a, _Ios_Fmtflags __b) _GLIBCXX_NOTHROW
   { return _Ios_Fmtflags(static_cast<int>(__a) ^ static_cast<int>(__b)); }
 
-  inline _GLIBCXX_CONSTEXPR _Ios_Fmtflags
-  operator~(_Ios_Fmtflags __a)
+  _GLIBCXX_NODISCARD _GLIBCXX_CONSTEXPR
+  inline _Ios_Fmtflags
+  operator~(_Ios_Fmtflags __a) _GLIBCXX_NOTHROW
   { return _Ios_Fmtflags(~static_cast<int>(__a)); }
 
+  _GLIBCXX14_CONSTEXPR
   inline const _Ios_Fmtflags&
-  operator|=(_Ios_Fmtflags& __a, _Ios_Fmtflags __b)
+  operator|=(_Ios_Fmtflags& __a, _Ios_Fmtflags __b) _GLIBCXX_NOTHROW
   { return __a = __a | __b; }
 
+  _GLIBCXX14_CONSTEXPR
   inline const _Ios_Fmtflags&
-  operator&=(_Ios_Fmtflags& __a, _Ios_Fmtflags __b)
+  operator&=(_Ios_Fmtflags& __a, _Ios_Fmtflags __b) _GLIBCXX_NOTHROW
   { return __a = __a & __b; }
 
+  _GLIBCXX14_CONSTEXPR
   inline const _Ios_Fmtflags&
-  operator^=(_Ios_Fmtflags& __a, _Ios_Fmtflags __b)
+  operator^=(_Ios_Fmtflags& __a, _Ios_Fmtflags __b) _GLIBCXX_NOTHROW
   { return __a = __a ^ __b; }
 
+  // If std::ios_base::noreplace isn't available, -Wswitch should ignore
+  // _S_noreplace.
+#ifdef __glibcxx_ios_noreplace
+#define _NOREPLACE_UNUSED
+#else
+#define _NOREPLACE_UNUSED __attribute__((__unused__))
+#endif
 
-  enum _Ios_Openmode 
-    { 
+  enum __attribute__((__flag_enum__)) _Ios_Openmode
+    {
       _S_app 		= 1L << 0,
       _S_ate 		= 1L << 1,
       _S_bin 		= 1L << 2,
       _S_in 		= 1L << 3,
       _S_out 		= 1L << 4,
       _S_trunc 		= 1L << 5,
-      _S_ios_openmode_end = 1L << 16,
-      _S_ios_openmode_max = __INT_MAX__,
-      _S_ios_openmode_min = ~__INT_MAX__
+      _S_noreplace _NOREPLACE_UNUSED = 1L << 6,
+      _S_ios_openmode_end __attribute__((__unused__)) = 1L << 16,
+      _S_ios_openmode_max __attribute__((__unused__)) = __INT_MAX__,
+      _S_ios_openmode_min __attribute__((__unused__)) = ~__INT_MAX__
     };
 
-  inline _GLIBCXX_CONSTEXPR _Ios_Openmode
-  operator&(_Ios_Openmode __a, _Ios_Openmode __b)
+#undef _NOREPLACE_UNUSED
+
+  _GLIBCXX_NODISCARD _GLIBCXX_CONSTEXPR
+  inline _Ios_Openmode
+  operator&(_Ios_Openmode __a, _Ios_Openmode __b) _GLIBCXX_NOTHROW
   { return _Ios_Openmode(static_cast<int>(__a) & static_cast<int>(__b)); }
 
-  inline _GLIBCXX_CONSTEXPR _Ios_Openmode
-  operator|(_Ios_Openmode __a, _Ios_Openmode __b)
+  _GLIBCXX_NODISCARD _GLIBCXX_CONSTEXPR
+  inline _Ios_Openmode
+  operator|(_Ios_Openmode __a, _Ios_Openmode __b) _GLIBCXX_NOTHROW
   { return _Ios_Openmode(static_cast<int>(__a) | static_cast<int>(__b)); }
 
-  inline _GLIBCXX_CONSTEXPR _Ios_Openmode
-  operator^(_Ios_Openmode __a, _Ios_Openmode __b)
+  _GLIBCXX_NODISCARD _GLIBCXX_CONSTEXPR
+  inline _Ios_Openmode
+  operator^(_Ios_Openmode __a, _Ios_Openmode __b) _GLIBCXX_NOTHROW
   { return _Ios_Openmode(static_cast<int>(__a) ^ static_cast<int>(__b)); }
 
-  inline _GLIBCXX_CONSTEXPR _Ios_Openmode
-  operator~(_Ios_Openmode __a)
+  _GLIBCXX_NODISCARD _GLIBCXX_CONSTEXPR
+  inline _Ios_Openmode
+  operator~(_Ios_Openmode __a) _GLIBCXX_NOTHROW
   { return _Ios_Openmode(~static_cast<int>(__a)); }
 
+  _GLIBCXX14_CONSTEXPR
   inline const _Ios_Openmode&
-  operator|=(_Ios_Openmode& __a, _Ios_Openmode __b)
+  operator|=(_Ios_Openmode& __a, _Ios_Openmode __b) _GLIBCXX_NOTHROW
   { return __a = __a | __b; }
 
+  _GLIBCXX14_CONSTEXPR
   inline const _Ios_Openmode&
-  operator&=(_Ios_Openmode& __a, _Ios_Openmode __b)
+  operator&=(_Ios_Openmode& __a, _Ios_Openmode __b) _GLIBCXX_NOTHROW
   { return __a = __a & __b; }
 
+  _GLIBCXX14_CONSTEXPR
   inline const _Ios_Openmode&
-  operator^=(_Ios_Openmode& __a, _Ios_Openmode __b)
+  operator^=(_Ios_Openmode& __a, _Ios_Openmode __b) _GLIBCXX_NOTHROW
   { return __a = __a ^ __b; }
 
 
-  enum _Ios_Iostate
-    { 
+  enum __attribute__((__flag_enum__)) _Ios_Iostate
+    {
       _S_goodbit 		= 0,
       _S_badbit 		= 1L << 0,
       _S_eofbit 		= 1L << 1,
       _S_failbit		= 1L << 2,
-      _S_ios_iostate_end = 1L << 16,
-      _S_ios_iostate_max = __INT_MAX__,
-      _S_ios_iostate_min = ~__INT_MAX__
+      _S_ios_iostate_end __attribute__((__unused__)) = 1L << 16,
+      _S_ios_iostate_max __attribute__((__unused__)) = __INT_MAX__,
+      _S_ios_iostate_min __attribute__((__unused__)) = ~__INT_MAX__
     };
 
-  inline _GLIBCXX_CONSTEXPR _Ios_Iostate
-  operator&(_Ios_Iostate __a, _Ios_Iostate __b)
+  _GLIBCXX_NODISCARD _GLIBCXX_CONSTEXPR
+  inline _Ios_Iostate
+  operator&(_Ios_Iostate __a, _Ios_Iostate __b) _GLIBCXX_NOTHROW
   { return _Ios_Iostate(static_cast<int>(__a) & static_cast<int>(__b)); }
 
-  inline _GLIBCXX_CONSTEXPR _Ios_Iostate
-  operator|(_Ios_Iostate __a, _Ios_Iostate __b)
+  _GLIBCXX_NODISCARD _GLIBCXX_CONSTEXPR
+  inline _Ios_Iostate
+  operator|(_Ios_Iostate __a, _Ios_Iostate __b) _GLIBCXX_NOTHROW
   { return _Ios_Iostate(static_cast<int>(__a) | static_cast<int>(__b)); }
 
-  inline _GLIBCXX_CONSTEXPR _Ios_Iostate
-  operator^(_Ios_Iostate __a, _Ios_Iostate __b)
+  _GLIBCXX_NODISCARD _GLIBCXX_CONSTEXPR
+  inline _Ios_Iostate
+  operator^(_Ios_Iostate __a, _Ios_Iostate __b) _GLIBCXX_NOTHROW
   { return _Ios_Iostate(static_cast<int>(__a) ^ static_cast<int>(__b)); }
 
-  inline _GLIBCXX_CONSTEXPR _Ios_Iostate
-  operator~(_Ios_Iostate __a)
+  _GLIBCXX_NODISCARD _GLIBCXX_CONSTEXPR
+  inline _Ios_Iostate
+  operator~(_Ios_Iostate __a) _GLIBCXX_NOTHROW
   { return _Ios_Iostate(~static_cast<int>(__a)); }
 
+  _GLIBCXX14_CONSTEXPR
   inline const _Ios_Iostate&
-  operator|=(_Ios_Iostate& __a, _Ios_Iostate __b)
+  operator|=(_Ios_Iostate& __a, _Ios_Iostate __b) _GLIBCXX_NOTHROW
   { return __a = __a | __b; }
 
+  _GLIBCXX14_CONSTEXPR
   inline const _Ios_Iostate&
-  operator&=(_Ios_Iostate& __a, _Ios_Iostate __b)
+  operator&=(_Ios_Iostate& __a, _Ios_Iostate __b) _GLIBCXX_NOTHROW
   { return __a = __a & __b; }
 
-  inline const  _Ios_Iostate&
-  operator^=(_Ios_Iostate& __a, _Ios_Iostate __b)
+  _GLIBCXX14_CONSTEXPR
+  inline const _Ios_Iostate&
+  operator^=(_Ios_Iostate& __a, _Ios_Iostate __b) _GLIBCXX_NOTHROW
   { return __a = __a ^ __b; }
 
 
-  enum _Ios_Seekdir 
-    { 
+  enum _Ios_Seekdir
+    {
       _S_beg = 0,
       _S_cur = _GLIBCXX_STDIO_SEEK_CUR,
       _S_end = _GLIBCXX_STDIO_SEEK_END,
-      _S_ios_seekdir_end = 1L << 16 
+      _S_ios_seekdir_end __attribute__((__unused__)) = 1L << 16
     };
 
 #if __cplusplus >= 201103L
@@ -204,12 +237,16 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
   template <> struct is_error_code_enum<io_errc> : public true_type { };
 
-  const error_category& iostream_category() noexcept;
+  [[__nodiscard__, __gnu__::__const__]]
+  const error_category&
+  iostream_category() noexcept;
 
+  [[__nodiscard__]]
   inline error_code
   make_error_code(io_errc __e) noexcept
   { return error_code(static_cast<int>(__e), iostream_category()); }
 
+  [[__nodiscard__]]
   inline error_condition
   make_error_condition(io_errc __e) noexcept
   { return error_condition(static_cast<int>(__e), iostream_category()); }
@@ -245,7 +282,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 #endif
   public:
 
-    /** 
+    /**
      *  @brief These are thrown to indicate problems with io.
      *  @ingroup exceptions
      *
@@ -288,6 +325,24 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
       virtual const char*
       what() const throw();
+
+#if __cplusplus >= 201103L
+      // Define the new members required by C++11,
+      // even though the error_code cannot be stored.
+
+      explicit
+      failure(const string& __s, const error_code&) noexcept
+      : failure(__s)
+      { }
+
+      explicit
+      failure(const char* __s, const error_code& = error_code{})
+      : failure(string(__s))
+      { }
+
+      // Stand-in for system_error::code() but returning by value.
+      error_code code() const noexcept { return error_code{}; }
+#endif
 
     private:
       string _M_msg;
@@ -445,8 +500,15 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     /// Open for output.  Default for @c ofstream and fstream.
     static const openmode out =		_S_out;
 
-    /// Open for input.  Default for @c ofstream.
+    /// Truncate an existing stream when opening.  Default for @c ofstream.
     static const openmode trunc =	_S_trunc;
+
+    static const openmode __noreplace =	_S_noreplace;
+
+#ifdef __glibcxx_ios_noreplace // C++ >= 23 && HOSTED
+    /// Open a file in exclusive mode.
+    static const openmode noreplace =	_S_noreplace;
+#endif
 
     // 27.4.2.1.5  Type ios_base::seekdir
     /**
@@ -471,12 +533,17 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
 #if __cplusplus <= 201402L
     // Annex D.6 (removed in C++17)
-    typedef int io_state;
-    typedef int open_mode;
-    typedef int seek_dir;
+    typedef int io_state
+      _GLIBCXX_DEPRECATED_SUGGEST("std::iostate");
+    typedef int open_mode
+      _GLIBCXX_DEPRECATED_SUGGEST("std::openmode");
+    typedef int seek_dir
+      _GLIBCXX_DEPRECATED_SUGGEST("std::seekdir");
 
-    typedef std::streampos streampos;
-    typedef std::streamoff streamoff;
+    typedef std::streampos streampos
+      _GLIBCXX_DEPRECATED_SUGGEST("std::streampos");
+    typedef std::streamoff streamoff
+      _GLIBCXX_DEPRECATED_SUGGEST("std::streamoff");
 #endif
 
     // Callbacks;
@@ -544,7 +611,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
       // 0 => OK to delete.
       int
-      _M_remove_reference() 
+      _M_remove_reference()
       {
         // Be race-detector-friendly.  For more info see bits/c++config.
         _GLIBCXX_SYNCHRONIZATION_HAPPENS_BEFORE(&_M_refcount);
@@ -622,6 +689,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
      *  @brief  Access to format flags.
      *  @return  The format control flags for both input and output.
     */
+    _GLIBCXX_NODISCARD
     fmtflags
     flags() const
     { return _M_flags; }
@@ -692,6 +760,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
      *  Be careful if you try to give a definition of @a precision here; see
      *  DR 189.
     */
+    _GLIBCXX_NODISCARD
     streamsize
     precision() const
     { return _M_precision; }
@@ -715,6 +784,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
      *
      *  <em>Minimum field width</em> refers to the number of characters.
     */
+    _GLIBCXX_NODISCARD
     streamsize
     width() const
     { return _M_width; }
@@ -766,6 +836,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
      *  returns @c loc.  Otherwise, it returns a copy of @c std::locale(),
      *  the global C++ locale.
     */
+    _GLIBCXX_NODISCARD
     locale
     getloc() const
     { return _M_ios_locale; }

@@ -6,23 +6,17 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
 -- ware  Foundation;  either version 3,  or (at your option) any later ver- --
 -- sion.  GNAT is distributed in the hope that it will be useful, but WITH- --
 -- OUT ANY WARRANTY;  without even the  implied warranty of MERCHANTABILITY --
--- or FITNESS FOR A PARTICULAR PURPOSE.                                     --
---                                                                          --
--- As a special exception under Section 7 of GPL version 3, you are granted --
--- additional permissions described in the GCC Runtime Library Exception,   --
--- version 3.1, as published by the Free Software Foundation.               --
---                                                                          --
--- You should have received a copy of the GNU General Public License and    --
--- a copy of the GCC Runtime Library Exception along with this program;     --
--- see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see    --
--- <http://www.gnu.org/licenses/>.                                          --
+-- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
+-- for  more details.  You should have  received  a copy of the GNU General --
+-- Public License  distributed with GNAT; see file COPYING3.  If not, go to --
+-- http://www.gnu.org/licenses for a complete copy of the license.          --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -35,6 +29,9 @@
 --  package Elists which provides another form of lists that are not threaded
 --  through the nodes (and therefore allow nodes to be on multiple lists).
 
+--  WARNING: There is a C version of this package. Any changes to this
+--  source file must be properly reflected in the C header file nlists.h
+
 with System;
 with Types; use Types;
 
@@ -45,9 +42,6 @@ package Nlists is
    --  header is allocated in the lists table, and a List_Id value references
    --  this header, which may be used to access the nodes in the list using
    --  the set of routines that define this interface.
-
-   --  Note: node lists can contain either nodes or entities (extended nodes)
-   --  or a mixture of nodes and extended nodes.
 
    function In_Same_List (N1, N2 : Node_Or_Entity_Id) return Boolean;
    pragma Inline (In_Same_List);
@@ -130,10 +124,9 @@ package Nlists is
    --  Used when dealing with a list that can contain pragmas to skip past
    --  any initial pragmas and return the first element that is not a pragma.
    --  If the list is empty, or if it contains only pragmas, then Empty is
-   --  returned. It is an error to call First_Non_Pragma with a Node_Id value
-   --  or No_List (No_List is not considered to be the same as an empty list).
-   --  This function also skips N_Null nodes which can result from rewriting
-   --  unrecognized or incorrect pragmas.
+   --  returned. It is an error to call this with List = No_List. This function
+   --  also skips N_Null nodes, which can result from rewriting incorrect
+   --  pragmas.
 
    function Last (List : List_Id) return Node_Or_Entity_Id;
    pragma Inline (Last);
@@ -145,13 +138,13 @@ package Nlists is
    function Last_Non_Pragma (List : List_Id) return Node_Or_Entity_Id;
    --  Obtains the last element of a given node list that is not a pragma.
    --  If the list is empty, or if it contains only pragmas, then Empty is
-   --  returned. It is an error to call Last_Non_Pragma with a Node_Id or
-   --  No_List. (No_List is not considered to be the same as an empty list).
+   --  returned. It is an error to call this with List = No_List.
+   --  Unlike First_Non_Pragma, this does not skip N_Null nodes.
 
    function List_Length (List : List_Id) return Nat;
-   --  Returns number of items in the given list. It is an error to call
-   --  this function with No_List (No_List is not considered to be the same
-   --  as an empty list).
+   --  Returns number of items in the given list. If called on No_List it
+   --  returns 0, even though No_List is not considered to be the same as an
+   --  empty list.
 
    function Next (Node : Node_Or_Entity_Id) return Node_Or_Entity_Id;
    pragma Inline (Next);
@@ -167,8 +160,8 @@ package Nlists is
      (Node : Node_Or_Entity_Id) return Node_Or_Entity_Id;
    --  This function returns the next node on a node list, skipping past any
    --  pragmas, or Empty if there is no non-pragma entry left. The argument
-   --  must be a member of a node list. This function also skips N_Null nodes
-   --  which can result from rewriting unrecognized or incorrect pragmas.
+   --  must be a member of a node list. This function also skips N_Null nodes,
+   --  which can result from rewriting incorrect pragmas.
 
    procedure Next_Non_Pragma (Node : in out Node_Or_Entity_Id);
    pragma Inline (Next_Non_Pragma);
@@ -196,8 +189,8 @@ package Nlists is
    --  pragmas. If Node is the first element of the list, or if the only
    --  elements preceding it are pragmas, then Empty is returned. The
    --  argument must be a member of a node list. Note: the implementation
-   --  does maintain back pointers, so this function executes quickly in
-   --  constant time.
+   --  maintains back pointers, so this function executes quickly in constant
+   --  time. Unlike Next_Non_Pragma, this does not skip N_Null nodes.
 
    procedure Prev_Non_Pragma (Node : in out Node_Or_Entity_Id);
    pragma Inline (Prev_Non_Pragma);
@@ -334,8 +327,7 @@ package Nlists is
 
    procedure Initialize;
    --  Called at the start of compilation of each new main source file to
-   --  initialize the allocation of the list table. Note that Initialize
-   --  must not be called if Tree_Read is used.
+   --  initialize the allocation of the list table.
 
    procedure Lock;
    --  Called to lock tables before back end is called
@@ -352,22 +344,21 @@ package Nlists is
    --  Called to unlock list contents when assertions are enabled; if
    --  assertions are not enabled calling this subprogram has no effect.
 
-   procedure Tree_Read;
-   --  Initializes internal tables from current tree file using the relevant
-   --  Table.Tree_Read routines. Note that Initialize should not be called if
-   --  Tree_Read is used. Tree_Read includes all necessary initialization.
-
-   procedure Tree_Write;
-   --  Writes out internal tables to current tree file using the relevant
-   --  Table.Tree_Write routines.
-
-   function Parent (List : List_Id) return Node_Or_Entity_Id;
+   function List_Parent (List : List_Id) return Node_Or_Entity_Id;
+   pragma Inline (List_Parent);
+   function Parent (List : List_Id) return Node_Or_Entity_Id
+     renames List_Parent;
    pragma Inline (Parent);
    --  Node lists may have a parent in the same way as a node. The function
    --  accesses the Parent value, which is either Empty when a list header
    --  is first created, or the value that has been set by Set_Parent.
+   --  Parent has the same name as the one in Atree; List_Parent can be used
+   --  more easily in the debugger.
 
-   procedure Set_Parent (List : List_Id; Node : Node_Or_Entity_Id);
+   procedure Set_List_Parent (List : List_Id; Node : Node_Or_Entity_Id);
+   pragma Inline (Set_List_Parent);
+   procedure Set_Parent (List : List_Id; Node : Node_Or_Entity_Id)
+     renames Set_List_Parent;
    pragma Inline (Set_Parent);
    --  Sets the parent field of the given list to reference the given node
 
@@ -384,6 +375,7 @@ package Nlists is
    --  "if Present (Statements)" as opposed to "if Statements /= No_List".
 
    procedure Allocate_List_Tables (N : Node_Or_Entity_Id);
+   pragma Inline (Allocate_List_Tables);
    --  Called when nodes table is expanded to include node N. This call
    --  makes sure that list structures internal to Nlists are adjusted
    --  appropriately to reflect this increase in the size of the nodes table.

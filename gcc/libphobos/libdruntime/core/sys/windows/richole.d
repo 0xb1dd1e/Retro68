@@ -4,14 +4,14 @@
  * Translated from MinGW Windows headers
  *
  * License: $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source: $(DRUNTIMESRC src/core/sys/windows/_richole.d)
+ * Source: $(DRUNTIMESRC core/sys/windows/_richole.d)
  */
 module core.sys.windows.richole;
 version (Windows):
 
-private import core.sys.windows.objfwd, core.sys.windows.objidl, core.sys.windows.ole2, core.sys.windows.unknwn,
+import core.sys.windows.objfwd, core.sys.windows.objidl, core.sys.windows.ole2, core.sys.windows.unknwn,
   core.sys.windows.windef;
-private import core.sys.windows.richedit; // for CHARRANGE
+import core.sys.windows.richedit; // for CHARRANGE
 
 //align(4):
 
@@ -83,8 +83,8 @@ interface IRichEditOle : IUnknown {
     HRESULT ContextSensitiveHelp(BOOL);
     HRESULT GetClipboardData(CHARRANGE*, DWORD, LPDATAOBJECT*);
     HRESULT ImportDataObject(LPDATAOBJECT, CLIPFORMAT, HGLOBAL);
-};
-alias IRichEditOle LPRICHEDITOLE;
+}
+alias LPRICHEDITOLE = IRichEditOle;
 
 interface IRichEditOleCallback : IUnknown {
     HRESULT GetNewStorage(LPSTORAGE*);
@@ -97,5 +97,5 @@ interface IRichEditOleCallback : IUnknown {
     HRESULT GetClipboardData(CHARRANGE*, DWORD, LPDATAOBJECT*);
     HRESULT GetDragDropEffect(BOOL, DWORD, PDWORD);
     HRESULT GetContextMenu(WORD, LPOLEOBJECT, CHARRANGE*, HMENU*);
-};
-alias IRichEditOleCallback LPRICHEDITOLECALLBACK;
+}
+alias LPRICHEDITOLECALLBACK = IRichEditOleCallback;

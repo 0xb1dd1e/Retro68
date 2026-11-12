@@ -1,5 +1,5 @@
 /* { dg-options "-fprofile-arcs -ftest-coverage" } */
-/* { dg-do run { target native } } */
+/* { dg-do run } */
 
 unsigned
 loop (unsigned n, int value)		  /* count(14.0k) */
@@ -24,4 +24,4 @@ int main(int argc, char **argv)
   return 0;				  /* count(1) */
 }
 
-/* { dg-final { run-gcov branches { -abj loop.C } } } */
+/* { dg-final { run-gcov branches { -abH loop.C } } } */

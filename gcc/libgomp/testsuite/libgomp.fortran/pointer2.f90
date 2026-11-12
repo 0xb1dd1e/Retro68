@@ -1,5 +1,6 @@
 ! { dg-do run }
 ! { dg-require-effective-target tls_runtime }
+! { dg-additional-options "-Wno-deprecated-openmp" }
   integer, pointer, save :: thr(:)
 !$omp threadprivate (thr)
   integer, target :: s(3), t(3), u(3)
@@ -21,8 +22,8 @@
   thr(1) = thr(1) + 1
   i = i + 1
 !$omp end parallel
-  if (l) STOP 1
-  if (thr(1).ne.14) STOP 2
-  if (s(1).ne.1+i) STOP 3
-  if (u(1).ne.14) STOP 4
+  if (l) stop 1
+  if (thr(1).ne.14) stop 2
+  if (s(1).ne.1+i) stop 3
+  if (u(1).ne.14) stop 4
 end

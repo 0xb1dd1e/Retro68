@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O2 -march=rv32imafdc -mabi=ilp32d -fpic" } */
+/* { dg-options "-march=rv32imafdc -mabi=ilp32d -fpic" } */
 
 int main () {
 #if !defined(__riscv)
@@ -12,6 +12,9 @@ int main () {
 
 #if defined(__riscv_32e)
 #error "__riscv_32e"
+#endif
+#if defined(__riscv_64e)
+#error "__riscv_64e"
 #endif
 
 #if !defined(__riscv_atomic)
@@ -55,11 +58,8 @@ int main () {
 #if defined(__riscv_cmodel_medlow)
 #error "__riscv_cmodel_medlow"
 #endif
-#if defined(__riscv_cmodel_medany)
-#error "__riscv_cmodel_medlow"
-#endif
-#if !defined(__riscv_cmodel_pic)
-#error "__riscv_cmodel_medlow"
+#if !defined(__riscv_cmodel_medany)
+#error "__riscv_cmodel_medany"
 #endif
 
   return 0;

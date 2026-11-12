@@ -1,11 +1,11 @@
-# Copyright (C) 2014-2018 Free Software Foundation, Inc.
+# Copyright (C) 2014-2026 Free Software Foundation, Inc.
 #
 # Copying and distribution of this file, with or without modification,
 # are permitted in any medium without royalty provided the copyright
 # notice and this notice are preserved.
 
 cat << EOF
-/* Copyright (C) 2014-2018 Free Software Foundation, Inc.
+/* Copyright (C) 2014-2026 Free Software Foundation, Inc.
 
    Copying and distribution of this script, with or without modification,
    are permitted in any medium without royalty provided the copyright
@@ -19,17 +19,21 @@ SEARCH_DIR(.);
 ${RELOCATING+EXTERN(__ctbp __ep __gp)};
 SECTIONS
 {
+  /* PR 32100: GDB makes use of the fact that the .note.gnu.build-id
+     section is typically placed next to the ELF headers.  */
+  .note.gnu.build-id ${RELOCATING-0}: { *(.note.gnu.build-id) }
+
   /* This saves a little space in the ELF file, since the zda starts
      at a higher location that the ELF headers take up.  */
 
-  .zdata ${ZDATA_START_ADDR} :
+  .zdata ${RELOCATING+${ZDATA_START_ADDR}} :
   {
 	*(.zdata)
-	*(.zdata23)
+	${RELOCATING+*(.zdata23)
 	*(.zbss)
 	*(.zbss23)
 	*(reszdata)
-	*(.zcommon)
+	*(.zcommon)}
   }
 
   /* This is the read only part of the zero data area.
@@ -38,17 +42,17 @@ SECTIONS
      section.  Specifically it prevents the zdata
      section from being marked READONLY.  */
 
-  .rozdata ${ROZDATA_START_ADDR} :
+  .rozdata ${RELOCATING+${ROZDATA_START_ADDR}} :
   {
 	*(.rozdata)
-	*(romzdata)
+	${RELOCATING+*(romzdata)
 	*(romzbss)
 	*(.zconst)
-	*(.zconst23)
+	*(.zconst23)}
   }
 
   /* Read-only sections, merged into text segment.  */
-  . = ${TEXT_START_ADDR};
+  ${RELOCATING+. = ${TEXT_START_ADDR};}
   .interp	: { *(.interp) }
   .hash		: { *(.hash) }
   .dynsym	: { *(.dynsym) }
@@ -75,7 +79,7 @@ SECTIONS
   .rela.bss	: { *(.rela.bss) }
   .rel.plt	: { *(.rel.plt) }
   .rela.plt	: { *(.rela.plt) }
-  .init		: { KEEP (*(.init)) } =0
+  .init		: { KEEP (*(SORT_NONE(.init))) } =0
   .plt		: { *(.plt) }
 
   .text		:
@@ -83,9 +87,9 @@ SECTIONS
     *(.text)
     ${RELOCATING+*(.text.*)}
 
-    /* .gnu.warning sections are handled specially by elf32.em.  */
+    /* .gnu.warning sections are handled specially by elf.em.  */
     *(.gnu.warning)
-    *(.gnu.linkonce.t*)
+    ${RELOCATING+*(.gnu.linkonce.t*)}
   } =0
 
   ${RELOCATING+_etext = .;}
@@ -95,7 +99,7 @@ SECTIONS
       It contains a small lookup table at the start followed by the
       code pointed to by entries in the lookup table.  */
 
-  .call_table_data ${CALL_TABLE_START_ADDR} :
+  .call_table_data ${RELOCATING+${CALL_TABLE_START_ADDR}} :
   {
     ${RELOCATING+PROVIDE(__ctbp = .);}
     *(.call_table_data)
@@ -106,29 +110,29 @@ SECTIONS
     *(.call_table_text)
   }
 
-  .fini		: { KEEP (*(.fini)) } =0
+  .fini		: { KEEP (*(SORT_NONE(.fini))) } =0
   .rodata	:
   {
 	*(.rodata)
-	${RELOCATING+*(.rodata.*)}
+	${RELOCATING+*(.rodata.*)
 	*(.gnu.linkonce.r*)
-	*(.const)
+	*(.const)}
   }
   .rodata1	: { *(.rodata1) }
 
   .data		:
   {
     *(.data)
-    ${RELOCATING+*(.data.*)}
-    *(.gnu.linkonce.d*)
-    CONSTRUCTORS
+    ${RELOCATING+*(.data.*)
+    *(.gnu.linkonce.d*)}
+    ${CONSTRUCTING+CONSTRUCTORS}
   }
   .data1	: { *(.data1) }
   .ctors	:
   {
     ${CONSTRUCTING+___ctors = .;}
     KEEP (*(EXCLUDE_FILE (*crtend.o) .ctors))
-    KEEP (*(SORT(.ctors.*)))
+    ${RELOCATING+KEEP (*(SORT(.ctors.*)))}
     KEEP (*crtend(.ctors))
     ${CONSTRUCTING+___ctors_end = .;}
   }
@@ -136,7 +140,7 @@ SECTIONS
   {
     ${CONSTRUCTING+___dtors = .;}
     KEEP (*(EXCLUDE_FILE (*crtend.o) .dtors))
-    KEEP (*(SORT(.dtors.*)))
+    ${RELOCATING+KEEP (*(SORT(.dtors.*)))}
     KEEP (*crtend.o(.dtors))
     ${CONSTRUCTING+___dtors_end = .;}
   }
@@ -147,42 +151,42 @@ SECTIONS
 
   .gcc_except_table : { *(.gcc_except_table) }
 
-  .got		: { *(.got.plt) *(.got) }
+  .got		: {${RELOCATING+ *(.got.plt)} *(.got) }
   .dynamic	: { *(.dynamic) }
 
-  .tdata ${TDATA_START_ADDR} :
+  .tdata ${RELOCATING+${TDATA_START_ADDR}} :
   {
-	${RELOCATING+PROVIDE (__ep = .);}
+	${RELOCATING+PROVIDE (__ep = .);
 	*(.edata)
 	*(.edata23)
 	*(.tbyte)
-	*(.tcommon_byte)
+	*(.tcommon_byte)}
 	*(.tdata)
-	*(.tdata*)
+	${RELOCATING+*(.tdata*)
 	*(.ebss)
 	*(.ebss23)
 	*(.tbss)
 	*(.tbss*)
-	*(.tcommon)
+	*(.tcommon)}
   }
 
   /* We want the small data sections together, so single-instruction offsets
      can access them all, and initialized data all before uninitialized, so
      we can shorten the on-disk segment size.  */
 
-  .sdata ${SDATA_START_ADDR} :
+  .sdata ${RELOCATING+${SDATA_START_ADDR}} :
   {
 	${RELOCATING+PROVIDE (__gp = . + 0x8000);}
 	*(.sdata)
-	*(.sdata23)
+	${RELOCATING+*(.sdata23)}
    }
 
   /* See comment about .rozdata. */
-  .rosdata ${ROSDATA_START_ADDR} :
+  .rosdata ${RELOCATING+${ROSDATA_START_ADDR}} :
   {
 	*(.rosdata)
-	*(.sconst)
-	*(.sconst23)
+	${RELOCATING+*(.sconst)
+	*(.sconst23)}
   }
 
   /* We place the .sbss data section AFTER the .rosdata section, so that
@@ -194,8 +198,8 @@ SECTIONS
   {
 	${RELOCATING+__sbss_start = .;}
 	*(.sbss)
-	*(.sbss23)
-	*(.scommon)
+	${RELOCATING+*(.sbss23)
+	*(.scommon)}
   }
 
   ${RELOCATING+_edata  = DEFINED (__sbss_start) ? __sbss_start : . ;}
@@ -205,9 +209,9 @@ SECTIONS
   {
 	${RELOCATING+__bss_start = DEFINED (__sbss_start) ? __sbss_start : . ;}
 	${RELOCATING+__real_bss_start = . ;}
-	*(.dynbss)
+	${RELOCATING+*(.dynbss)}
 	*(.bss)
-	*(COMMON)
+	${RELOCATING+*(COMMON)}
   }
 
   ${RELOCATING+_end = . ;}
@@ -216,18 +220,10 @@ SECTIONS
 
   .note.renesas 0 : { KEEP(*(.note.renesas)) }
 
-  /* Stabs debugging sections.  */
-  .stab 0		: { *(.stab) }
-  .stabstr 0		: { *(.stabstr) }
-  .stab.excl 0		: { *(.stab.excl) }
-  .stab.exclstr 0	: { *(.stab.exclstr) }
-  .stab.index 0		: { *(.stab.index) }
-  .stab.indexstr 0	: { *(.stab.indexstr) }
-  .comment 0		: { *(.comment) }
-
 EOF
 
-. $srcdir/scripttempl/DWARF.sc
+source_sh $srcdir/scripttempl/misc-sections.sc
+source_sh $srcdir/scripttempl/DWARF.sc
 
 cat <<EOF
   /* User stack.  */

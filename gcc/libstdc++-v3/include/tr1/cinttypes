@@ -1,6 +1,6 @@
 // TR1 cinttypes -*- C++ -*-
 
-// Copyright (C) 2006-2019 Free Software Foundation, Inc.
+// Copyright (C) 2006-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -29,7 +29,11 @@
 #ifndef _GLIBCXX_TR1_CINTTYPES
 #define _GLIBCXX_TR1_CINTTYPES 1
 
+#ifdef _GLIBCXX_SYSHDR
 #pragma GCC system_header
+#endif
+
+#include <bits/requires_hosted.h> // TR1
 
 #include <tr1/cstdint>
 
@@ -50,6 +54,8 @@
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
+_GLIBCXX_BEGIN_NAMESPACE_VERSION
+
 namespace tr1
 {
   // types
@@ -77,6 +83,8 @@ namespace tr1
   using ::wcstoumax;
 #endif
 }
+
+_GLIBCXX_END_NAMESPACE_VERSION
 }
 
 #endif // _GLIBCXX_USE_C99_INTTYPES_TR1

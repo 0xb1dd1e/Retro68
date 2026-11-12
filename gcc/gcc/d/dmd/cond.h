@@ -1,49 +1,49 @@
 
 /* Compiler implementation of the D programming language
- * Copyright (C) 1999-2019 by The D Language Foundation, All Rights Reserved
+ * Copyright (C) 1999-2026 by The D Language Foundation, All Rights Reserved
  * written by Walter Bright
- * http://www.digitalmars.com
+ * https://www.digitalmars.com
  * Distributed under the Boost Software License, Version 1.0.
- * http://www.boost.org/LICENSE_1_0.txt
+ * https://www.boost.org/LICENSE_1_0.txt
  * https://github.com/dlang/dmd/blob/master/src/dmd/cond.h
  */
 
 #pragma once
 
+#include "ast_node.h"
 #include "globals.h"
 #include "visitor.h"
 
 class Expression;
 class Identifier;
-struct OutBuffer;
 class Module;
 struct Scope;
-class ScopeDsymbol;
 class DebugCondition;
 class ForeachStatement;
 class ForeachRangeStatement;
 
-int findCondition(Strings *ids, Identifier *ident);
+enum Include
+{
+    INCLUDEnotComputed, /// not computed yet
+    INCLUDEyes,         /// include the conditional code
+    INCLUDEno           /// do not include the conditional code
+};
 
-class Condition
+class Condition : public ASTNode
 {
 public:
     Loc loc;
-    // 0: not computed yet
-    // 1: include
-    // 2: do not include
-    int inc;
+    Include inc;
 
-    Condition(Loc loc);
+    DYNCAST dyncast() const override final { return DYNCAST_CONDITION; }
 
     virtual Condition *syntaxCopy() = 0;
-    virtual int include(Scope *sc, ScopeDsymbol *sds) = 0;
-    virtual DebugCondition *isDebugCondition() { return NULL; }
-    virtual VersionCondition *isVersionCondition() { return NULL; }
-    virtual void accept(Visitor *v) { v->visit(this); }
+    virtual DebugCondition *isDebugCondition() { return nullptr; }
+    virtual VersionCondition *isVersionCondition() { return nullptr; }
+    void accept(Visitor *v) override { v->visit(this); }
 };
 
-class StaticForeach
+class StaticForeach final : public RootObject
 {
 public:
     Loc loc;
@@ -51,59 +51,41 @@ public:
     ForeachStatement *aggrfe;
     ForeachRangeStatement *rangefe;
 
-    bool needExpansion;
-
-    StaticForeach *syntaxCopy();
+    d_bool needExpansion;
 };
 
 class DVCondition : public Condition
 {
 public:
-    unsigned level;
     Identifier *ident;
     Module *mod;
 
-    DVCondition(Module *mod, unsigned level, Identifier *ident);
-
-    Condition *syntaxCopy();
-    void accept(Visitor *v) { v->visit(this); }
+    DVCondition *syntaxCopy() override final;
+    void accept(Visitor *v) override { v->visit(this); }
 };
 
-class DebugCondition : public DVCondition
+class DebugCondition final : public DVCondition
 {
 public:
-    static void setGlobalLevel(unsigned level);
     static void addGlobalIdent(const char *ident);
 
-    DebugCondition(Module *mod, unsigned level, Identifier *ident);
-
-    int include(Scope *sc, ScopeDsymbol *sds);
-    DebugCondition *isDebugCondition() { return this; }
-    void accept(Visitor *v) { v->visit(this); }
+    void accept(Visitor *v) override { v->visit(this); }
 };
 
-class VersionCondition : public DVCondition
+class VersionCondition final : public DVCondition
 {
 public:
-    static void setGlobalLevel(unsigned level);
     static void addGlobalIdent(const char *ident);
     static void addPredefinedGlobalIdent(const char *ident);
 
-    VersionCondition(Module *mod, unsigned level, Identifier *ident);
-
-    int include(Scope *sc, ScopeDsymbol *sds);
-    VersionCondition *isVersionCondition() { return this; }
-    void accept(Visitor *v) { v->visit(this); }
+    void accept(Visitor *v) override { v->visit(this); }
 };
 
-class StaticIfCondition : public Condition
+class StaticIfCondition final : public Condition
 {
 public:
     Expression *exp;
-    int nest;         // limit circular dependencies
 
-    StaticIfCondition(Loc loc, Expression *exp);
-    Condition *syntaxCopy();
-    int include(Scope *sc, ScopeDsymbol *sds);
-    void accept(Visitor *v) { v->visit(this); }
+    StaticIfCondition *syntaxCopy() override;
+    void accept(Visitor *v) override { v->visit(this); }
 };

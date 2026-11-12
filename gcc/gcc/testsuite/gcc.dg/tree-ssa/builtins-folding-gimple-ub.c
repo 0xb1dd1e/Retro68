@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O1 -fdump-tree-optimized" } */
+/* { dg-options "-fpermissive -O1 -fdump-tree-optimized" } */
 
 char *buffer1;
 char *buffer2;
@@ -14,13 +14,13 @@ main (void)
   /* MEMCHR.  */
   if (__builtin_memchr ("", 'x', 1000)) /* Not folded away.  */
     {
-      /* { dg-warning "reading 1000 bytes from a region of size 1" "" { target *-*-* } .-2 } */
+      /* { dg-warning "\\\[-Wstringop-overread" "" { target *-*-* } .-2 } */
       __builtin_abort ();
     }
 
   if (__builtin_memchr (foo1, 'x', 1000)) /* Not folded away.  */
     {
-      /* { dg-warning "reading 1000 bytes from a region of size 1" "" { target *-*-* } .-2 } */
+      /* { dg-warning "\\\[-Wstringop-overread" "" { target *-*-* } .-2 } */
       __builtin_abort ();
     }
 

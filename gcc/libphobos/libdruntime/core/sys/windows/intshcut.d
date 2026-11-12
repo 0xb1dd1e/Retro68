@@ -5,14 +5,14 @@
  *
  * Authors: Stewart Gordon
  * License: $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source: $(DRUNTIMESRC src/core/sys/windows/_intshcut.d)
+ * Source: $(DRUNTIMESRC core/sys/windows/_intshcut.d)
  */
 module core.sys.windows.intshcut;
 version (Windows):
 
 version (ANSI) {} else version = Unicode;
 
-private import core.sys.windows.unknwn, core.sys.windows.windef;
+import core.sys.windows.unknwn, core.sys.windows.windef;
 
 enum : SCODE {
     E_FLAGS                     = 0x80041000,
@@ -58,8 +58,8 @@ struct URLINVOKECOMMANDINFO {
     HWND  hwndParent;
     PCSTR pcszVerb;
 }
-alias URLINVOKECOMMANDINFO CURLINVOKECOMMANDINFO;
-alias URLINVOKECOMMANDINFO* PURLINVOKECOMMANDINFO, PCURLINVOKECOMMANDINFO;
+alias CURLINVOKECOMMANDINFO = URLINVOKECOMMANDINFO;
+alias PURLINVOKECOMMANDINFO = URLINVOKECOMMANDINFO*, PCURLINVOKECOMMANDINFO = URLINVOKECOMMANDINFO*;
 
 interface IUniformResourceLocator : IUnknown {
     HRESULT SetURL(PCSTR, DWORD);
@@ -67,10 +67,9 @@ interface IUniformResourceLocator : IUnknown {
     HRESULT InvokeCommand(PURLINVOKECOMMANDINFO);
 }
 //alias typeof(*(IUniformResourceLocator.init)) CIUniformResourceLocator; // value-type of interface not representable in D
-alias IUniformResourceLocator PIUniformResourceLocator,
-  PCIUniformResourceLocator;
+alias PIUniformResourceLocator = IUniformResourceLocator, PCIUniformResourceLocator = IUniformResourceLocator;
 
-extern (Windows) {
+extern (Windows) nothrow @nogc {
     BOOL InetIsOffline(DWORD);
     HRESULT MIMEAssociationDialogA(HWND, DWORD, PCSTR, PCSTR, PSTR, UINT);
     HRESULT MIMEAssociationDialogW(HWND, DWORD, PCWSTR, PCWSTR, PWSTR, UINT);
@@ -81,11 +80,11 @@ extern (Windows) {
 }
 
 version (Unicode) {
-    alias TranslateURLW TranslateURL;
-    alias MIMEAssociationDialogW MIMEAssociationDialog;
-    alias URLAssociationDialogW URLAssociationDialog;
+    alias TranslateURL = TranslateURLW;
+    alias MIMEAssociationDialog = MIMEAssociationDialogW;
+    alias URLAssociationDialog = URLAssociationDialogW;
 } else {
-    alias TranslateURLA TranslateURL;
-    alias MIMEAssociationDialogA MIMEAssociationDialog;
-    alias URLAssociationDialogA URLAssociationDialog;
+    alias TranslateURL = TranslateURLA;
+    alias MIMEAssociationDialog = MIMEAssociationDialogA;
+    alias URLAssociationDialog = URLAssociationDialogA;
 }

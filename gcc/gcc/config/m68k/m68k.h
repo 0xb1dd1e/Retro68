@@ -1,5 +1,5 @@
 /* Definitions of target machine for GCC for Motorola 680x0/ColdFire.
-   Copyright (C) 1987-2019 Free Software Foundation, Inc.
+   Copyright (C) 1987-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -286,8 +286,8 @@ extern void m68k_register_pragmas(void);
 /* "long double" is the same as "double" on ColdFire and fido
    targets.  */
 
-#define LONG_DOUBLE_TYPE_SIZE			\
-  ((TARGET_COLDFIRE || TARGET_FIDOA) ? 64 : 80)
+#define LONG_DOUBLE_TYPE_MODE			\
+  ((TARGET_COLDFIRE || TARGET_FIDOA) ? DFmode : XFmode)
 
 #define BITS_BIG_ENDIAN 1
 #define BYTES_BIG_ENDIAN 1
@@ -686,36 +686,6 @@ __transfer_from_trampoline ()					\
 #define FUNCTION_MODE QImode
 
 
-/* Tell final.c how to eliminate redundant test instructions.  */
-
-/* Here we define machine-dependent flags and fields in cc_status
-   (see `conditions.h').  */
-
-/* Set if the cc value is actually in the 68881, so a floating point
-   conditional branch must be output.  */
-#define CC_IN_68881 04000
-
-/* On the 68000, all the insns to store in an address register fail to
-   set the cc's.  However, in some cases these instructions can make it
-   possibly invalid to use the saved cc's.  In those cases we clear out
-   some or all of the saved cc's so they won't be used.  */
-#define NOTICE_UPDATE_CC(EXP,INSN) notice_update_cc (EXP, INSN)
-
-/* The shift instructions always clear the overflow bit.  */
-#define CC_OVERFLOW_UNUSABLE 01000
-
-/* The shift instructions use the carry bit in a way not compatible with
-   conditional branches.  conditions.h uses CC_NO_OVERFLOW for this purpose.
-   Rename it to something more understandable.  */
-#define CC_NO_CARRY CC_NO_OVERFLOW
-
-#define OUTPUT_JUMP(NORMAL, FLOAT, NO_OV)  \
-do { if (cc_prev_status.flags & CC_IN_68881)			\
-    return FLOAT;						\
-  if (cc_prev_status.flags & CC_NO_OVERFLOW)			\
-    return NO_OV;						\
-  return NORMAL; } while (0)
-
 /* Control the assembler format that we output.  */
 
 #define ASM_APP_ON "#APP\n"
@@ -752,7 +722,7 @@ do { if (cc_prev_status.flags & CC_IN_68881)			\
 
 /* On the Sun-3, the floating point registers have numbers
    18 to 25, not 16 to 23 as they do in the compiler.  */
-#define DBX_REGISTER_NUMBER(REGNO) ((REGNO) < 16 ? (REGNO) : (REGNO) + 2)
+#define DEBUGGER_REGNO(REGNO) ((REGNO) < 16 ? (REGNO) : (REGNO) + 2)
 
 /* Before the prologue, RA is at 0(%sp).  */
 #define INCOMING_RETURN_ADDR_RTX \
@@ -765,7 +735,7 @@ do { if (cc_prev_status.flags & CC_IN_68881)			\
 					UNITS_PER_WORD))		   \
    : gen_rtx_MEM (Pmode, plus_constant (Pmode, FRAME, UNITS_PER_WORD)))
 
-/* We must not use the DBX register numbers for the DWARF 2 CFA column
+/* We must not use the debugger register numbers for the DWARF 2 CFA column
    numbers because that maps to numbers beyond FIRST_PSEUDO_REGISTER.
    Instead use the identity mapping.  */
 #define DWARF_FRAME_REGNUM(REG) \
@@ -882,6 +852,9 @@ do { if (cc_prev_status.flags & CC_IN_68881)			\
   assemble_name ((FILE), (NAME)),		\
   fprintf ((FILE), ",%u\n", (int)(ROUNDED)))
 
+#define FINAL_PRESCAN_INSN(INSN, OPVEC, NOPERANDS) \
+  m68k_final_prescan_insn (INSN, OPVEC, NOPERANDS)
+
 /* On the 68000, we use several CODE characters:
    '.' for dot needed in Motorola-style opcode names.
    '-' for an operand pushing on the stack:
@@ -910,10 +883,12 @@ do { if (cc_prev_status.flags & CC_IN_68881)			\
    || (CODE) == '$' || (CODE) == '&' || (CODE) == '/' || (CODE) == '?')
 
 
-/* See m68k.c for the m68k specific codes.  */
+/* See m68k.cc for the m68k specific codes.  */
 #define PRINT_OPERAND(FILE, X, CODE) print_operand (FILE, X, CODE)
 
 #define PRINT_OPERAND_ADDRESS(FILE, ADDR) print_operand_address (FILE, ADDR)
+
+#define CC_STATUS_INIT m68k_init_cc ()
 
 #include "config/m68k/m68k-opts.h"
 
@@ -931,7 +906,7 @@ enum m68k_function_kind
   m68k_fk_interrupt_thread
 };
 
-/* Variables in m68k.c; see there for details.  */
+/* Variables in m68k.cc; see there for details.  */
 extern enum target_device m68k_cpu;
 extern enum uarch_type m68k_tune;
 extern enum fpu_type m68k_fpu;

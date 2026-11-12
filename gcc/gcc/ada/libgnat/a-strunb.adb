@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -30,10 +30,22 @@
 ------------------------------------------------------------------------------
 
 with Ada.Strings.Fixed;
-with Ada.Strings.Search;
 with Ada.Unchecked_Deallocation;
 
 package body Ada.Strings.Unbounded is
+
+   function Sum (Left, Right : Natural) return Natural with Inline;
+   --  Returns summary of Left and Right, raise Constraint_Error on overflow
+
+   function Mul (Left, Right : Natural) return Natural with Inline;
+   --  Returns multiplication of Left and Right, raise Constraint_Error on
+   --  overflow.
+
+   function Saturated_Sum (Left, Right : Natural) return Natural;
+   --  Returns summary of Left and Right or Natural'Last on overflow
+
+   function Saturated_Mul (Left, Right : Positive) return Positive;
+   --  Returns multiplication of Left and Right or Natural'Last on overflow
 
    ---------
    -- "&" --
@@ -48,14 +60,17 @@ package body Ada.Strings.Unbounded is
       Result   : Unbounded_String;
 
    begin
-      Result.Last := L_Length + R_Length;
+      Result.Last := Sum (L_Length, R_Length);
 
       Result.Reference := new String (1 .. Result.Last);
 
       Result.Reference (1 .. L_Length) :=
         Left.Reference (1 .. Left.Last);
-      Result.Reference (L_Length + 1 .. Result.Last) :=
-        Right.Reference (1 .. Right.Last);
+
+      if L_Length < Natural'Last then
+         Result.Reference (L_Length + 1 .. Result.Last) :=
+           Right.Reference (1 .. Right.Last);
+      end if;
 
       return Result;
    end "&";
@@ -68,12 +83,15 @@ package body Ada.Strings.Unbounded is
       Result   : Unbounded_String;
 
    begin
-      Result.Last := L_Length + Right'Length;
+      Result.Last := Sum (L_Length, Right'Length);
 
       Result.Reference := new String (1 .. Result.Last);
 
       Result.Reference (1 .. L_Length) := Left.Reference (1 .. Left.Last);
-      Result.Reference (L_Length + 1 .. Result.Last) := Right;
+
+      if L_Length < Natural'Last then
+         Result.Reference (L_Length + 1 .. Result.Last) := Right;
+      end if;
 
       return Result;
    end "&";
@@ -86,13 +104,16 @@ package body Ada.Strings.Unbounded is
       Result   : Unbounded_String;
 
    begin
-      Result.Last := Left'Length + R_Length;
+      Result.Last := Sum (Left'Length, R_Length);
 
       Result.Reference := new String (1 .. Result.Last);
 
       Result.Reference (1 .. Left'Length) := Left;
-      Result.Reference (Left'Length + 1 .. Result.Last) :=
-        Right.Reference (1 .. Right.Last);
+
+      if Left'Length < Natural'Last then
+         Result.Reference (Left'Length + 1 .. Result.Last) :=
+           Right.Reference (1 .. Right.Last);
+      end if;
 
       return Result;
    end "&";
@@ -104,7 +125,7 @@ package body Ada.Strings.Unbounded is
       Result : Unbounded_String;
 
    begin
-      Result.Last := Left.Last + 1;
+      Result.Last := Sum (Left.Last, 1);
 
       Result.Reference := new String (1 .. Result.Last);
 
@@ -122,7 +143,7 @@ package body Ada.Strings.Unbounded is
       Result : Unbounded_String;
 
    begin
-      Result.Last := Right.Last + 1;
+      Result.Last := Sum (Right.Last, 1);
 
       Result.Reference := new String (1 .. Result.Last);
       Result.Reference (1) := Left;
@@ -142,7 +163,7 @@ package body Ada.Strings.Unbounded is
       Result : Unbounded_String;
 
    begin
-      Result.Last   := Left;
+      Result.Last := Left;
 
       Result.Reference := new String (1 .. Left);
       for J in Result.Reference'Range loop
@@ -157,17 +178,21 @@ package body Ada.Strings.Unbounded is
       Right : String) return Unbounded_String
    is
       Len    : constant Natural := Right'Length;
-      K      : Positive;
+      K      : Natural;
       Result : Unbounded_String;
 
    begin
-      Result.Last := Left * Len;
+      if Len = 0 then
+         return Null_Unbounded_String;
+      end if;
+
+      Result.Last := Mul (Left, Len);
 
       Result.Reference := new String (1 .. Result.Last);
 
-      K := 1;
+      K := 0;
       for J in 1 .. Left loop
-         Result.Reference (K .. K + Len - 1) := Right;
+         Result.Reference (K + 1 .. K + Len) := Right;
          K := K + Len;
       end loop;
 
@@ -179,17 +204,21 @@ package body Ada.Strings.Unbounded is
       Right : Unbounded_String) return Unbounded_String
    is
       Len    : constant Natural := Right.Last;
-      K      : Positive;
+      K      : Natural;
       Result : Unbounded_String;
 
    begin
-      Result.Last := Left * Len;
+      if Len = 0 then
+         return Null_Unbounded_String;
+      end if;
+
+      Result.Last := Mul (Left, Len);
 
       Result.Reference := new String (1 .. Result.Last);
 
-      K := 1;
+      K := 0;
       for J in 1 .. Left loop
-         Result.Reference (K .. K + Len - 1) :=
+         Result.Reference (K + 1 .. K + Len) :=
            Right.Reference (1 .. Right.Last);
          K := K + Len;
       end loop;
@@ -367,8 +396,12 @@ package body Ada.Strings.Unbounded is
    is
    begin
       Realloc_For_Chunk (Source, New_Item.Last);
-      Source.Reference (Source.Last + 1 .. Source.Last + New_Item.Last) :=
-        New_Item.Reference (1 .. New_Item.Last);
+
+      if Source.Last < Natural'Last then
+         Source.Reference (Source.Last + 1 .. Source.Last + New_Item.Last) :=
+           New_Item.Reference (1 .. New_Item.Last);
+      end if;
+
       Source.Last := Source.Last + New_Item.Last;
    end Append;
 
@@ -378,8 +411,12 @@ package body Ada.Strings.Unbounded is
    is
    begin
       Realloc_For_Chunk (Source, New_Item'Length);
-      Source.Reference (Source.Last + 1 .. Source.Last + New_Item'Length) :=
-        New_Item;
+
+      if Source.Last < Natural'Last then
+         Source.Reference (Source.Last + 1 .. Source.Last + New_Item'Length) :=
+           New_Item;
+      end if;
+
       Source.Last := Source.Last + New_Item'Length;
    end Append;
 
@@ -449,16 +486,20 @@ package body Ada.Strings.Unbounded is
       if From > Through then
          null;
 
-      elsif From < Source.Reference'First or else Through > Source.Last then
+      elsif From - 1 > Source.Last then
          raise Index_Error;
 
       else
          declare
-            Len : constant Natural := Through - From + 1;
+            Len : constant Natural :=
+              Natural'Min (Source.Last, Through) - From + 1;
 
          begin
-            Source.Reference (From .. Source.Last - Len) :=
-              Source.Reference (Through + 1 .. Source.Last);
+            if Through < Natural'Last then
+               Source.Reference (From .. Source.Last - Len) :=
+                 Source.Reference (Through + 1 .. Source.Last);
+            end if;
+
             Source.Last := Source.Last - Len;
          end;
       end if;
@@ -492,8 +533,14 @@ package body Ada.Strings.Unbounded is
       --  Note: Don't try to free statically allocated null string
 
       if Object.Reference /= Null_String'Access then
-         Deallocate (Object.Reference);
-         Object.Reference := Null_Unbounded_String.Reference;
+         declare
+            Old : String_Access := Object.Reference;
+            --  The original reference cannot be null, so we must create a
+            --  copy which will become null when deallocated.
+         begin
+            Deallocate (Old);
+            Object.Reference := Null_Unbounded_String.Reference;
+         end;
          Object.Last := 0;
       end if;
    end Finalize;
@@ -695,17 +742,19 @@ package body Ada.Strings.Unbounded is
       New_Item : String)
    is
    begin
-      if Before not in Source.Reference'First .. Source.Last + 1 then
+      if Before - 1 > Source.Last then
          raise Index_Error;
       end if;
 
       Realloc_For_Chunk (Source, New_Item'Length);
 
-      Source.Reference
-        (Before +  New_Item'Length .. Source.Last + New_Item'Length) :=
-           Source.Reference (Before .. Source.Last);
+      if Before <= Source.Last then
+         Source.Reference
+           (Before + New_Item'Length .. Source.Last + New_Item'Length) :=
+             Source.Reference (Before .. Source.Last);
+      end if;
 
-      Source.Reference (Before .. Before + New_Item'Length - 1) := New_Item;
+      Source.Reference (Before .. Before - 1 + New_Item'Length) := New_Item;
       Source.Last := Source.Last + New_Item'Length;
    end Insert;
 
@@ -714,9 +763,17 @@ package body Ada.Strings.Unbounded is
    ------------
 
    function Length (Source : Unbounded_String) return Natural is
+     (Source.Last);
+
+   ---------
+   -- Mul --
+   ---------
+
+   function Mul (Left, Right : Natural) return Natural is
+      pragma Unsuppress (Overflow_Check);
    begin
-      return Source.Last;
-   end Length;
+      return Left * Right;
+   end Mul;
 
    ---------------
    -- Overwrite --
@@ -740,8 +797,8 @@ package body Ada.Strings.Unbounded is
    is
       NL : constant Natural := New_Item'Length;
    begin
-      if Position <= Source.Last - NL + 1 then
-         Source.Reference (Position .. Position + NL - 1) := New_Item;
+      if Position - 1 <= Source.Last - NL then
+         Source.Reference (Position .. Position - 1 + NL) := New_Item;
       else
          declare
             Old : String_Access := Source.Reference;
@@ -754,6 +811,17 @@ package body Ada.Strings.Unbounded is
          end;
       end if;
    end Overwrite;
+
+   ---------------
+   -- Put_Image --
+   ---------------
+
+   procedure Put_Image
+     (S : in out Ada.Strings.Text_Buffers.Root_Buffer_Type'Class;
+      V : Unbounded_String) is
+   begin
+      String'Put_Image (S, To_String (V));
+   end Put_Image;
 
    -----------------------
    -- Realloc_For_Chunk --
@@ -783,17 +851,23 @@ package body Ada.Strings.Unbounded is
       if Chunk_Size > S_Length - Source.Last then
          declare
             New_Size : constant Positive :=
-              S_Length + Chunk_Size + (S_Length / Growth_Factor);
+              Saturated_Sum
+                (Sum (Source.Last, Chunk_Size), S_Length / Growth_Factor);
 
             New_Rounded_Up_Size : constant Positive :=
-              ((New_Size - 1) / Min_Mul_Alloc + 1) * Min_Mul_Alloc;
+              Saturated_Mul
+                ((New_Size - 1) / Min_Mul_Alloc + 1, Min_Mul_Alloc);
 
             Tmp : constant String_Access :=
               new String (1 .. New_Rounded_Up_Size);
 
+            Old : String_Access := Source.Reference;
+            --  The original reference cannot be null, so we must create a copy
+            --  which will become null when deallocated.
+
          begin
             Tmp (1 .. Source.Last) := Source.Reference (1 .. Source.Last);
-            Free (Source.Reference);
+            Free (Old);
             Source.Reference := Tmp;
          end;
       end if;
@@ -847,6 +921,30 @@ package body Ada.Strings.Unbounded is
       Free (Old);
    end Replace_Slice;
 
+   -------------------
+   -- Saturated_Mul --
+   -------------------
+
+   function Saturated_Mul (Left, Right : Positive) return Positive is
+   begin
+      return Mul (Left, Right);
+   exception
+      when Constraint_Error =>
+         return Natural'Last;
+   end Saturated_Mul;
+
+   -------------------
+   -- Saturated_Sum --
+   -------------------
+
+   function Saturated_Sum (Left, Right : Natural) return Natural is
+   begin
+      return Sum (Left, Right);
+   exception
+      when Constraint_Error =>
+         return Natural'Last;
+   end Saturated_Sum;
+
    --------------------------
    -- Set_Unbounded_String --
    --------------------------
@@ -875,12 +973,22 @@ package body Ada.Strings.Unbounded is
    begin
       --  Note: test of High > Length is in accordance with AI95-00128
 
-      if Low > Source.Last + 1 or else High > Source.Last then
+      if Low - 1 > Source.Last or else High > Source.Last then
          raise Index_Error;
       else
          return Source.Reference (Low .. High);
       end if;
    end Slice;
+
+   ---------
+   -- Sum --
+   ---------
+
+   function Sum (Left, Right : Natural) return Natural is
+      pragma Unsuppress (Overflow_Check);
+   begin
+      return Left + Right;
+   end Sum;
 
    ----------
    -- Tail --
@@ -913,9 +1021,7 @@ package body Ada.Strings.Unbounded is
    ---------------
 
    function To_String (Source : Unbounded_String) return String is
-   begin
-      return Source.Reference (1 .. Source.Last);
-   end To_String;
+     (Source.Reference (1 .. Source.Last));
 
    -------------------------
    -- To_Unbounded_String --
@@ -1047,7 +1153,7 @@ package body Ada.Strings.Unbounded is
       High   : Natural) return Unbounded_String
    is
    begin
-      if Low > Source.Last + 1 or else High > Source.Last then
+      if Low - 1 > Source.Last or else High > Source.Last then
          raise Index_Error;
       else
          return To_Unbounded_String (Source.Reference.all (Low .. High));
@@ -1061,7 +1167,7 @@ package body Ada.Strings.Unbounded is
       High   : Natural)
    is
    begin
-      if Low > Source.Last + 1 or else High > Source.Last then
+      if Low - 1 > Source.Last or else High > Source.Last then
          raise Index_Error;
       else
          Target := To_Unbounded_String (Source.Reference.all (Low .. High));

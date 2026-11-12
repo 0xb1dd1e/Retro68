@@ -1,9 +1,6 @@
-! { dg-do run { xfail spu-*-* } }
+! { dg-do run }
 ! { dg-options "-fno-range-check -ffree-line-length-none -O0" }
 ! { dg-add-options ieee }
-!
-! XFAILed for SPU targets because our library implementation of
-! the double-precision erf/erfc functions is not accurate enough.
 !
 ! Check that simplification functions and runtime library agree on ERF,
 ! ERFC and ERFC_SCALED.

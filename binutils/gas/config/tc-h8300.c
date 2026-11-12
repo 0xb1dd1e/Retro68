@@ -1,5 +1,5 @@
 /* tc-h8300.c -- Assemble code for the Renesas H8/300
-   Copyright (C) 1991-2018 Free Software Foundation, Inc.
+   Copyright (C) 1991-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -146,8 +146,10 @@ pint (int arg ATTRIBUTE_UNUSED)
 static void
 h8300_elf_section (int push)
 {
-  static const char * known_data_sections [] = { ".rodata", ".tdata", ".tbss" };
-  static const char * known_data_prefixes [] = { ".debug", ".zdebug", ".gnu.warning" };
+  static const char * known_data_sections []
+    = { ".rodata", ".tdata", ".tbss", ".gnu_object_only" };
+  static const char * known_data_prefixes []
+    = { ".debug", ".zdebug", ".gnu.warning" };
   char * saved_ilp = input_line_pointer;
   const char * name;
 
@@ -167,8 +169,7 @@ h8300_elf_section (int push)
 
       if (i < 0)
 	for (i = ARRAY_SIZE (known_data_prefixes); i--;)
-	  if (strncmp (name, known_data_prefixes[i],
-		       strlen (known_data_prefixes[i])) == 0)
+	  if (startswith (name, known_data_prefixes[i]))
 	    break;
 
       if (i < 0)
@@ -224,7 +225,7 @@ const char EXP_CHARS[] = "eE";
    or    0d1.2345e12.  */
 const char FLT_CHARS[] = "rRsSfFdDxXpP";
 
-static struct hash_control *opcode_hash_control;	/* Opcode mnemonics.  */
+static htab_t opcode_hash_control;	/* Opcode mnemonics.  */
 
 /* This function is called once, at assembler startup time.  This
    should set up all the tables, etc. that the MD part of the assembler
@@ -236,14 +237,12 @@ md_begin (void)
   unsigned int nopcodes;
   struct h8_opcode *p, *p1;
   struct h8_instruction *pi;
-  char prev_buffer[100];
   int idx = 0;
 
   if (!bfd_set_arch_mach (stdoutput, bfd_arch_h8300, default_mach))
     as_warn (_("could not set architecture and machine"));
 
-  opcode_hash_control = hash_new ();
-  prev_buffer[0] = 0;
+  opcode_hash_control = str_htab_create ();
 
   nopcodes = sizeof (h8_opcodes) / sizeof (struct h8_opcode);
 
@@ -267,7 +266,7 @@ md_begin (void)
 	break;
       /* Strip off any . part when inserting the opcode and only enter
 	 unique codes into the hash table.  */
-      dst = buffer = XNEWVEC (char, strlen (src) + 1);
+      dst = buffer = notes_alloc (strlen (src) + 1);
       while (*src)
 	{
 	  if (*src == '.')
@@ -283,8 +282,7 @@ md_begin (void)
       len = dst - buffer;
       if (cmplen == 0)
 	cmplen = len;
-      hash_insert (opcode_hash_control, buffer, (char *) pi);
-      strcpy (prev_buffer, buffer);
+      str_hash_insert (opcode_hash_control, buffer, pi, 0);
       idx++;
 
       for (p = p1; p->name; p++)
@@ -872,10 +870,10 @@ get_operand (char **ptr, struct h8_op *op, int direction)
       *ptr = parse_exp (src + 1, op);
       return;
     }
-  else if (strncmp (src, "mach", 4) == 0 ||
-	   strncmp (src, "macl", 4) == 0 ||
-	   strncmp (src, "MACH", 4) == 0 ||
-	   strncmp (src, "MACL", 4) == 0)
+  else if (startswith (src, "mach") ||
+	   startswith (src, "macl") ||
+	   startswith (src, "MACH") ||
+	   startswith (src, "MACL"))
     {
       op->reg = TOLOWER (src[3]) == 'l';
       op->mode = MACREG;
@@ -1906,12 +1904,12 @@ md_assemble (char *str)
   int size, i;
 
   /* Drop leading whitespace.  */
-  while (*str == ' ')
+  while (is_whitespace (*str))
     str++;
 
   /* Find the op code end.  */
   for (op_start = op_end = str;
-       *op_end != 0 && *op_end != ' ';
+       !is_end_of_stmt (*op_end) && !is_whitespace (*op_end);
        op_end++)
     {
       if (*op_end == '.')
@@ -1939,8 +1937,7 @@ md_assemble (char *str)
     while (*++slash)
       *slash = TOLOWER (*slash);
 
-  instruction = (const struct h8_instruction *)
-    hash_find (opcode_hash_control, op_start);
+  instruction = str_hash_find (opcode_hash_control, op_start);
 
   if (instruction == NULL)
     {
@@ -2074,21 +2071,21 @@ md_undefined_symbol (char *name ATTRIBUTE_UNUSED)
 const char *
 md_atof (int type, char *litP, int *sizeP)
 {
-  return ieee_md_atof (type, litP, sizeP, TRUE);
+  return ieee_md_atof (type, litP, sizeP, true);
 }
 
 #define OPTION_H_TICK_HEX      (OPTION_MD_BASE)
 #define OPTION_MACH            (OPTION_MD_BASE+1)
 
-const char *md_shortopts = "";
-struct option md_longopts[] =
+const char md_shortopts[] = "";
+const struct option md_longopts[] =
 {
   { "h-tick-hex", no_argument,	      NULL, OPTION_H_TICK_HEX  },
   { "mach", required_argument, NULL, OPTION_MACH },
   {NULL, no_argument, NULL, 0}
 };
 
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 struct mach_func
 {
@@ -2225,8 +2222,8 @@ md_convert_frag (bfd *headers ATTRIBUTE_UNUSED,
 valueT
 md_section_align (segT segment, valueT size)
 {
-  int align = bfd_get_section_alignment (stdoutput, segment);
-  return ((size + (1 << align) - 1) & (-1U << align));
+  int align = bfd_section_alignment (segment);
+  return (size + ((valueT) 1 << align) - 1) & -((valueT) 1 << align);
 }
 
 void
@@ -2299,14 +2296,13 @@ tc_gen_reloc (asection *section ATTRIBUTE_UNUSED, fixS *fixp)
       if ((S_GET_SEGMENT (fixp->fx_addsy) != S_GET_SEGMENT (fixp->fx_subsy))
 	  || S_GET_SEGMENT (fixp->fx_addsy) == undefined_section)
 	{
-	  as_bad_where (fixp->fx_file, fixp->fx_line,
-			_("Difference of symbols in different sections is not supported"));
+	  as_bad_subtract (fixp);
 	  return NULL;
 	}
     }
 
-  rel = XNEW (arelent);
-  rel->sym_ptr_ptr = XNEW (asymbol *);
+  rel = notes_alloc (sizeof (arelent));
+  rel->sym_ptr_ptr = notes_alloc (sizeof (asymbol *));
   *rel->sym_ptr_ptr = symbol_get_bfdsym (fixp->fx_addsy);
   rel->address = fixp->fx_frag->fr_address + fixp->fx_where;
   rel->addend = fixp->fx_offset;

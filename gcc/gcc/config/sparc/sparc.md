@@ -1,5 +1,5 @@
 ;; Machine description for SPARC.
-;; Copyright (C) 1987-2019 Free Software Foundation, Inc.
+;; Copyright (C) 1987-2026 Free Software Foundation, Inc.
 ;; Contributed by Michael Tiemann (tiemann@cygnus.com)
 ;; 64-bit SPARC-V9 support by Michael Tiemann, Jim Wilson, and Doug Evans,
 ;; at Cygnus Support.
@@ -56,7 +56,6 @@
   UNSPEC_MUL8UL
   UNSPEC_MULDUL
   UNSPEC_ALIGNDATA
-  UNSPEC_FCMP
   UNSPEC_PDIST
   UNSPEC_EDGE8
   UNSPEC_EDGE8L
@@ -83,7 +82,6 @@
   UNSPEC_CMASK32
   UNSPEC_FCHKSM16
   UNSPEC_PDISTN
-  UNSPEC_FUCMP
   UNSPEC_FHADD
   UNSPEC_FHSUB
   UNSPEC_XMUL
@@ -97,7 +95,7 @@
 
   UNSPEC_DICTUNPACK
   UNSPEC_FPCMPSHL
-  UNSPEC_FPUCMPSHL
+  UNSPEC_FPCMPUSHL
   UNSPEC_FPCMPDESHL
   UNSPEC_FPCMPURSHL
 ])
@@ -233,6 +231,7 @@
    hypersparc,
    leon,
    leon3,
+   leon5,
    leon3v7,
    sparclite,
    f930,
@@ -264,12 +263,8 @@
 (define_attr "cpu_feature" "none,fpu,fpunotv9,v9,vis,vis3,vis4,vis4b"
   (const_string "none"))
 
-(define_attr "lra" "disabled,enabled"
-  (const_string "enabled"))
-
 (define_attr "enabled" ""
-  (cond [(eq_attr "cpu_feature" "none")
-           (cond [(eq_attr "lra" "disabled") (symbol_ref "!TARGET_LRA")] (const_int 1))
+  (cond [(eq_attr "cpu_feature" "none") (const_int 1)
          (eq_attr "cpu_feature" "fpu") (symbol_ref "TARGET_FPU")
          (eq_attr "cpu_feature" "fpunotv9") (symbol_ref "TARGET_FPU && !TARGET_V9")
          (eq_attr "cpu_feature" "v9") (symbol_ref "TARGET_V9")
@@ -561,9 +556,9 @@
    (set_attr "type" "multi")])
 
 ;; Attributes for branch scheduling
-(define_attr "in_call_delay" "false,true"
-  (symbol_ref "(eligible_for_call_delay (insn)
-		? IN_CALL_DELAY_TRUE : IN_CALL_DELAY_FALSE)"))
+(define_attr "tls_delay_slot" "false,true"
+  (symbol_ref "(!HAVE_SOLARIS_AS && !HAVE_SOLARIS_LD
+		? TLS_DELAY_SLOT_TRUE : TLS_DELAY_SLOT_FALSE)"))
 
 (define_attr "in_sibcall_delay" "false,true"
   (symbol_ref "(eligible_for_sibcall_delay (insn)
@@ -613,27 +608,24 @@
 	   (const_string "true")
 	] (const_string "false")))
 
-(define_delay (eq_attr "type" "call")
-  [(eq_attr "in_call_delay" "true") (nil) (nil)])
-
 (define_delay (eq_attr "type" "sibcall")
   [(eq_attr "in_sibcall_delay" "true") (nil) (nil)])
 
 (define_delay (eq_attr "type" "return")
   [(eq_attr "in_return_delay" "true") (nil) (nil)])
 
-(define_delay (and (eq_attr "type" "branch")
-	      (not (eq_attr "branch_type" "icc")))
-  [(eq_attr "in_branch_delay" "true") (nil) (eq_attr "in_branch_delay" "true")])
-
-(define_delay (and (eq_attr "type" "branch")
-	      (eq_attr "branch_type" "icc"))
-  [(eq_attr "in_branch_delay" "true") (nil)
-  (eq_attr "in_integer_branch_annul_delay" "true")])
-
-(define_delay (eq_attr "type" "uncond_branch")
+(define_delay (ior (eq_attr "type" "call") (eq_attr "type" "uncond_branch"))
   [(eq_attr "in_branch_delay" "true") (nil) (nil)])
 
+(define_delay (and (eq_attr "type" "branch") (not (eq_attr "branch_type" "icc")))
+  [(eq_attr "in_branch_delay" "true")
+   (nil)
+   (eq_attr "in_branch_delay" "true")])
+
+(define_delay (and (eq_attr "type" "branch") (eq_attr "branch_type" "icc"))
+  [(eq_attr "in_branch_delay" "true")
+   (nil)
+   (eq_attr "in_integer_branch_annul_delay" "true")])
 
 ;; Include SPARC DFA schedulers
 
@@ -641,6 +633,7 @@
 (include "supersparc.md")
 (include "hypersparc.md")
 (include "leon.md")
+(include "leon5.md")
 (include "sparclet.md")
 (include "ultra1_2.md")
 (include "ultra3.md")
@@ -858,7 +851,7 @@
    (clobber (reg:CCX CC_REG))]
   "TARGET_ARCH64 && TARGET_VIS3"
   "#"
-  ""
+  "&& 1"
   [(set (reg:CCXC CC_REG) (compare:CCXC (not:DI (match_dup 1)) (const_int -1)))
    (set (match_dup 0) (ltu:W (reg:CCXC CC_REG) (const_int 0)))]
   ""
@@ -885,7 +878,7 @@
    (clobber (reg:CCX CC_REG))]
   "TARGET_ARCH64 && TARGET_SUBXC"
   "#"
-  ""
+  "&& 1"
   [(set (reg:CCXC CC_REG) (compare:CCXC (not:DI (match_dup 1)) (const_int -1)))
    (set (match_dup 0) (neg:W (ltu:W (reg:CCXC CC_REG) (const_int 0))))]
   ""
@@ -987,7 +980,7 @@
    (clobber (reg:CCX CC_REG))]
   "TARGET_ARCH64 && TARGET_VIS3"
   "#"
-  ""
+  "&& 1"
   [(set (reg:CCXC CC_REG) (compare:CCXC (not:DI (match_dup 1)) (const_int -1)))
    (set (match_dup 0) (plus:W (ltu:W (reg:CCXC CC_REG) (const_int 0))
 			      (match_dup 2)))]
@@ -1003,7 +996,7 @@
    (clobber (reg:CCX CC_REG))]
   "TARGET_ARCH64 && TARGET_VIS3"
   "#"
-  ""
+  "&& 1"
   [(set (reg:CCXC CC_REG) (compare:CCXC (not:DI (match_dup 1)) (const_int -1)))
    (set (match_dup 0) (plus:W (plus:W (ltu:W (reg:CCXC CC_REG) (const_int 0))
 				      (match_dup 2))
@@ -1051,7 +1044,7 @@
    (clobber (reg:CCX CC_REG))]
   "TARGET_ARCH64 && TARGET_SUBXC"
   "#"
-  ""
+  "&& 1"
   [(set (reg:CCXC CC_REG) (compare:CCXC (not:DI (match_dup 1)) (const_int -1)))
    (set (match_dup 0) (minus:W (match_dup 2)
 			       (ltu:W (reg:CCXC CC_REG) (const_int 0))))]
@@ -1067,7 +1060,7 @@
    (clobber (reg:CCX CC_REG))]
   "TARGET_ARCH64 && TARGET_SUBXC"
   "#"
-  ""
+  "&& 1"
   [(set (reg:CCXC CC_REG) (compare:CCXC (not:DI (match_dup 1)) (const_int -1)))
    (set (match_dup 0) (minus:W (minus:W (match_dup 2)
 				        (ltu:W (reg:CCXC CC_REG) (const_int 0)))
@@ -1595,7 +1588,7 @@
 ;; because the RDPC instruction is extremely expensive and incurs a complete
 ;; instruction pipeline flush.
 
-(define_insn "load_pcrel_sym<P:mode>"
+(define_insn "@load_pcrel_sym<P:mode>"
   [(set (match_operand:P 0 "register_operand" "=r")
 	(unspec:P [(match_operand:P 1 "symbolic_operand" "")
 		   (match_operand:P 2 "call_address_operand" "")
@@ -1604,10 +1597,7 @@
    (clobber (reg:P O7_REG))]
   "REGNO (operands[0]) == INTVAL (operands[3])"
 {
-  if (flag_delayed_branch)
-    return "sethi\t%%hi(%a1-4), %0\n\tcall\t%a2\n\t add\t%0, %%lo(%a1+4), %0";
-  else
-    return "sethi\t%%hi(%a1-8), %0\n\tadd\t%0, %%lo(%a1-4), %0\n\tcall\t%a2\n\t nop";
+  return output_load_pcrel_sym (operands);
 }
   [(set (attr "type") (const_string "multi"))
    (set (attr "length")
@@ -1723,11 +1713,7 @@
 			      UNSPEC_MOVE_PIC)))]
   "flag_pic"
 {
-#ifdef HAVE_AS_SPARC_GOTDATA_OP
   return "xor\t%1, %%gdop_lox10(%a2), %0";
-#else
-  return "or\t%1, %%lo(%a2), %0";
-#endif
 })
 
 (define_insn "movsi_high_pic"
@@ -1735,11 +1721,7 @@
         (high:SI (unspec:SI [(match_operand 1 "" "")] UNSPEC_MOVE_PIC)))]
   "flag_pic && check_pic (1)"
 {
-#ifdef HAVE_AS_SPARC_GOTDATA_OP
   return "sethi\t%%gdop_hix22(%a1), %0";
-#else
-  return "sethi\t%%hi(%a1), %0";
-#endif
 })
 
 (define_insn "movsi_pic_gotdata_op"
@@ -1750,11 +1732,7 @@
 		   UNSPEC_MOVE_GOTDATA))]
   "flag_pic && check_pic (1)"
 {
-#ifdef HAVE_AS_SPARC_GOTDATA_OP
   return "ld\t[%1 + %2], %0, %%gdop(%a3)";
-#else
-  return "ld\t[%1 + %2], %0";
-#endif
 }
   [(set_attr "type" "load")
    (set_attr "subtype" "regular")])
@@ -1839,17 +1817,15 @@
 
 (define_insn "*movdi_insn_sp32"
   [(set (match_operand:DI 0 "nonimmediate_operand"
-			    "=T,o,U,T,r,o,r,r,?*f,  T,?*f,  o,?*e,?*e,  r,?*f,?*e,  T,*b,*b")
+			    "=T,o,r,o,r,r,?*f,  T,?*f,  o,?*e,?*e,  r,?*f,?*e,  T,*b,*b")
         (match_operand:DI 1 "input_operand"
-			    " J,J,T,U,o,r,i,r,  T,?*f,  o,?*f, *e, *e,?*f,  r,  T,?*e, J, P"))]
+			    " J,J,o,r,i,r,  T,?*f,  o,?*f, *e, *e,?*f,  r,  T,?*e, J, P"))]
   "TARGET_ARCH32
    && (register_operand (operands[0], DImode)
        || register_or_zero_operand (operands[1], DImode))"
   "@
    stx\t%r1, %0
    #
-   ldd\t%1, %0
-   std\t%1, %0
    ldd\t%1, %0
    std\t%1, %0
    #
@@ -1866,17 +1842,15 @@
    std\t%1, %0
    fzero\t%0
    fone\t%0"
-  [(set_attr "type" "store,*,load,store,load,store,*,*,fpload,fpstore,*,*,fpmove,*,*,*,fpload,fpstore,visl,
-visl")
-   (set_attr "subtype" "*,*,regular,*,regular,*,*,*,*,*,*,*,*,*,*,*,*,*,double,double")
-   (set_attr "length" "*,2,*,*,*,*,2,2,*,*,2,2,*,2,2,2,*,*,*,*")
-   (set_attr "fptype" "*,*,*,*,*,*,*,*,*,*,*,*,double,*,*,*,*,*,double,double")
-   (set_attr "cpu_feature" "v9,*,*,*,*,*,*,*,fpu,fpu,fpu,fpu,v9,fpunotv9,vis3,vis3,fpu,fpu,vis,vis")
-   (set_attr "lra" "*,*,disabled,disabled,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*")])
+  [(set_attr "type" "store,*,load,store,*,*,fpload,fpstore,*,*,fpmove,*,*,*,fpload,fpstore,visl,visl")
+   (set_attr "subtype" "*,*,regular,*,*,*,*,*,*,*,*,*,*,*,*,*,double,double")
+   (set_attr "length" "*,2,*,*,2,2,*,*,2,2,*,2,2,2,*,*,*,*")
+   (set_attr "fptype" "*,*,*,*,*,*,*,*,*,*,double,*,*,*,*,*,double,double")
+   (set_attr "cpu_feature" "v9,*,*,*,*,*,fpu,fpu,fpu,fpu,v9,fpunotv9,vis3,vis3,fpu,fpu,vis,vis")])
 
 (define_insn "*movdi_insn_sp64"
-  [(set (match_operand:DI 0 "nonimmediate_operand" "=r,r,r, m, r,*e,?*e,?*e,  W,b,b")
-        (match_operand:DI 1 "input_operand"        "rI,N,m,rJ,*e, r, *e,  W,?*e,J,P"))]
+  [(set (match_operand:DI 0 "nonimmediate_operand" "=r,r,r, m, r,*e,?*e,?*e,  m,b,b")
+        (match_operand:DI 1 "input_operand"        "rI,N,m,rJ,*e, r, *e,  m,?*e,J,P"))]
   "TARGET_ARCH64
    && (register_operand (operands[0], DImode)
        || register_or_zero_or_all_ones_operand (operands[1], DImode))"
@@ -1939,7 +1913,7 @@ visl")
   "or\t%1, %%lo(%a3-(%a2-.)), %0")
 
 ;; SPARC-v9 code model support insns.  See sparc_emit_set_symbolic_const64
-;; in sparc.c to see what is going on here... PIC stuff comes first.
+;; in sparc.cc to see what is going on here... PIC stuff comes first.
 
 (define_insn "movdi_lo_sum_pic"
   [(set (match_operand:DI 0 "register_operand" "=r")
@@ -1948,11 +1922,7 @@ visl")
 			      UNSPEC_MOVE_PIC)))]
   "TARGET_ARCH64 && flag_pic"
 {
-#ifdef HAVE_AS_SPARC_GOTDATA_OP
   return "xor\t%1, %%gdop_lox10(%a2), %0";
-#else
-  return "or\t%1, %%lo(%a2), %0";
-#endif
 })
 
 (define_insn "movdi_high_pic"
@@ -1960,11 +1930,7 @@ visl")
         (high:DI (unspec:DI [(match_operand 1 "" "")] UNSPEC_MOVE_PIC)))]
   "TARGET_ARCH64 && flag_pic && check_pic (1)"
 {
-#ifdef HAVE_AS_SPARC_GOTDATA_OP
   return "sethi\t%%gdop_hix22(%a1), %0";
-#else
-  return "sethi\t%%hi(%a1), %0";
-#endif
 })
 
 (define_insn "movdi_pic_gotdata_op"
@@ -1975,11 +1941,7 @@ visl")
 		   UNSPEC_MOVE_GOTDATA))]
   "TARGET_ARCH64 && flag_pic && check_pic (1)"
 {
-#ifdef HAVE_AS_SPARC_GOTDATA_OP
   return "ldx\t[%1 + %2], %0, %%gdop(%a3)";
-#else
-  return "ldx\t[%1 + %2], %0";
-#endif
 }
   [(set_attr "type" "load")
    (set_attr "subtype" "regular")])
@@ -2472,9 +2434,9 @@ visl")
 
 (define_insn "*movdf_insn_sp32"
   [(set (match_operand:DF 0 "nonimmediate_operand"
-			    "=T,o,b,b,e,e,*r, f,  e,T,U,T,  f,o, *r,*r, o")
+			    "=T,o,b,b,e,e,*r, f,  e,T,  f,o, *r,*r, o")
 	(match_operand:DF 1 "input_operand"
-			    " G,G,G,C,e,e, f,*r,T#F,e,T,U,o#F,f,*rF, o,*r"))]
+			    " G,G,G,C,e,e, f,*r,T#F,e,o#F,f,*rF, o,*r"))]
   "TARGET_ARCH32
    && (register_operand (operands[0], DFmode)
        || register_or_zero_or_all_ones_operand (operands[1], DFmode))"
@@ -2489,23 +2451,20 @@ visl")
   #
   ldd\t%1, %0
   std\t%1, %0
-  ldd\t%1, %0
-  std\t%1, %0
   #
   #
   #
   ldd\t%1, %0
   std\t%1, %0"
-  [(set_attr "type" "store,*,visl,visl,fpmove,*,*,*,fpload,fpstore,load,store,*,*,*,load,store")
-   (set_attr "subtype" "*,*,double,double,*,*,*,*,*,*,regular,*,*,*,*,regular,*")
-   (set_attr "length" "*,2,*,*,*,2,2,2,*,*,*,*,2,2,2,*,*")
-   (set_attr "fptype" "*,*,double,double,double,*,*,*,*,*,*,*,*,*,*,*,*")
-   (set_attr "cpu_feature" "v9,*,vis,vis,v9,fpunotv9,vis3,vis3,fpu,fpu,*,*,fpu,fpu,*,*,*")
-   (set_attr "lra" "*,*,*,*,*,*,*,*,*,*,disabled,disabled,*,*,*,*,*")])
+  [(set_attr "type" "store,*,visl,visl,fpmove,*,*,*,fpload,fpstore,*,*,*,load,store")
+   (set_attr "subtype" "*,*,double,double,*,*,*,*,*,*,*,*,*,regular,*")
+   (set_attr "length" "*,2,*,*,*,2,2,2,*,*,2,2,2,*,*")
+   (set_attr "fptype" "*,*,double,double,double,*,*,*,*,*,*,*,*,*,*")
+   (set_attr "cpu_feature" "v9,*,vis,vis,v9,fpunotv9,vis3,vis3,fpu,fpu,fpu,fpu,*,*,*")])
 
 (define_insn "*movdf_insn_sp64"
-  [(set (match_operand:DF 0 "nonimmediate_operand" "=b,b,e,*r, e,  e,W, *r,*r,  m,*r")
-	(match_operand:DF 1 "input_operand"         "G,C,e, e,*r,W#F,e,*rG, m,*rG, F"))]
+  [(set (match_operand:DF 0 "nonimmediate_operand" "=b,b,e,*r, e,  e,m, *r,*r,  m,*r")
+	(match_operand:DF 1 "input_operand"         "G,C,e, e,*r,m#F,e,*rG, m,*rG, F"))]
   "TARGET_ARCH64
    && (register_operand (operands[0], DFmode)
        || register_or_zero_or_all_ones_operand (operands[1], DFmode))"
@@ -2814,7 +2773,7 @@ visl")
 ;; it simple and only allow those constants supported by all flavors.
 ;; Note that emit_conditional_move canonicalizes operands 2,3 so that operand
 ;; 3 contains the constant if one is present, but we handle either for
-;; generality (sparc.c puts a constant in operand 2).
+;; generality (sparc.cc puts a constant in operand 2).
 ;;
 ;; Our instruction patterns, on the other hand, canonicalize such that
 ;; operand 3 must be the set destination.
@@ -3031,17 +2990,18 @@ visl")
   rtx shift_16 = GEN_INT (16);
   int op1_subbyte = 0;
 
-  if (GET_CODE (operand1) == SUBREG)
+  if (GET_CODE (operands[1]) == SUBREG)
     {
-      op1_subbyte = SUBREG_BYTE (operand1);
+      op1_subbyte = SUBREG_BYTE (operands[1]);
       op1_subbyte /= GET_MODE_SIZE (SImode);
       op1_subbyte *= GET_MODE_SIZE (SImode);
-      operand1 = XEXP (operand1, 0);
+      operands[1] = XEXP (operands[1], 0);
     }
 
-  emit_insn (gen_ashlsi3 (temp, gen_rtx_SUBREG (SImode, operand1, op1_subbyte),
+  emit_insn (gen_ashlsi3 (temp, gen_rtx_SUBREG (SImode, operands[1],
+						op1_subbyte),
 			  shift_16));
-  emit_insn (gen_lshrsi3 (operand0, temp, shift_16));
+  emit_insn (gen_lshrsi3 (operands[0], temp, shift_16));
   DONE;
 })
 
@@ -3114,17 +3074,18 @@ visl")
   rtx shift_48 = GEN_INT (48);
   int op1_subbyte = 0;
 
-  if (GET_CODE (operand1) == SUBREG)
+  if (GET_CODE (operands[1]) == SUBREG)
     {
-      op1_subbyte = SUBREG_BYTE (operand1);
+      op1_subbyte = SUBREG_BYTE (operands[1]);
       op1_subbyte /= GET_MODE_SIZE (DImode);
       op1_subbyte *= GET_MODE_SIZE (DImode);
-      operand1 = XEXP (operand1, 0);
+      operands[1] = XEXP (operands[1], 0);
     }
 
-  emit_insn (gen_ashldi3 (temp, gen_rtx_SUBREG (DImode, operand1, op1_subbyte),
+  emit_insn (gen_ashldi3 (temp, gen_rtx_SUBREG (DImode, operands[1],
+						op1_subbyte),
 			  shift_48));
-  emit_insn (gen_lshrdi3 (operand0, temp, shift_48));
+  emit_insn (gen_lshrdi3 (operands[0], temp, shift_48));
   DONE;
 })
 
@@ -3300,17 +3261,18 @@ visl")
   rtx shift_16 = GEN_INT (16);
   int op1_subbyte = 0;
 
-  if (GET_CODE (operand1) == SUBREG)
+  if (GET_CODE (operands[1]) == SUBREG)
     {
-      op1_subbyte = SUBREG_BYTE (operand1);
+      op1_subbyte = SUBREG_BYTE (operands[1]);
       op1_subbyte /= GET_MODE_SIZE (SImode);
       op1_subbyte *= GET_MODE_SIZE (SImode);
-      operand1 = XEXP (operand1, 0);
+      operands[1] = XEXP (operands[1], 0);
     }
 
-  emit_insn (gen_ashlsi3 (temp, gen_rtx_SUBREG (SImode, operand1, op1_subbyte),
+  emit_insn (gen_ashlsi3 (temp, gen_rtx_SUBREG (SImode, operands[1],
+						op1_subbyte),
 			  shift_16));
-  emit_insn (gen_ashrsi3 (operand0, temp, shift_16));
+  emit_insn (gen_ashrsi3 (operands[0], temp, shift_16));
   DONE;
 })
 
@@ -3332,25 +3294,26 @@ visl")
   int op1_subbyte = 0;
   int op0_subbyte = 0;
 
-  if (GET_CODE (operand1) == SUBREG)
+  if (GET_CODE (operands[1]) == SUBREG)
     {
-      op1_subbyte = SUBREG_BYTE (operand1);
+      op1_subbyte = SUBREG_BYTE (operands[1]);
       op1_subbyte /= GET_MODE_SIZE (SImode);
       op1_subbyte *= GET_MODE_SIZE (SImode);
-      operand1 = XEXP (operand1, 0);
+      operands[1] = XEXP (operands[1], 0);
     }
-  if (GET_CODE (operand0) == SUBREG)
+  if (GET_CODE (operands[0]) == SUBREG)
     {
-      op0_subbyte = SUBREG_BYTE (operand0);
+      op0_subbyte = SUBREG_BYTE (operands[0]);
       op0_subbyte /= GET_MODE_SIZE (SImode);
       op0_subbyte *= GET_MODE_SIZE (SImode);
-      operand0 = XEXP (operand0, 0);
+      operands[0] = XEXP (operands[0], 0);
     }
-  emit_insn (gen_ashlsi3 (temp, gen_rtx_SUBREG (SImode, operand1, op1_subbyte),
+  emit_insn (gen_ashlsi3 (temp, gen_rtx_SUBREG (SImode, operands[1],
+						op1_subbyte),
 			  shift_24));
-  if (GET_MODE (operand0) != SImode)
-    operand0 = gen_rtx_SUBREG (SImode, operand0, op0_subbyte);
-  emit_insn (gen_ashrsi3 (operand0, temp, shift_24));
+  if (GET_MODE (operands[0]) != SImode)
+    operands[0] = gen_rtx_SUBREG (SImode, operands[0], op0_subbyte);
+  emit_insn (gen_ashrsi3 (operands[0], temp, shift_24));
   DONE;
 })
 
@@ -3371,17 +3334,18 @@ visl")
   rtx shift_24 = GEN_INT (24);
   int op1_subbyte = 0;
 
-  if (GET_CODE (operand1) == SUBREG)
+  if (GET_CODE (operands[1]) == SUBREG)
     {
-      op1_subbyte = SUBREG_BYTE (operand1);
+      op1_subbyte = SUBREG_BYTE (operands[1]);
       op1_subbyte /= GET_MODE_SIZE (SImode);
       op1_subbyte *= GET_MODE_SIZE (SImode);
-      operand1 = XEXP (operand1, 0);
+      operands[1] = XEXP (operands[1], 0);
     }
 
-  emit_insn (gen_ashlsi3 (temp, gen_rtx_SUBREG (SImode, operand1, op1_subbyte),
+  emit_insn (gen_ashlsi3 (temp, gen_rtx_SUBREG (SImode, operands[1],
+						op1_subbyte),
 			  shift_24));
-  emit_insn (gen_ashrsi3 (operand0, temp, shift_24));
+  emit_insn (gen_ashrsi3 (operands[0], temp, shift_24));
   DONE;
 })
 
@@ -3402,17 +3366,18 @@ visl")
   rtx shift_56 = GEN_INT (56);
   int op1_subbyte = 0;
 
-  if (GET_CODE (operand1) == SUBREG)
+  if (GET_CODE (operands[1]) == SUBREG)
     {
-      op1_subbyte = SUBREG_BYTE (operand1);
+      op1_subbyte = SUBREG_BYTE (operands[1]);
       op1_subbyte /= GET_MODE_SIZE (DImode);
       op1_subbyte *= GET_MODE_SIZE (DImode);
-      operand1 = XEXP (operand1, 0);
+      operands[1] = XEXP (operands[1], 0);
     }
 
-  emit_insn (gen_ashldi3 (temp, gen_rtx_SUBREG (DImode, operand1, op1_subbyte),
+  emit_insn (gen_ashldi3 (temp, gen_rtx_SUBREG (DImode, operands[1],
+						op1_subbyte),
 			  shift_56));
-  emit_insn (gen_ashrdi3 (operand0, temp, shift_56));
+  emit_insn (gen_ashrdi3 (operands[0], temp, shift_56));
   DONE;
 })
 
@@ -3433,17 +3398,18 @@ visl")
   rtx shift_48 = GEN_INT (48);
   int op1_subbyte = 0;
 
-  if (GET_CODE (operand1) == SUBREG)
+  if (GET_CODE (operands[1]) == SUBREG)
     {
-      op1_subbyte = SUBREG_BYTE (operand1);
+      op1_subbyte = SUBREG_BYTE (operands[1]);
       op1_subbyte /= GET_MODE_SIZE (DImode);
       op1_subbyte *= GET_MODE_SIZE (DImode);
-      operand1 = XEXP (operand1, 0);
+      operands[1] = XEXP (operands[1], 0);
     }
 
-  emit_insn (gen_ashldi3 (temp, gen_rtx_SUBREG (DImode, operand1, op1_subbyte),
+  emit_insn (gen_ashldi3 (temp, gen_rtx_SUBREG (DImode, operands[1],
+						op1_subbyte),
 			  shift_48));
-  emit_insn (gen_ashrdi3 (operand0, temp, shift_48));
+  emit_insn (gen_ashrdi3 (operands[0], temp, shift_48));
   DONE;
 })
 
@@ -3774,10 +3740,13 @@ visl")
     }
 })
 
+;; Turning an add/sub instruction into the other changes the Carry flag
+;; so the 4096 trick cannot be used for operations in CCXCmode.
+
 (define_expand "uaddvdi4"
   [(parallel [(set (reg:CCXC CC_REG)
 		   (compare:CCXC (plus:DI (match_operand:DI 1 "register_operand")
-					  (match_operand:DI 2 "arith_add_operand"))
+					  (match_operand:DI 2 "arith_double_operand"))
 			         (match_dup 1)))
 	      (set (match_operand:DI 0 "register_operand")
 		   (plus:DI (match_dup 1) (match_dup 2)))])
@@ -3796,10 +3765,13 @@ visl")
     }
 })
 
+;; Turning an add/sub instruction into the other does not change the Overflow
+;; flag so the 4096 trick can be used for operations in CCXVmode.
+
 (define_expand "addvdi4"
   [(parallel [(set (reg:CCXV CC_REG)
 		   (compare:CCXV (plus:DI (match_operand:DI 1 "register_operand")
-					  (match_operand:DI 2 "arith_add_operand"))
+					  (match_operand:DI 2 "arith_double_add_operand"))
 			         (unspec:DI [(match_dup 1) (match_dup 2)]
 					    UNSPEC_ADDV)))
 	      (set (match_operand:DI 0 "register_operand")
@@ -3972,9 +3944,10 @@ visl")
   ""
   "@
    add\t%1, %2, %0
-   sub\t%1, -%2, %0"
-  [(set_attr "type" "*,*")
-   (set_attr "fptype" "*,*")])
+   sub\t%1, -%2, %0")
+
+;; Turning an add/sub instruction into the other changes the Carry flag
+;; so the 4096 trick cannot be used for operations in CCCmode.
 
 (define_expand "uaddvsi4"
   [(parallel [(set (reg:CCC CC_REG)
@@ -3988,10 +3961,13 @@ visl")
 			   (pc)))]
  "")
 
+;; Turning an add/sub instruction into the other does not change the Overflow
+;; flag so the 4096 trick can be used for operations in CCVmode.
+
 (define_expand "addvsi4"
   [(parallel [(set (reg:CCV CC_REG)
 		   (compare:CCV (plus:SI (match_operand:SI 1 "register_operand")
-					 (match_operand:SI 2 "arith_operand"))
+					 (match_operand:SI 2 "arith_add_operand"))
 			        (unspec:SI [(match_dup 1) (match_dup 2)]
 					   UNSPEC_ADDV)))
 	      (set (match_operand:SI 0 "register_operand")
@@ -4100,42 +4076,50 @@ visl")
 
 (define_insn "*cmp_ccv_plus"
   [(set (reg:CCV CC_REG)
-	(compare:CCV (plus:SI (match_operand:SI 0 "register_operand" "%r")
-			      (match_operand:SI 1 "arith_operand" "rI"))
+	(compare:CCV (plus:SI (match_operand:SI 0 "register_operand" "%r,r")
+			      (match_operand:SI 1 "arith_add_operand" "rI,O"))
 		     (unspec:SI [(match_dup 0) (match_dup 1)] UNSPEC_ADDV)))]
   ""
-  "addcc\t%0, %1, %%g0"
+  "@
+   addcc\t%0, %1, %%g0
+   subcc\t%0, -%1, %%g0"
   [(set_attr "type" "compare")])
 
 (define_insn "*cmp_ccxv_plus"
   [(set (reg:CCXV CC_REG)
-	(compare:CCXV (plus:DI (match_operand:DI 0 "register_operand" "%r")
-			       (match_operand:DI 1 "arith_operand" "rI"))
+	(compare:CCXV (plus:DI (match_operand:DI 0 "register_operand" "%r,r")
+			       (match_operand:DI 1 "arith_add_operand" "rI,O"))
 		      (unspec:DI [(match_dup 0) (match_dup 1)] UNSPEC_ADDV)))]
   "TARGET_ARCH64"
-  "addcc\t%0, %1, %%g0"
+  "@
+   addcc\t%0, %1, %%g0
+   subcc\t%0, -%1, %%g0"
   [(set_attr "type" "compare")])
 
 (define_insn "*cmp_ccv_plus_set"
   [(set (reg:CCV CC_REG)
-	(compare:CCV (plus:SI (match_operand:SI 1 "register_operand" "%r")
-			      (match_operand:SI 2 "arith_operand" "rI"))
+	(compare:CCV (plus:SI (match_operand:SI 1 "register_operand" "%r,r")
+			      (match_operand:SI 2 "arith_add_operand" "rI,O"))
 		     (unspec:SI [(match_dup 1) (match_dup 2)] UNSPEC_ADDV)))
-   (set (match_operand:SI 0 "register_operand" "=r")
+   (set (match_operand:SI 0 "register_operand" "=r,r")
 	(plus:SI (match_dup 1) (match_dup 2)))]
   ""
-  "addcc\t%1, %2, %0"
+  "@
+   addcc\t%1, %2, %0
+   subcc\t%1, -%2, %0"
   [(set_attr "type" "compare")])
 
 (define_insn "*cmp_ccxv_plus_set"
   [(set (reg:CCXV CC_REG)
-	(compare:CCXV (plus:DI (match_operand:DI 1 "register_operand" "%r")
-			       (match_operand:DI 2 "arith_operand" "rI"))
+	(compare:CCXV (plus:DI (match_operand:DI 1 "register_operand" "%r,r")
+			       (match_operand:DI 2 "arith_add_operand" "rI,O"))
 		      (unspec:DI [(match_dup 1) (match_dup 2)] UNSPEC_ADDV)))
-   (set (match_operand:DI 0 "register_operand" "=r")
+   (set (match_operand:DI 0 "register_operand" "=r,r")
 	(plus:DI (match_dup 1) (match_dup 2)))]
   "TARGET_ARCH64"
-  "addcc\t%1, %2, %0"
+  "@
+   addcc\t%1, %2, %0
+   subcc\t%1, -%2, %0"
   [(set_attr "type" "compare")])
 
 (define_insn "*cmp_ccv_plus_sltu_set"
@@ -4167,10 +4151,13 @@ visl")
     }
 })
 
+;; Turning an add/sub instruction into the other changes the Carry flag
+;; so the 4096 trick cannot be used for operations in CCXmode.
+
 (define_expand "usubvdi4"
   [(parallel [(set (reg:CCX CC_REG)
 		   (compare:CCX (match_operand:DI 1 "register_or_zero_operand")
-				(match_operand:DI 2 "arith_add_operand")))
+				(match_operand:DI 2 "arith_double_operand")))
 	      (set (match_operand:DI 0 "register_operand")
 		   (minus:DI (match_dup 1) (match_dup 2)))])
    (set (pc) (if_then_else (ltu (reg:CCX CC_REG) (const_int 0))
@@ -4194,10 +4181,13 @@ visl")
     }
 })
 
+;; Turning an add/sub instruction into the other does not change the Overflow
+;; flag so the 4096 trick can be used for operations in CCXVmode.
+
 (define_expand "subvdi4"
   [(parallel [(set (reg:CCXV CC_REG)
 		   (compare:CCXV (minus:DI (match_operand:DI 1 "register_operand")
-					   (match_operand:DI 2 "arith_add_operand"))
+					   (match_operand:DI 2 "arith_double_add_operand"))
 			         (unspec:DI [(match_dup 1) (match_dup 2)]
 					    UNSPEC_SUBV)))
 	      (set (match_operand:DI 0 "register_operand")
@@ -4368,9 +4358,10 @@ visl")
   ""
   "@
    sub\t%1, %2, %0
-   add\t%1, -%2, %0"
-  [(set_attr "type" "*,*")
-   (set_attr "fptype" "*,*")])
+   add\t%1, -%2, %0")
+
+;; Turning an add/sub instruction into the other changes the Carry flag
+;; so the 4096 trick cannot be used for operations in CCmode.
 
 (define_expand "usubvsi4"
   [(parallel [(set (reg:CC CC_REG)
@@ -4390,10 +4381,13 @@ visl")
     }
 })
 
+;; Turning an add/sub instruction into the other does not change the Overflow
+;; flag so the 4096 trick can be used for operations in CCVmode.
+
 (define_expand "subvsi4"
   [(parallel [(set (reg:CCV CC_REG)
 		   (compare:CCV (minus:SI (match_operand:SI 1 "register_operand")
-					  (match_operand:SI 2 "arith_operand"))
+					  (match_operand:SI 2 "arith_add_operand"))
 			        (unspec:SI [(match_dup 1) (match_dup 2)]
 					   UNSPEC_SUBV)))
 	      (set (match_operand:SI 0 "register_operand")
@@ -4486,42 +4480,50 @@ visl")
 
 (define_insn "*cmp_ccv_minus"
   [(set (reg:CCV CC_REG)
-	(compare:CCV (minus:SI (match_operand:SI 0 "register_or_zero_operand" "rJ")
-			       (match_operand:SI 1 "arith_operand" "rI"))
+	(compare:CCV (minus:SI (match_operand:SI 0 "register_or_zero_operand" "rJ,rJ")
+			       (match_operand:SI 1 "arith_add_operand" "rI,O"))
 		     (unspec:SI [(match_dup 0) (match_dup 1)] UNSPEC_SUBV)))]
   ""
-  "subcc\t%r0, %1, %%g0"
+  "@
+   subcc\t%r0, %1, %%g0
+   addcc\t%r0, -%1, %%g0"
   [(set_attr "type" "compare")])
 
 (define_insn "*cmp_ccxv_minus"
   [(set (reg:CCXV CC_REG)
-	(compare:CCXV (minus:DI (match_operand:DI 0 "register_or_zero_operand" "rJ")
-			        (match_operand:DI 1 "arith_operand" "rI"))
+	(compare:CCXV (minus:DI (match_operand:DI 0 "register_or_zero_operand" "rJ,rJ")
+			        (match_operand:DI 1 "arith_add_operand" "rI,O"))
 		      (unspec:DI [(match_dup 0) (match_dup 1)] UNSPEC_SUBV)))]
   "TARGET_ARCH64"
-  "subcc\t%r0, %1, %%g0"
+  "@
+   subcc\t%r0, %1, %%g0
+   addcc\t%r0, -%1, %%g0"
   [(set_attr "type" "compare")])
 
 (define_insn "*cmp_ccv_minus_set"
   [(set (reg:CCV CC_REG)
-	(compare:CCV (minus:SI (match_operand:SI 1 "register_or_zero_operand" "rJ")
-			       (match_operand:SI 2 "arith_operand" "rI"))
+	(compare:CCV (minus:SI (match_operand:SI 1 "register_or_zero_operand" "rJ,rJ")
+			       (match_operand:SI 2 "arith_add_operand" "rI,O"))
 		     (unspec:SI [(match_dup 1) (match_dup 2)] UNSPEC_SUBV)))
-   (set (match_operand:SI 0 "register_operand" "=r")
+   (set (match_operand:SI 0 "register_operand" "=r,r")
 	(minus:SI (match_dup 1) (match_dup 2)))]
   ""
-  "subcc\t%r1, %2, %0"
+  "@
+   subcc\t%r1, %2, %0
+   addcc\t%r1, -%2, %0"
   [(set_attr "type" "compare")])
 
 (define_insn "*cmp_ccxv_minus_set"
   [(set (reg:CCXV CC_REG)
-	(compare:CCXV (minus:DI (match_operand:DI 1 "register_or_zero_operand" "rJ")
-			        (match_operand:DI 2 "arith_operand" "rI"))
+	(compare:CCXV (minus:DI (match_operand:DI 1 "register_or_zero_operand" "rJ,rJ")
+			        (match_operand:DI 2 "arith_add_operand" "rI,O"))
 		      (unspec:DI [(match_dup 1) (match_dup 2)] UNSPEC_SUBV)))
-   (set (match_operand:DI 0 "register_operand" "=r")
+   (set (match_operand:DI 0 "register_operand" "=r,r")
 	(minus:DI (match_dup 1) (match_dup 2)))]
   "TARGET_ARCH64"
-  "subcc\t%r1, %2, %0"
+  "@
+   subcc\t%r1, %2, %0
+   addcc\t%r1, -%2, %0"
   [(set_attr "type" "compare")])
 
 (define_insn "*cmp_ccv_minus_sltu_set"
@@ -5772,13 +5774,13 @@ visl")
 
 (define_insn "negsi2"
   [(set (match_operand:SI 0 "register_operand" "=r")
-        (neg:SI (match_operand:SI 1 "arith_operand" "rI")))]
+        (neg:SI (match_operand:SI 1 "register_operand" "r")))]
   ""
   "sub\t%%g0, %1, %0")
 
 (define_expand "unegvsi3"
   [(parallel [(set (reg:CCC CC_REG)
-		   (compare:CCC (not:SI (match_operand:SI 1 "arith_operand" ""))
+		   (compare:CCC (not:SI (match_operand:SI 1 "register_operand" ""))
 				(const_int -1)))
 	      (set (match_operand:SI 0 "register_operand" "")
 		   (neg:SI (match_dup 1)))])
@@ -5790,7 +5792,7 @@ visl")
 
 (define_expand "negvsi3"
   [(parallel [(set (reg:CCV CC_REG)
-		   (compare:CCV (neg:SI (match_operand:SI 1 "arith_operand" ""))
+		   (compare:CCV (neg:SI (match_operand:SI 1 "register_operand" ""))
 				(unspec:SI [(match_dup 1)] UNSPEC_NEGV)))
 	      (set (match_operand:SI 0 "register_operand" "")
 		   (neg:SI (match_dup 1)))])
@@ -5802,7 +5804,7 @@ visl")
 
 (define_insn "*cmp_ccnz_neg"
   [(set (reg:CCNZ CC_REG)
-	(compare:CCNZ (neg:SI (match_operand:SI 0 "arith_operand" "rI"))
+	(compare:CCNZ (neg:SI (match_operand:SI 0 "register_operand" "r"))
 		      (const_int 0)))]
   ""
   "subcc\t%%g0, %0, %%g0"
@@ -5810,7 +5812,7 @@ visl")
 
 (define_insn "*cmp_ccxnz_neg"
   [(set (reg:CCXNZ CC_REG)
-	(compare:CCXNZ (neg:DI (match_operand:DI 0 "arith_operand" "rI"))
+	(compare:CCXNZ (neg:DI (match_operand:DI 0 "register_operand" "r"))
 		       (const_int 0)))]
   "TARGET_ARCH64"
   "subcc\t%%g0, %0, %%g0"
@@ -5818,7 +5820,7 @@ visl")
 
 (define_insn "*cmp_ccnz_neg_set"
   [(set (reg:CCNZ CC_REG)
-	(compare:CCNZ (neg:SI (match_operand:SI 1 "arith_operand" "rI"))
+	(compare:CCNZ (neg:SI (match_operand:SI 1 "register_operand" "r"))
 		      (const_int 0)))
    (set (match_operand:SI 0 "register_operand" "=r")
 	(neg:SI (match_dup 1)))]
@@ -5828,7 +5830,7 @@ visl")
 
 (define_insn "*cmp_ccxnz_neg_set"
   [(set (reg:CCXNZ CC_REG)
-	(compare:CCXNZ (neg:DI (match_operand:DI 1 "arith_operand" "rI"))
+	(compare:CCXNZ (neg:DI (match_operand:DI 1 "register_operand" "r"))
 		       (const_int 0)))
    (set (match_operand:DI 0 "register_operand" "=r")
 	(neg:DI (match_dup 1)))]
@@ -5838,7 +5840,7 @@ visl")
 
 (define_insn "*cmp_ccc_neg_set"
   [(set (reg:CCC CC_REG)
-	(compare:CCC (not:SI (match_operand:SI 1 "arith_operand" "rI"))
+	(compare:CCC (not:SI (match_operand:SI 1 "register_operand" "r"))
 		     (const_int -1)))
    (set (match_operand:SI 0 "register_operand" "=r")
 	(neg:SI (match_dup 1)))]
@@ -5848,7 +5850,7 @@ visl")
 
 (define_insn "*cmp_ccxc_neg_set"
   [(set (reg:CCXC CC_REG)
-	(compare:CCXC (not:DI (match_operand:DI 1 "arith_operand" "rI"))
+	(compare:CCXC (not:DI (match_operand:DI 1 "register_operand" "r"))
 		      (const_int -1)))
    (set (match_operand:DI 0 "register_operand" "=r")
 	(neg:DI (match_dup 1)))]
@@ -5859,7 +5861,7 @@ visl")
 (define_insn "*cmp_ccc_neg_sltu_set"
   [(set (reg:CCC CC_REG)
 	(compare:CCC (zero_extend:DI
-		       (neg:SI (plus:SI (match_operand:SI 1 "arith_operand" "rI")
+		       (neg:SI (plus:SI (match_operand:SI 1 "register_operand" "r")
 				        (ltu:SI (reg:CCC CC_REG)
 						(const_int 0)))))
 		     (neg:DI (plus:DI (zero_extend:DI (match_dup 1))
@@ -5874,7 +5876,7 @@ visl")
 
 (define_insn "*cmp_ccv_neg"
   [(set (reg:CCV CC_REG)
-	(compare:CCV (neg:SI (match_operand:SI 0 "arith_operand" "rI"))
+	(compare:CCV (neg:SI (match_operand:SI 0 "register_operand" "r"))
 		     (unspec:SI [(match_dup 0)] UNSPEC_NEGV)))]
   ""
   "subcc\t%%g0, %0, %%g0"
@@ -5882,7 +5884,7 @@ visl")
 
 (define_insn "*cmp_ccxv_neg"
   [(set (reg:CCXV CC_REG)
-	(compare:CCXV (neg:DI (match_operand:DI 0 "arith_operand" "rI"))
+	(compare:CCXV (neg:DI (match_operand:DI 0 "register_operand" "r"))
 		      (unspec:DI [(match_dup 0)] UNSPEC_NEGV)))]
   "TARGET_ARCH64"
   "subcc\t%%g0, %0, %%g0"
@@ -5890,7 +5892,7 @@ visl")
 
 (define_insn "*cmp_ccv_neg_set"
   [(set (reg:CCV CC_REG)
-	(compare:CCV (neg:SI (match_operand:SI 1 "arith_operand" "rI"))
+	(compare:CCV (neg:SI (match_operand:SI 1 "register_operand" "r"))
 		     (unspec:SI [(match_dup 1)] UNSPEC_NEGV)))
    (set (match_operand:SI 0 "register_operand" "=r")
 	(neg:SI (match_dup 1)))]
@@ -5900,7 +5902,7 @@ visl")
 
 (define_insn "*cmp_ccxv_neg_set"
   [(set (reg:CCXV CC_REG)
-	(compare:CCXV (neg:DI (match_operand:DI 1 "arith_operand" "rI"))
+	(compare:CCXV (neg:DI (match_operand:DI 1 "register_operand" "r"))
 		      (unspec:DI [(match_dup 1)] UNSPEC_NEGV)))
    (set (match_operand:DI 0 "register_operand" "=r")
 	(neg:DI (match_dup 1)))]
@@ -5910,7 +5912,7 @@ visl")
 
 (define_insn "*cmp_ccv_neg_sltu_set"
   [(set (reg:CCV CC_REG)
-	(compare:CCV (neg:SI (plus:SI (match_operand:SI 1 "arith_operand" "rI")
+	(compare:CCV (neg:SI (plus:SI (match_operand:SI 1 "register_operand" "r")
 				      (ltu:SI (reg:CCC CC_REG) (const_int 0))))
 		     (unspec:SI [(plus:SI (match_dup 1)
 				          (ltu:SI (reg:CCC CC_REG)
@@ -7260,7 +7262,7 @@ visl")
     = adjust_address (operands[0], GET_MODE (operands[0]), SPARC_STACK_BIAS);
 })
 
-(define_insn "probe_stack_range<P:mode>"
+(define_insn "@probe_stack_range<P:mode>"
   [(set (match_operand:P 0 "register_operand" "=r")
 	(unspec_volatile:P [(match_operand:P 1 "register_operand" "0")
 			    (match_operand:P 2 "register_operand" "r")]
@@ -7381,7 +7383,7 @@ visl")
   ""
 {
   rtx i7 = gen_rtx_REG (Pmode, RETURN_ADDR_REGNUM);
-  rtx r_label = copy_to_reg (operands[1]);
+  rtx r_label = operands[1];
   rtx r_sp = adjust_address (operands[2], Pmode, 0);
   rtx r_fp = operands[3];
   rtx r_i7 = adjust_address (operands[2], Pmode, GET_MODE_SIZE (Pmode));
@@ -7394,9 +7396,18 @@ visl")
   emit_clobber (gen_rtx_MEM (BLKmode, gen_rtx_SCRATCH (VOIDmode)));
   emit_clobber (gen_rtx_MEM (BLKmode, hard_frame_pointer_rtx));
 
-  /* Restore frame pointer for containing function.  */
-  emit_move_insn (hard_frame_pointer_rtx, r_fp);
+  r_label = copy_to_reg (r_label);
+
+  /* Restore the frame pointer and stack pointer.  We must use a
+     temporary since the setjmp buffer may be a local.  */
+  r_fp = copy_to_reg (r_fp);
   emit_stack_restore (SAVE_NONLOCAL, r_sp);
+  r_i7 = copy_to_reg (r_i7);
+
+  /* Ensure the frame pointer move is not optimized.  */
+  emit_insn (gen_blockage ());
+  emit_clobber (hard_frame_pointer_rtx);
+  emit_move_insn (hard_frame_pointer_rtx, r_fp);
   emit_move_insn (i7, r_i7);
 
   /* USE of hard_frame_pointer_rtx added for consistency;
@@ -7405,8 +7416,7 @@ visl")
   emit_use (stack_pointer_rtx);
   emit_use (i7);
 
-  emit_jump_insn (gen_indirect_jump (r_label));
-  emit_barrier ();
+  emit_indirect_jump (r_label);
   DONE;
 })
 
@@ -7430,7 +7440,7 @@ visl")
 
 ;; Special pattern for the FLUSH instruction.
 
-(define_insn "flush<P:mode>"
+(define_insn "@flush<P:mode>"
   [(unspec_volatile [(match_operand:P 0 "memory_operand" "m")] UNSPECV_FLUSH)]
   ""
 {
@@ -7805,9 +7815,9 @@ visl")
   int read_or_write = INTVAL (operands[1]);
   int locality = INTVAL (operands[2]);
 
-  gcc_assert (read_or_write == 0 || read_or_write == 1);
-  gcc_assert (locality >= 0 && locality < 4);
-  return prefetch_instr [read_or_write][locality == 0 ? 0 : 1];
+  gcc_assert (IN_RANGE (read_or_write, 0, 2));
+  gcc_assert (IN_RANGE (locality, 0, 3));
+  return prefetch_instr [read_or_write & 1][locality == 0 ? 0 : 1];
 }
   [(set_attr "type" "load")
    (set_attr "subtype" "prefetch")])
@@ -7831,9 +7841,9 @@ visl")
   int read_or_write = INTVAL (operands[1]);
   int locality = INTVAL (operands[2]);
 
-  gcc_assert (read_or_write == 0 || read_or_write == 1);
-  gcc_assert (locality >= 0 && locality < 4);
-  return prefetch_instr [read_or_write][locality == 0 ? 0 : 1];
+  gcc_assert (IN_RANGE (read_or_write, 0, 2));
+  gcc_assert (IN_RANGE (locality, 0, 3));
+  return prefetch_instr [read_or_write & 1][locality == 0 ? 0 : 1];
 }
   [(set_attr "type" "load")
    (set_attr "subtype" "prefetch")])
@@ -7897,14 +7907,14 @@ visl")
 
 ;; TLS support instructions.
 
-(define_insn "tgd_hi22<P:mode>"
+(define_insn "@tgd_hi22<P:mode>"
   [(set (match_operand:P 0 "register_operand" "=r")
         (high:P (unspec:P [(match_operand 1 "tgd_symbolic_operand" "")]
 			  UNSPEC_TLSGD)))]
   "TARGET_TLS"
   "sethi\\t%%tgd_hi22(%a1), %0")
 
-(define_insn "tgd_lo10<P:mode>"
+(define_insn "@tgd_lo10<P:mode>"
   [(set (match_operand:P 0 "register_operand" "=r")
 	(lo_sum:P (match_operand:P 1 "register_operand" "r")
 		  (unspec:P [(match_operand 2 "tgd_symbolic_operand" "")]
@@ -7912,7 +7922,7 @@ visl")
   "TARGET_TLS"
   "add\\t%1, %%tgd_lo10(%a2), %0")
 
-(define_insn "tgd_add<P:mode>"
+(define_insn "@tgd_add<P:mode>"
   [(set (match_operand:P 0 "register_operand" "=r")
 	(plus:P (match_operand:P 1 "register_operand" "r")
 		(unspec:P [(match_operand:P 2 "register_operand" "r")
@@ -7921,7 +7931,7 @@ visl")
   "TARGET_TLS"
   "add\\t%1, %2, %0, %%tgd_add(%a3)")
 
-(define_insn "tgd_call<P:mode>"
+(define_insn "@tgd_call<P:mode>"
   [(set (match_operand 0 "register_operand" "=r")
 	(call (mem:P (unspec:P [(match_operand:P 1 "symbolic_operand" "s")
 				(match_operand 2 "tgd_symbolic_operand" "")]
@@ -7930,22 +7940,24 @@ visl")
    (clobber (reg:P O7_REG))]
   "TARGET_TLS"
   "call\t%a1, %%tgd_call(%a2)%#"
-  [(set_attr "type" "call")])
+  [(set (attr "type") (if_then_else (eq_attr "tls_delay_slot" "true")
+                                    (const_string "call")
+                                    (const_string "call_no_delay_slot")))])
 
-(define_insn "tldm_hi22<P:mode>"
+(define_insn "@tldm_hi22<P:mode>"
   [(set (match_operand:P 0 "register_operand" "=r")
         (high:P (unspec:P [(const_int 0)] UNSPEC_TLSLDM)))]
   "TARGET_TLS"
   "sethi\\t%%tldm_hi22(%&), %0")
 
-(define_insn "tldm_lo10<P:mode>"
+(define_insn "@tldm_lo10<P:mode>"
   [(set (match_operand:P 0 "register_operand" "=r")
 	(lo_sum:P (match_operand:P 1 "register_operand" "r")
 		  (unspec:P [(const_int 0)] UNSPEC_TLSLDM)))]
   "TARGET_TLS"
   "add\\t%1, %%tldm_lo10(%&), %0")
 
-(define_insn "tldm_add<P:mode>"
+(define_insn "@tldm_add<P:mode>"
   [(set (match_operand:P 0 "register_operand" "=r")
 	(plus:P (match_operand:P 1 "register_operand" "r")
 		(unspec:P [(match_operand:P 2 "register_operand" "r")]
@@ -7953,7 +7965,7 @@ visl")
   "TARGET_TLS"
   "add\\t%1, %2, %0, %%tldm_add(%&)")
 
-(define_insn "tldm_call<P:mode>"
+(define_insn "@tldm_call<P:mode>"
   [(set (match_operand 0 "register_operand" "=r")
 	(call (mem:P (unspec:P [(match_operand:P 1 "symbolic_operand" "s")]
 			       UNSPEC_TLSLDM))
@@ -7961,16 +7973,18 @@ visl")
    (clobber (reg:P O7_REG))]
   "TARGET_TLS"
   "call\t%a1, %%tldm_call(%&)%#"
-  [(set_attr "type" "call")])
+  [(set (attr "type") (if_then_else (eq_attr "tls_delay_slot" "true")
+                                    (const_string "call")
+                                    (const_string "call_no_delay_slot")))])
 
-(define_insn "tldo_hix22<P:mode>"
+(define_insn "@tldo_hix22<P:mode>"
   [(set (match_operand:P 0 "register_operand" "=r")
         (high:P (unspec:P [(match_operand 1 "tld_symbolic_operand" "")]
 			  UNSPEC_TLSLDO)))]
   "TARGET_TLS"
   "sethi\\t%%tldo_hix22(%a1), %0")
 
-(define_insn "tldo_lox10<P:mode>"
+(define_insn "@tldo_lox10<P:mode>"
   [(set (match_operand:P 0 "register_operand" "=r")
 	(lo_sum:P (match_operand:P 1 "register_operand" "r")
 		  (unspec:P [(match_operand 2 "tld_symbolic_operand" "")]
@@ -7978,7 +7992,7 @@ visl")
   "TARGET_TLS"
   "xor\\t%1, %%tldo_lox10(%a2), %0")
 
-(define_insn "tldo_add<P:mode>"
+(define_insn "@tldo_add<P:mode>"
   [(set (match_operand:P 0 "register_operand" "=r")
 	(plus:P (match_operand:P 1 "register_operand" "r")
 		(unspec:P [(match_operand:P 2 "register_operand" "r")
@@ -7987,14 +8001,14 @@ visl")
   "TARGET_TLS"
   "add\\t%1, %2, %0, %%tldo_add(%a3)")
 
-(define_insn "tie_hi22<P:mode>"
+(define_insn "@tie_hi22<P:mode>"
   [(set (match_operand:P 0 "register_operand" "=r")
         (high:P (unspec:P [(match_operand 1 "tie_symbolic_operand" "")]
 			  UNSPEC_TLSIE)))]
   "TARGET_TLS"
   "sethi\\t%%tie_hi22(%a1), %0")
 
-(define_insn "tie_lo10<P:mode>"
+(define_insn "@tie_lo10<P:mode>"
   [(set (match_operand:P 0 "register_operand" "=r")
 	(lo_sum:P (match_operand:P 1 "register_operand" "r")
 		  (unspec:P [(match_operand 2 "tie_symbolic_operand" "")]
@@ -8026,23 +8040,23 @@ visl")
   [(set_attr "type" "load")
    (set_attr "subtype" "regular")])
 
-(define_insn "tie_add<P:mode>"
+(define_insn "@tie_add<P:mode>"
   [(set (match_operand:P 0 "register_operand" "=r")
 	(plus:P (match_operand:P 1 "register_operand" "r")
 		(unspec:P [(match_operand:P 2 "register_operand" "r")
 			   (match_operand 3 "tie_symbolic_operand" "")]
 			  UNSPEC_TLSIE)))]
-  "TARGET_SUN_TLS"
+  "HAVE_SOLARIS_AS"
   "add\\t%1, %2, %0, %%tie_add(%a3)")
 
-(define_insn "tle_hix22<P:mode>"
+(define_insn "@tle_hix22<P:mode>"
   [(set (match_operand:P 0 "register_operand" "=r")
         (high:P (unspec:P [(match_operand 1 "tle_symbolic_operand" "")]
 			  UNSPEC_TLSLE)))]
   "TARGET_TLS"
   "sethi\\t%%tle_hix22(%a1), %0")
 
-(define_insn "tle_lox10<P:mode>"
+(define_insn "@tle_lox10<P:mode>"
   [(set (match_operand:P 0 "register_operand" "=r")
 	(lo_sum:P (match_operand:P 1 "register_operand" "r")
 		  (unspec:P [(match_operand 2 "tle_symbolic_operand" "")]
@@ -8300,22 +8314,28 @@ visl")
   operands[1] = gen_rtx_MEM (Pmode, addr);
 #endif
   if (TARGET_ARCH64)
-    emit_insn (gen_stack_protect_setdi (operands[0], operands[1]));
+    emit_insn (gen_stack_protect_set64 (operands[0], operands[1]));
   else
-    emit_insn (gen_stack_protect_setsi (operands[0], operands[1]));
+    emit_insn (gen_stack_protect_set32 (operands[0], operands[1]));
   DONE;
 })
 
-(define_insn "stack_protect_setsi"
+(define_insn "stack_protect_set32"
   [(set (match_operand:SI 0 "memory_operand" "=m")
 	(unspec:SI [(match_operand:SI 1 "memory_operand" "m")] UNSPEC_SP_SET))
    (set (match_scratch:SI 2 "=&r") (const_int 0))]
   "TARGET_ARCH32"
-  "ld\t%1, %2\;st\t%2, %0\;mov\t0, %2"
+{
+  if (sparc_fix_b2bst)
+    return "ld\t%1, %2\;st\t%2, %0\;mov\t0, %2\;nop";
+  else
+    return "ld\t%1, %2\;st\t%2, %0\;mov\t0, %2";
+}
   [(set_attr "type" "multi")
-   (set_attr "length" "3")])
+   (set (attr "length") (if_then_else (eq_attr "fix_b2bst" "true")
+		      (const_int 4) (const_int 3)))])
 
-(define_insn "stack_protect_setdi"
+(define_insn "stack_protect_set64"
   [(set (match_operand:DI 0 "memory_operand" "=m")
 	(unspec:DI [(match_operand:DI 1 "memory_operand" "m")] UNSPEC_SP_SET))
    (set (match_scratch:DI 2 "=&r") (const_int 0))]
@@ -8339,13 +8359,13 @@ visl")
   if (TARGET_ARCH64)
     {
       result = gen_reg_rtx (Pmode);
-      emit_insn (gen_stack_protect_testdi (result, operands[0], operands[1]));
+      emit_insn (gen_stack_protect_test64 (result, operands[0], operands[1]));
       test = gen_rtx_EQ (VOIDmode, result, const0_rtx);
       emit_jump_insn (gen_cbranchdi4 (test, result, const0_rtx, operands[2]));
     }
   else
     {
-      emit_insn (gen_stack_protect_testsi (operands[0], operands[1]));
+      emit_insn (gen_stack_protect_test32 (operands[0], operands[1]));
       result = gen_rtx_REG (CCmode, SPARC_ICC_REG);
       test = gen_rtx_EQ (VOIDmode, result, const0_rtx);
       emit_jump_insn (gen_cbranchcc4 (test, result, const0_rtx, operands[2]));
@@ -8353,7 +8373,7 @@ visl")
   DONE;
 })
 
-(define_insn "stack_protect_testsi"
+(define_insn "stack_protect_test32"
   [(set (reg:CC CC_REG)
 	(unspec:CC [(match_operand:SI 0 "memory_operand" "m")
 		    (match_operand:SI 1 "memory_operand" "m")]
@@ -8365,7 +8385,7 @@ visl")
   [(set_attr "type" "multi")
    (set_attr "length" "4")])
 
-(define_insn "stack_protect_testdi"
+(define_insn "stack_protect_test64"
   [(set (match_operand:DI 0 "register_operand" "=&r")
 	(unspec:DI [(match_operand:DI 1 "memory_operand" "m")
 		    (match_operand:DI 2 "memory_operand" "m")]
@@ -8425,8 +8445,8 @@ visl")
    (set_attr "cpu_feature" "vis,vis,vis,*,*,*,*,*,*,vis3,vis3")])
 
 (define_insn "*mov<VM64:mode>_insn_sp64"
-  [(set (match_operand:VM64 0 "nonimmediate_operand" "=e,e,e,e,W,m,*r, m,*r, e,*r")
-	(match_operand:VM64 1 "input_operand"         "Y,Z,e,W,e,Y, m,*r, e,*r,*r"))]
+  [(set (match_operand:VM64 0 "nonimmediate_operand" "=e,e,e,e,m,m,*r, m,*r, e,*r")
+	(match_operand:VM64 1 "input_operand"         "Y,Z,e,m,e,Y, m,*r, e,*r,*r"))]
   "TARGET_VIS
    && TARGET_ARCH64
    && (register_operand (operands[0], <VM64:MODE>mode)
@@ -8449,9 +8469,9 @@ visl")
 
 (define_insn "*mov<VM64:mode>_insn_sp32"
   [(set (match_operand:VM64 0 "nonimmediate_operand"
-			      "=T,o,e,e,e,*r, f,e,T,U,T,f,o,*r,*r, o")
+			      "=T,o,e,e,e,*r, f,e,T,f,o,*r,*r, o")
 	(match_operand:VM64 1 "input_operand"
-			      " Y,Y,Y,Z,e, f,*r,T,e,T,U,o,f,*r, o,*r"))]
+			      " Y,Y,Y,Z,e, f,*r,T,e,o,f,*r, o,*r"))]
   "TARGET_VIS
    && TARGET_ARCH32
    && (register_operand (operands[0], <VM64:MODE>mode)
@@ -8466,18 +8486,15 @@ visl")
   #
   ldd\t%1, %0
   std\t%1, %0
-  ldd\t%1, %0
-  std\t%1, %0
   #
   #
   #
   ldd\t%1, %0
   std\t%1, %0"
-  [(set_attr "type" "store,*,visl,visl,vismv,*,*,fpload,fpstore,load,store,*,*,*,load,store")
-   (set_attr "subtype" "*,*,double,double,double,*,*,*,*,regular,*,*,*,*,regular,*")
-   (set_attr "length" "*,2,*,*,*,2,2,*,*,*,*,2,2,2,*,*")
-   (set_attr "cpu_feature" "*,*,vis,vis,vis,vis3,vis3,*,*,*,*,*,*,*,*,*")
-   (set_attr "lra" "*,*,*,*,*,*,*,*,*,disabled,disabled,*,*,*,*,*")])
+  [(set_attr "type" "store,*,visl,visl,vismv,*,*,fpload,fpstore,*,*,*,load,store")
+   (set_attr "subtype" "*,*,double,double,double,*,*,*,*,*,*,*,regular,*")
+   (set_attr "length" "*,2,*,*,*,2,2,*,*,2,2,2,*,*")
+   (set_attr "cpu_feature" "*,*,vis,vis,vis,vis3,vis3,*,*,*,*,*,*,*")])
 
 (define_split
   [(set (match_operand:VM64 0 "register_operand" "")
@@ -8948,51 +8965,70 @@ visl")
   "edge32l\t%r1, %r2, %0"
   [(set_attr "type" "edge")])
 
-(define_code_iterator gcond [le ne gt eq])
-(define_mode_iterator GCM [V4HI V2SI])
-(define_mode_attr gcm_name [(V4HI "16") (V2SI "32")])
+(define_mode_iterator FPCMP [V8QI V4HI V2SI])
+(define_code_iterator fpcmpcond [eq ne le gt])
+(define_code_iterator fpcmpucond [leu gtu])
+(define_code_attr signed_code [(leu "le") (gtu "gt")])
 
-(define_insn "fcmp<gcond:code><GCM:gcm_name><P:mode>_vis"
+(define_insn "fpcmp<fpcmpcond:code><FPCMP:vbits><P:mode>_vis"
   [(set (match_operand:P 0 "register_operand" "=r")
-  	(unspec:P [(gcond:GCM (match_operand:GCM 1 "register_operand" "e")
-		              (match_operand:GCM 2 "register_operand" "e"))]
-	 UNSPEC_FCMP))]
-  "TARGET_VIS"
-  "fcmp<gcond:code><GCM:gcm_name>\t%1, %2, %0"
+	(fpcmpcond:P (match_operand:FPCMP 1 "register_operand" "e")
+		     (match_operand:FPCMP 2 "register_operand" "e")))]
+  "TARGET_VIS
+   && (<FPCMP:MODE>mode != V8QImode
+       || (TARGET_VIS3B && (<fpcmpcond:CODE> == EQ || <fpcmpcond:CODE> == NE))
+       || TARGET_VIS4)"
+  "fpcmp<fpcmpcond:code><FPCMP:vbits>\t%1, %2, %0"
   [(set_attr "type" "viscmp")])
 
-(define_insn "fpcmp<gcond:code>8<P:mode>_vis"
-  [(set (match_operand:P 0 "register_operand" "=r")
-  	(unspec:P [(gcond:V8QI (match_operand:V8QI 1 "register_operand" "e")
-		               (match_operand:V8QI 2 "register_operand" "e"))]
-	 UNSPEC_FCMP))]
-  "TARGET_VIS4"
-  "fpcmp<gcond:code>8\t%1, %2, %0"
-  [(set_attr "type" "viscmp")])
-
-(define_expand "vcond<GCM:mode><GCM:mode>"
-  [(match_operand:GCM 0 "register_operand" "")
-   (match_operand:GCM 1 "register_operand" "")
-   (match_operand:GCM 2 "register_operand" "")
-   (match_operator 3 ""
-     [(match_operand:GCM 4 "register_operand" "")
-      (match_operand:GCM 5 "register_operand" "")])]
-  "TARGET_VIS3"
+(define_expand "vec_cmp<FPCMP:mode><P:mode>"
+  [(set (match_operand:P 0 "register_operand" "")
+        (match_operator:P 1 "vec_cmp_operator"
+          [(match_operand:FPCMP 2 "register_operand" "")
+           (match_operand:FPCMP 3 "register_operand" "")]))]
+  "TARGET_VIS3B"
 {
-  sparc_expand_vcond (<MODE>mode, operands, UNSPEC_CMASK<gcm_name>, UNSPEC_FCMP);
-  DONE;
+  enum rtx_code code = GET_CODE (operands[1]);
+
+  if (code == LT || code == GE)
+    {
+      PUT_CODE (operands[1], swap_condition (code));
+      std::swap (operands[2], operands[3]);
+    }
 })
 
-(define_expand "vconduv8qiv8qi"
-  [(match_operand:V8QI 0 "register_operand" "")
-   (match_operand:V8QI 1 "register_operand" "")
-   (match_operand:V8QI 2 "register_operand" "")
-   (match_operator 3 ""
-     [(match_operand:V8QI 4 "register_operand" "")
-      (match_operand:V8QI 5 "register_operand" "")])]
-  "TARGET_VIS3"
+(define_insn "fpcmpu<fpcmpucond:signed_code><FPCMP:vbits><P:mode>_vis"
+  [(set (match_operand:P 0 "register_operand" "=r")
+	(fpcmpucond:P (match_operand:FPCMP 1 "register_operand" "e")
+		      (match_operand:FPCMP 2 "register_operand" "e")))]
+  "TARGET_VIS3B && (<FPCMP:MODE>mode == V8QImode || TARGET_VIS4)"
+  "fpcmpu<fpcmpucond:signed_code><FPCMP:vbits>\t%1, %2, %0"
+  [(set_attr "type" "viscmp")])
+
+(define_expand "vec_cmpu<FPCMP:mode><P:mode>"
+  [(set (match_operand:P 0 "register_operand" "")
+        (match_operator:P 1 "vec_cmpu_operator"
+          [(match_operand:FPCMP 2 "register_operand" "")
+           (match_operand:FPCMP 3 "register_operand" "")]))]
+  "TARGET_VIS3B"
 {
-  sparc_expand_vcond (V8QImode, operands, UNSPEC_CMASK8, UNSPEC_FUCMP);
+  enum rtx_code code = GET_CODE (operands[1]);
+
+  if (code == LTU || code == GEU)
+    {
+      PUT_CODE (operands[1], swap_condition (code));
+      std::swap (operands[2], operands[3]);
+    }
+})
+
+(define_expand "vcond_mask_<FPCMP:mode><P:mode>"
+  [(match_operand:FPCMP 0 "register_operand" "")
+   (match_operand:FPCMP 1 "register_operand" "")
+   (match_operand:FPCMP 2 "register_operand" "")
+   (match_operand:P     3 "register_operand" "")]
+  "TARGET_VIS3B"
+{
+  sparc_expand_vcond_mask (<FPCMP:MODE>mode, operands, UNSPEC_CMASK<vbits>);
   DONE;
 })
 
@@ -9172,6 +9208,8 @@ visl")
 (define_code_attr vis3_shift_patname
   [(ashift "ashl") (ss_ashift "ssashl") (lshiftrt "lshr") (ashiftrt "ashr")])
    
+(define_mode_iterator GCM [V4HI V2SI])
+
 (define_insn "v<vis3_shift_patname><GCM:mode>3"
   [(set (match_operand:GCM 0 "register_operand" "=<vconstr>")
 	(vis3_shift:GCM (match_operand:GCM 1 "register_operand" "<vconstr>")
@@ -9213,7 +9251,7 @@ visl")
   [(set (match_operand:V1DI 0 "register_operand" "=e")
 	(plusminus:V1DI (match_operand:V1DI 1 "register_operand" "e")
 			(match_operand:V1DI 2 "register_operand" "e")))]
-  "TARGET_VIS3"
+  "TARGET_VIS3B"
   "fp<plusminus_insn>64\t%1, %2, %0"
   [(set_attr "type" "fga")
    (set_attr "subtype" "addsub64")])
@@ -9300,24 +9338,6 @@ visl")
  "<vis4_addsub_us_insn><vbits>\t%1, %2, %0"
  [(set_attr "type" "fga")
   (set_attr "subtype" "other")])
-
-(define_insn "fucmp<gcond:code>8<P:mode>_vis"
-  [(set (match_operand:P 0 "register_operand" "=r")
-	(unspec:P [(gcond:V8QI (match_operand:V8QI 1 "register_operand" "e")
-		               (match_operand:V8QI 2 "register_operand" "e"))]
-	 UNSPEC_FUCMP))]
-  "TARGET_VIS3"
-  "fucmp<gcond:code>8\t%1, %2, %0"
-  [(set_attr "type" "viscmp")])
-
-(define_insn "fpcmpu<gcond:code><GCM:gcm_name><P:mode>_vis"
-  [(set (match_operand:P 0 "register_operand" "=r")
-	(unspec:P [(gcond:GCM (match_operand:GCM 1 "register_operand" "e")
-		              (match_operand:GCM 2 "register_operand" "e"))]
-	 UNSPEC_FUCMP))]
-  "TARGET_VIS4"
-  "fpcmpu<gcond:code><GCM:gcm_name>\t%1, %2, %0"
-  [(set_attr "type" "viscmp")])
 
 (define_insn "*naddsf3"
   [(set (match_operand:SF 0 "register_operand" "=f")
@@ -9421,10 +9441,14 @@ visl")
   [(set_attr "type" "fp")
    (set_attr "fptype" "double")])
 
-;; VIS4B instructions.
+;; VIS4B instructions (specified in the unpublished OSA 2017)
 
-(define_mode_iterator DUMODE [V2SI V4HI V8QI])
+(define_mode_iterator DUMODE [V8QI V4HI V2SI])
 
+;; Unpack a DUMODE right-justified value from {8,4,2} consecutive bitfields of (opnd 1):
+;; for  0 <= (opnd 2) <= 7 : V8QI value from 8 consecutive bitfields of (opnd 2) + 1 bits
+;; for  8 <= (opnd 2) <= 15: V4HI value from 4 consecutive bitfields of (opnd 2) + 1 bits
+;; for 16 <= (opnd 2) <= 31: V2SI value from 2 consecutive bitfields of (opnd 2) + 1 bits
 (define_insn "dictunpack<DUMODE:vbits>"
   [(set (match_operand:DUMODE 0 "register_operand" "=e")
         (unspec:DUMODE [(match_operand:DF 1 "register_operand" "e")
@@ -9435,48 +9459,53 @@ visl")
   [(set_attr "type" "fga")
    (set_attr "subtype" "other")])
 
-(define_mode_iterator FPCSMODE [V2SI V4HI V8QI])
-(define_code_iterator fpcscond [le gt eq ne])
-(define_code_iterator fpcsucond [le gt])
-
-(define_insn "fpcmp<fpcscond:code><FPCSMODE:vbits><P:mode>shl"
+;; Same as fpcmp but the {8,4,2}-bit result is shifted left by (opnd 3) * {8,4,2}
+(define_insn "fpcmp<fpcmpcond:code><FPCMP:vbits><P:mode>shl"
   [(set (match_operand:P 0 "register_operand" "=r")
-        (unspec:P [(fpcscond:FPCSMODE (match_operand:FPCSMODE 1 "register_operand" "e")
-                                      (match_operand:FPCSMODE 2 "register_operand" "e"))
+        (unspec:P [(fpcmpcond:FPCMP (match_operand:FPCMP 1 "register_operand" "e")
+                                    (match_operand:FPCMP 2 "register_operand" "e"))
                    (match_operand:SI 3 "imm2_operand" "q")]
          UNSPEC_FPCMPSHL))]
    "TARGET_VIS4B"
-   "fpcmp<fpcscond:code><FPCSMODE:vbits>shl\t%1, %2, %3, %0"
+   "fpcmp<fpcmpcond:code><FPCMP:vbits>shl\t%1, %2, %3, %0"
    [(set_attr "type" "viscmp")])
 
-(define_insn "fpcmpu<fpcsucond:code><FPCSMODE:vbits><P:mode>shl"
+;; Same as fpcmpu but the {8,4,2}-bit result is shifted left by (opnd 3) * {8,4,2}
+(define_insn "fpcmpu<fpcmpucond:signed_code><FPCMP:vbits><P:mode>shl"
   [(set (match_operand:P 0 "register_operand" "=r")
-        (unspec:P [(fpcsucond:FPCSMODE (match_operand:FPCSMODE 1 "register_operand" "e")
-                                       (match_operand:FPCSMODE 2 "register_operand" "e"))
+        (unspec:P [(fpcmpucond:FPCMP (match_operand:FPCMP 1 "register_operand" "e")
+                                     (match_operand:FPCMP 2 "register_operand" "e"))
                    (match_operand:SI 3 "imm2_operand" "q")]
-         UNSPEC_FPUCMPSHL))]
+         UNSPEC_FPCMPUSHL))]
    "TARGET_VIS4B"
-   "fpcmpu<fpcsucond:code><FPCSMODE:vbits>shl\t%1, %2, %3, %0"
+   "fpcmpu<fpcmpucond:signed_code><FPCMP:vbits>shl\t%1, %2, %3, %0"
    [(set_attr "type" "viscmp")])
 
-(define_insn "fpcmpde<FPCSMODE:vbits><P:mode>shl"
+;; Dual Equal comparison: the unshifted result is the OR of two EQ comparisons
+;; of (opnd 1) with 1) the 32-bit highpart of (opnd 2) concatenated with itself
+;; and 2) the 32-bit lowpart of (opnd 2) concatenated with itself.
+(define_insn "fpcmpde<FPCMP:vbits><P:mode>shl"
   [(set (match_operand:P 0 "register_operand" "=r")
-        (unspec:P [(match_operand:FPCSMODE 1 "register_operand" "e")
-                   (match_operand:FPCSMODE 2 "register_operand" "e")
+        (unspec:P [(match_operand:FPCMP 1 "register_operand" "e")
+                   (match_operand:FPCMP 2 "register_operand" "e")
                    (match_operand:SI 3 "imm2_operand" "q")]
          UNSPEC_FPCMPDESHL))]
    "TARGET_VIS4B"
-   "fpcmpde<FPCSMODE:vbits>shl\t%1, %2, %3, %0"
+   "fpcmpde<FPCMP:vbits>shl\t%1, %2, %3, %0"
    [(set_attr "type" "viscmp")])
 
-(define_insn "fpcmpur<FPCSMODE:vbits><P:mode>shl"
+;; Unsigned Range comparison: the unshifted result is True if (opnd 1) lies in
+;; partitioned unsigned range (LB,HB) with LB) the 32-bit highpart of (opnd 2)
+;; concatenated with itself and HB) the 32-bit lowpart of (opnd 2) concatenated
+;; with itself.
+(define_insn "fpcmpur<FPCMP:vbits><P:mode>shl"
   [(set (match_operand:P 0 "register_operand" "=r")
-        (unspec:P [(match_operand:FPCSMODE 1 "register_operand" "e")
-                   (match_operand:FPCSMODE 2 "register_operand" "e")
+        (unspec:P [(match_operand:FPCMP 1 "register_operand" "e")
+                   (match_operand:FPCMP 2 "register_operand" "e")
                    (match_operand:SI 3 "imm2_operand" "q")]
          UNSPEC_FPCMPURSHL))]
    "TARGET_VIS4B"
-   "fpcmpur<FPCSMODE:vbits>shl\t%1, %2, %3, %0"
+   "fpcmpur<FPCMP:vbits>shl\t%1, %2, %3, %0"
    [(set_attr "type" "viscmp")])
 
 (include "sync.md")

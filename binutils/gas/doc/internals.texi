@@ -1,5 +1,5 @@
 \input texinfo
-@c  Copyright (C) 1991-2018 Free Software Foundation, Inc.
+@c  Copyright (C) 1991-2026 Free Software Foundation, Inc.
 @setfilename internals.info
 @node Top
 @top Assembler Internals
@@ -41,11 +41,10 @@ This section describes some fundamental GAS data types.
 @cindex symbolS structure
 
 The definition for the symbol structure, @code{symbolS}, is located in
-@file{struc-symbol.h}.
+@file{symbols.c}.
 
-In general, the fields of this structure may not be referred to directly.
+The fields of this structure may not be referred to directly.
 Instead, you must use one of the accessor functions defined in @file{symbol.h}.
-These accessor functions should work for any GAS version.
 
 Symbol structures contain the following fields:
 
@@ -397,12 +396,6 @@ structures and use the accessor functions.  The accessor functions correctly
 deal with local symbols.  @code{struct local_symbol} is much smaller than
 @code{symbolS} (which also automatically creates a bfd @code{asymbol}
 structure), so this saves space when assembling large files.
-
-The first field of @code{symbolS} is @code{bsym}, the pointer to the BFD
-symbol.  The first field of @code{struct local_symbol} is a pointer which is
-always set to NULL.  This is how the symbol accessor functions can distinguish
-local symbols from ordinary symbols.  The symbol accessor functions
-automatically convert a local symbol into an ordinary symbol when necessary.
 
 @node Expressions
 @subsection Expressions
@@ -821,7 +814,7 @@ zero if the target is little endian.
 @cindex md_show_usage
 @cindex md_after_parse_args
 GAS uses these variables and functions during option processing.
-@code{md_shortopts} is a @code{const char *} which GAS adds to the machine
+@code{md_shortopts} is a @code{const char []} which GAS adds to the machine
 independent string passed to @code{getopt}.  @code{md_longopts} is a
 @code{struct option []} which GAS adds to the machine independent long options
 passed to @code{getopt}; you may use @code{OPTION_MD_BASE}, defined in
@@ -1041,12 +1034,26 @@ Predefined symbols with fixed values, such as register names or condition
 codes, are typically entered directly into the symbol table when @code{md_begin}
 is called.  One argument is passed, a @code{char *} for the symbol.
 
+@item md_resolve_symbol
+@cindex md_resolve_symbol
+If this macro is defined, GAS will call it upon resolving machine-dependent
+symbols (that is, for any symbol with operation O_md1..O_md32 inclusively).
+If this functions returns zero, then the symbol could not be resolved.
+
 @item md_operand
 @cindex md_operand
 GAS will call this function with one argument, an @code{expressionS}
 pointer, for any expression that can not be recognized.  When the function
 is called, @code{input_line_pointer} will point to the start of the
 expression.
+
+@item md_optimize_expr
+@cindex md_optimize_expr
+GAS will call this function before trying to carry out certain operations,
+like the adding of two constants.  The function is passed the left-hand
+operand, an @code{expressionS} pointer, the operator, an @code{operatorT}
+value, and the right-hand operand, again an @code{expressionS} pointer.  For
+unary expressions NULL is passed as first argument.
 
 @item md_register_arithmetic
 @cindex md_register_arithmetic
@@ -1113,7 +1120,8 @@ You may define this macro to generate a fixup for a data allocation pseudo-op.
 @item TC_ADDRESS_BYTES
 @cindex TC_ADDRESS_BYTES
 Define this macro to specify the number of bytes used to store an address.
-Used to implement @code{dc.a}.  The target must have a reloc for this size.
+Used to implement @code{dc.a}.  If not defined by the target, a default will
+be supplied.  Targets are assumed to have a reloc for this size.
 
 @item TC_INIT_FIX_DATA (@var{fixp})
 @cindex TC_INIT_FIX_DATA
@@ -1125,10 +1133,11 @@ These fields are defined with the @code{TC_FIX_TYPE} macro.
 A C statement to output target specific debugging information for
 fixup @var{fixp} to @var{stream}.  This macro is called by @code{print_fixup}.
 
-@item TC_FRAG_INIT (@var{fragp})
+@item TC_FRAG_INIT (@var{fragp}, @var{max_bytes})
 @cindex TC_FRAG_INIT
-A C statement to initialize the target specific fields of frag @var{fragp}.
-These fields are defined with the @code{TC_FRAG_TYPE} macro.
+A C statement to initialize the target specific fields of frag @var{fragp}
+with maximum number of bytes @var{max_bytes}.  These fields are defined
+with the @code{TC_FRAG_TYPE} macro.
 
 @item md_number_to_chars
 @cindex md_number_to_chars
@@ -1216,6 +1225,11 @@ If you do not define @code{md_relax_frag}, you may define
 machine independent code knows how to use such a table to relax PC relative
 references.  See @file{tc-m68k.c} for an example.  @xref{Relaxation}.
 
+@item md_generic_table_relax_frag
+@cindex md_generic_table_relax_frag
+If defined, it is a C statement that is invoked, instead of
+the default implementation, to scan @code{TC_GENERIC_RELAX_TABLE}.
+
 @item md_prepare_relax_scan
 @cindex md_prepare_relax_scan
 If defined, it is a C statement that is invoked prior to scanning
@@ -1224,7 +1238,7 @@ the relax table.
 @item LINKER_RELAXING_SHRINKS_ONLY
 @cindex LINKER_RELAXING_SHRINKS_ONLY
 If you define this macro, and the global variable @samp{linkrelax} is set
-(because of a command line option, or unconditionally in @code{md_begin}), a
+(because of a command-line option, or unconditionally in @code{md_begin}), a
 @samp{.align} directive will cause extra space to be allocated.  The linker can
 then discard this space when relaxing the section.
 
@@ -1548,6 +1562,16 @@ The function should return the debug format that is preferred by the CPU
 backend.  This format will be used when generating assembler specific debug
 information.
 
+@item md_emit_single_noop_insn
+@itemx md_single_noop_insn
+These macro facilitate the @var{.nop} directive.  If defined the
+@var{md_emit_single_noop_insn} macro provides code to insert a single no-op
+instruction into the output stream.  If this involves calling @var{md_assemble}
+with a fixed string then the alternative macro @var{md_single_noop_insn} can be
+defined, specifying the string to pass.  If neither of these macros are defined
+then the @var{.nop} directive will call @var{md_assemble} with the string
+@option{nop}.
+
 @item md_allow_local_subtract (@var{left}, @var{right}, @var{section})
 If defined, GAS will call this macro when evaluating an expression which is the
 difference of two symbols defined in the same section.  It takes three
@@ -1565,6 +1589,10 @@ If defined, GAS will check this macro before performing any optimizations on
 the DWARF call frame debug information that is emitted.  Targets which
 implement link time relaxation may need to define this macro and set it to zero
 if it is possible to change the size of a function's prologue.
+
+@item TARGET_MULTIPLE_EH_FRAME_SECTIONS
+If defined, GAS will create multiple .eh_frame.* sections according to
+the name of owner's function sections.
 @end table
 
 @node Object format backend
@@ -1588,7 +1616,7 @@ if it is necessary to add object file format specific code to the CPU file.
 
 @item obj_begin
 If you define this macro, GAS will call it at the start of the assembly, after
-the command line arguments have been parsed and all the machine independent
+the command-line arguments have been parsed and all the machine independent
 initializations have been completed.
 
 @item obj_app_file
@@ -1669,11 +1697,11 @@ completed, but before the relocations have been generated.
 If you define this macro, GAS will call it after the relocs have been
 generated.
 
-@item SET_SECTION_RELOCS (@var{sec}, @var{relocs}, @var{n})
-@cindex SET_SECTION_RELOCS
-If you define this, it will be called after the relocations have been set for
-the section @var{sec}.  The list of relocations is in @var{relocs}, and the
-number of relocations is in @var{n}.
+@item FINALIZE_SECTION_RELOCS (@var{sec}, @var{relocs}, @var{n})
+@cindex FINALIZE_SECTION_RELOCS
+If you define this, it will be called to finalize relocations for the section
+@var{sec}.  The list of relocations is in @var{relocs}, and the number of
+relocations is in @var{n}.
 @end table
 
 @node Emulations
@@ -1804,9 +1832,11 @@ opcode field from the relaxable frag.  It is not guaranteed to be the same frag.
 If you need to emit fixups for the opcode field from inspection of the
 relaxable frag, then you need to generate a common frag for both the basic
 opcode and relaxable fields, or you need to provide the frag for the opcode to
-pass to @code{fix_new}.  The latter can be done for example by defining
-@code{TC_FRAG_TYPE} to include a pointer to it and defining @code{TC_FRAG_INIT}
-to set the pointer.
+pass to @code{fix_new}.  The latter can be done by passing a pointer to the
+opcode in the call to @code{frag_var} or @code{frag_variant}, and accessing
+it via @code{fr_opcode}.  See the @file{tc-vax.c}  and @file{tc-m68k.c} for
+examples.  It is also possible for  @code{TC_FRAG_TYPE} to include a pointer to
+the opcode and defining @code{TC_FRAG_INIT} to set the pointer.
 
 Sometimes @code{fr_var} is increased instead, and @code{frag_wane} is not
 called.  I'm not sure, but I think this is to keep @code{fr_fix} referring to
@@ -1874,7 +1904,6 @@ This section describes basic internal functions used by GAS.
 
 @menu
 * Warning and error messages::  Warning and error messages
-* Hash tables::                 Hash tables
 @end menu
 
 @node Warning and error messages
@@ -1907,45 +1936,6 @@ used when problems are detected when reprocessing information saved away when
 processing some earlier part of the file.  For example, fixups are processed
 after all input has been read, but messages about fixups should refer to the
 original filename and line number that they are applicable to.
-@end deftypefun
-
-@deftypefun @{@} void sprint_value (char *@var{buf}, valueT @var{val})
-This function is helpful for converting a @code{valueT} value into printable
-format, in case it's wider than modes that @code{*printf} can handle.  If the
-type is narrow enough, a decimal number will be produced; otherwise, it will be
-in hexadecimal.  The value itself is not examined to make this determination.
-@end deftypefun
-
-@node Hash tables
-@subsection Hash tables
-@cindex hash tables
-
-@deftypefun @{@} @{struct hash_control *@} hash_new (void)
-Creates the hash table control structure.
-@end deftypefun
-
-@deftypefun @{@} void hash_die (struct hash_control *)
-Destroy a hash table.
-@end deftypefun
-
-@deftypefun @{@} void *hash_delete (struct hash_control *, const char *, int)
-Deletes entry from the hash table, returns the value it had.  If the last
-arg is non-zero, free memory allocated for this entry and all entries
-allocated more recently than this entry.
-@end deftypefun
-
-@deftypefun @{@} void *hash_replace (struct hash_control *, const char *, void *)
-Updates the value for an entry already in the table, returning the old value.
-If no entry was found, just returns NULL.
-@end deftypefun
-
-@deftypefun @{@} @{const char *@} hash_insert (struct hash_control *, const char *, void *)
-Inserting a value already in the table is an error.
-Returns an error message or NULL.
-@end deftypefun
-
-@deftypefun @{@} @{const char *@} hash_jam (struct hash_control *, const char *, void *)
-Inserts if the value isn't already present, updates it if it is.
 @end deftypefun
 
 @node Test suite

@@ -1,4 +1,5 @@
 /* { dg-skip-if "not enough registers" { pdp11-*-* } } */
+/* { dg-skip-if "too many arguments in function call" { bpf-*-* } } */
 
 typedef unsigned short uint16_t;
 typedef unsigned int uint32_t;
@@ -25,6 +26,7 @@ void test16(uint16_t x, uint32_t eflags)
         __asm volatile(""
                 : "=&r" (bsf_result), "=&r" (bsf_eflags)
                 : "r" (x), "i" (~EFLAGS_BITS), "r" (eflags));
-        printf("%08x %04x bsrw %02x %08x bsfw %02x %08x\n",
-                x, eflags, bsr_result, bsr_eflags, bsf_result, bsf_eflags);
+        __builtin_printf("%08x %04x bsrw %02x %08x bsfw %02x %08x\n",
+                         x, eflags, bsr_result, bsr_eflags, bsf_result,
+                         bsf_eflags);
 }

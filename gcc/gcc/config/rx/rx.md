@@ -1,5 +1,5 @@
 ;;  Machine Description for Renesas RX processors
-;;  Copyright (C) 2008-2019 Free Software Foundation, Inc.
+;;  Copyright (C) 2008-2026 Free Software Foundation, Inc.
 ;;  Contributed by Red Hat.
 
 ;; This file is part of GCC.
@@ -46,7 +46,7 @@
    (UNSPEC_CONST           13)
    
    (UNSPEC_MOVSTR          20)
-   (UNSPEC_MOVMEM          21)
+   (UNSPEC_CPYMEM          21)
    (UNSPEC_SETMEM          22)
    (UNSPEC_STRLEN          23)
    (UNSPEC_CMPSTRN         24)
@@ -77,9 +77,9 @@
    (UNSPEC_PID_ADDR	   52)
 
    (CTRLREG_PSW		    0)
+   (CTRLREG_PC		    1)
    (CTRLREG_USP		    2)
    (CTRLREG_FPSW	    3)
-   (CTRLREG_CPEN	    4)
    (CTRLREG_BPSW	    8)
    (CTRLREG_BPC		    9)
    (CTRLREG_ISP		   10)
@@ -1722,7 +1722,7 @@
 	  (minus:SI
 	    (match_operand:SI      4 "register_operand"   "  1, 1")
 	    (match_operand:SI      5 "rx_compare_operand" " rQ,rQ"))
-	  (geu:SI (match_dup 2) (match_dup 3))))
+	  (gtu:SI (match_dup 3) (match_dup 2))))
    (clobber (reg:CC CC_REG))]
   ""
   "#"
@@ -2449,13 +2449,13 @@
    (set_attr "timings" "1111")] ;; The timing is a guesstimate.
 )
 
-(define_expand "movmemsi"
+(define_expand "cpymemsi"
   [(parallel
     [(set (match_operand:BLK 0 "memory_operand")    ;; Dest
 	  (match_operand:BLK 1 "memory_operand"))   ;; Source
      (use (match_operand:SI  2 "register_operand")) ;; Length in bytes
      (match_operand          3 "immediate_operand") ;; Align
-     (unspec_volatile:BLK [(reg:SI 1) (reg:SI 2) (reg:SI 3)] UNSPEC_MOVMEM)]
+     (unspec_volatile:BLK [(reg:SI 1) (reg:SI 2) (reg:SI 3)] UNSPEC_CPYMEM)]
     )]
   "rx_allow_string_insns"
   {
@@ -2486,16 +2486,16 @@
     emit_move_insn (len, force_operand (operands[2], NULL_RTX));
     operands[0] = replace_equiv_address_nv (operands[0], addr1);
     operands[1] = replace_equiv_address_nv (operands[1], addr2);
-    emit_insn (gen_rx_movmem ());
+    emit_insn (gen_rx_cpymem ());
     DONE;
   }
 )
 
-(define_insn "rx_movmem"
+(define_insn "rx_cpymem"
   [(set (mem:BLK (reg:SI 1))
 	(mem:BLK (reg:SI 2)))
    (use (reg:SI 3))
-   (unspec_volatile:BLK [(reg:SI 1) (reg:SI 2) (reg:SI 3)] UNSPEC_MOVMEM)
+   (unspec_volatile:BLK [(reg:SI 1) (reg:SI 2) (reg:SI 3)] UNSPEC_CPYMEM)
    (clobber (reg:SI 1))
    (clobber (reg:SI 2))
    (clobber (reg:SI 3))]
@@ -2511,7 +2511,7 @@
    (use (match_operand:SI  1 "nonmemory_operand")) ;; Length
    (match_operand          3 "immediate_operand")  ;; Align
    (unspec_volatile:BLK [(reg:SI 1) (reg:SI 2) (reg:SI 3)] UNSPEC_SETMEM)]
-  ""
+  "rx_allow_string_insns"
   {
     rtx addr = gen_rtx_REG (SImode, 1);
     rtx val  = gen_rtx_REG (QImode, 2);
@@ -2530,7 +2530,7 @@
 	(unspec_volatile:BLK [(reg:SI 1) (reg:SI 2) (reg:SI 3)] UNSPEC_SETMEM))
    (clobber (reg:SI 1))
    (clobber (reg:SI 3))]
-  ""
+  "rx_allow_string_insns"
   "sstr.b"
   [(set_attr "length" "2")
    (set_attr "timings" "1111")] ;; The timing is a guesstimate.
@@ -2541,10 +2541,17 @@
 	(unspec_volatile:SI [(match_operand:BLK 1 "memory_operand")     ;; String1
 			     (match_operand:BLK 2 "memory_operand")]    ;; String2
 			    UNSPEC_CMPSTRN))
-   (use (match_operand:SI                       3 "register_operand"))  ;; Max Length
+   (use (match_operand:SI                       3 "nonmemory_operand")) ;; Max Length
    (match_operand:SI                            4 "immediate_operand")] ;; Known Align
   "rx_allow_string_insns"
   {
+    bool const_len = CONST_INT_P (operands[3]);
+    if (const_len && operands[3] == CONST0_RTX (SImode))
+      {
+	emit_move_insn (operands[0], CONST0_RTX (SImode));
+	DONE;
+      }
+
     rtx str1 = gen_rtx_REG (SImode, 1);
     rtx str2 = gen_rtx_REG (SImode, 2);
     rtx len  = gen_rtx_REG (SImode, 3);
@@ -2552,6 +2559,13 @@
     emit_move_insn (str1, force_operand (XEXP (operands[1], 0), NULL_RTX));
     emit_move_insn (str2, force_operand (XEXP (operands[2], 0), NULL_RTX));
     emit_move_insn (len, operands[3]);
+
+    /* Set flags in case len is zero */
+    if (!const_len)
+      {
+	emit_insn (gen_setpsw (GEN_INT ('C')));
+	emit_insn (gen_setpsw (GEN_INT ('Z')));
+      }
 
     emit_insn (gen_rx_cmpstrn (operands[0], operands[1], operands[2]));
     DONE;

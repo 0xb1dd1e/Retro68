@@ -1,6 +1,6 @@
 // ABI Support -*- C++ -*-
 
-// Copyright (C) 2000-2019 Free Software Foundation, Inc.
+// Copyright (C) 2000-2026 Free Software Foundation, Inc.
 //
 // This file is part of GCC.
 //
@@ -41,7 +41,9 @@
 #ifndef _CXXABI_H
 #define _CXXABI_H 1
 
+#ifdef _GLIBCXX_SYSHDR
 #pragma GCC system_header
+#endif
 
 #pragma GCC visibility push(default)
 
@@ -125,14 +127,22 @@ namespace __cxxabiv1
 
   // DSO destruction.
   int
+#ifdef _GLIBCXX_CDTOR_CALLABI
+  __cxa_atexit(void (_GLIBCXX_CDTOR_CALLABI *)(void*), void*, void*) _GLIBCXX_NOTHROW;
+#else
   __cxa_atexit(void (*)(void*), void*, void*) _GLIBCXX_NOTHROW;
+#endif
 
-  int
+  void
   __cxa_finalize(void*);
 
   // TLS destruction.
   int
+#ifdef _GLIBCXX_CDTOR_CALLABI
+  __cxa_thread_atexit(void (_GLIBCXX_CDTOR_CALLABI *)(void*), void*, void *) _GLIBCXX_NOTHROW;
+#else
   __cxa_thread_atexit(void (*)(void*), void*, void *) _GLIBCXX_NOTHROW;
+#endif
 
   // Pure virtual functions.
   void
@@ -142,10 +152,10 @@ namespace __cxxabiv1
   __cxa_deleted_virtual(void) __attribute__ ((__noreturn__));
 
   // Exception handling auxiliary.
-  void 
+  void
   __cxa_bad_cast() __attribute__((__noreturn__));
 
-  void 
+  void
   __cxa_bad_typeid() __attribute__((__noreturn__));
 
   void
@@ -161,7 +171,7 @@ namespace __cxxabiv1
    *  @param __output_buffer A region of memory, allocated with
    *  malloc, of @a *__length bytes, into which the demangled name is
    *  stored.  If @a __output_buffer is not long enough, it is
-   *  expanded using realloc.  @a __output_buffer may instead be NULL;
+   *  expanded using realloc.  @a __output_buffer may instead be null;
    *  in that case, the demangled name is placed in a region of memory
    *  allocated with malloc.
    *
@@ -176,7 +186,7 @@ namespace __cxxabiv1
    *  -3: One of the arguments is invalid.
    *
    *  @return A pointer to the start of the NUL-terminated demangled
-   *  name, or NULL if the demangling fails.  The caller is
+   *  name, or a null pointer if the demangling fails.  The caller is
    *  responsible for deallocating this memory using @c free.
    *
    *  The demangling is performed using the C++ ABI mangling rules,
@@ -608,7 +618,7 @@ namespace __cxxabiv1
   __cxa_get_globals_fast() _GLIBCXX_NOTHROW __attribute__ ((__const__));
 
   // Free the space allocated for the primary exception.
-  void 
+  void
   __cxa_free_exception(void*) _GLIBCXX_NOTHROW;
 
   // Throw the exception.
@@ -623,10 +633,10 @@ namespace __cxxabiv1
   void*
   __cxa_begin_catch(void*) _GLIBCXX_NOTHROW;
 
-  void 
+  void
   __cxa_end_catch();
 
-  void 
+  void
   __cxa_rethrow() __attribute__((__noreturn__));
 
   // Returns the type_info for the currently handled exception [15.3/8], or
@@ -684,8 +694,9 @@ namespace __gnu_cxx
    *  @brief Exception thrown by __cxa_guard_acquire.
    *  @ingroup exceptions
    *
-   *  6.7[stmt.dcl]/4: If control re-enters the declaration (recursively)
-   *  while the object is being initialized, the behavior is undefined.
+   *  C++ 2011 6.7 [stmt.dcl]/4: If control re-enters the declaration
+   *  recursively while the variable is being initialized, the behavior
+   *  is undefined.
    *
    *  Since we already have a library function to handle locking, we might
    *  as well check for this situation and throw an exception.
@@ -695,8 +706,8 @@ namespace __gnu_cxx
   class recursive_init_error: public std::exception
   {
   public:
-    recursive_init_error() throw() { }
-    virtual ~recursive_init_error() throw ();
+    recursive_init_error() _GLIBCXX_NOTHROW;
+    virtual ~recursive_init_error() _GLIBCXX_NOTHROW;
   };
 }
 #endif // __cplusplus

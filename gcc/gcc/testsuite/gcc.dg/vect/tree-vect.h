@@ -38,7 +38,11 @@ check_vect (void)
     /* Determine what instruction set we've been compiled for, and detect
        that we're running with it.  This allows us to at least do a compile
        check for, e.g. SSE4.1 when the machine only supports SSE2.  */
-# if defined(__AVX2__)
+# if defined(__AVX512VL__)
+    want_level = 7, want_b = bit_AVX512VL;
+# elif defined(__AVX512F__)
+    want_level = 7, want_b = bit_AVX512F;
+# elif defined(__AVX2__)
     want_level = 7, want_b = bit_AVX2;
 # elif defined(__AVX__)
     want_level = 1, want_c = bit_AVX;
@@ -52,7 +56,7 @@ check_vect (void)
     want_level = 1, want_d = bit_SSE2;
 # endif
 
-    if (!__get_cpuid (want_level, &a, &b, &c, &d)
+    if (!__get_cpuid_count (want_level, 0, &a, &b, &c, &d)
 	|| ((b & want_b) | (c & want_c) | (d & want_d)) == 0)
       exit (0);
   }
@@ -72,6 +76,8 @@ check_vect (void)
   }
 #elif defined(__mips_msa)
   asm volatile ("or.v $w0,$w0,$w0");
+#elif defined(__loongarch__)
+  asm volatile ("vor.v\t$vr0,$vr0,$vr0");
 #endif
   signal (SIGILL, SIG_DFL);
 }
@@ -85,3 +91,9 @@ check_vect (void)
 #else
 #  define VECTOR_BITS 128
 #endif
+
+/* Which most of our tests are going to #define for internal use, and
+   which might be exposed by system headers related to signal.h on some
+   targets, notably VxWorks.  */
+#undef OFFSET
+   

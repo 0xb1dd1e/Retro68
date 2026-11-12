@@ -1,5 +1,8 @@
 /* { dg-options "-fprofile-arcs -ftest-coverage" } */
-/* { dg-do run { target native } } */
+/* { dg-do run } */
+
+/* See PR91087 for information on Darwin xfails.  Also PR81337 for Solaris
+   ones.*/
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -18,7 +21,9 @@ class Test
 {
 public:
   Test (void) { fprintf (stderr, "In Test::Test\n"); /* count(1) */ }
-  ~Test (void) { fprintf (stderr, "In Test::~Test\n"); /* count(1) */ }
+  ~Test (void) {
+   fprintf (stderr, "In Test::~Test\n"); /* count(1) { xfail *-*-darwin* *-*-dragonfly* *-*-solaris2* } */
+  }
 } T1;
 
 void
@@ -42,7 +47,7 @@ static void __attribute__ ((constructor)) ctor_default ()
 
 static void __attribute__ ((destructor)) dtor_default ()
 {
-  fprintf (stderr, "in destructor(())\n"); /* count(1) */
+  fprintf (stderr, "in destructor(())\n"); /* count(1) { xfail *-*-darwin* } */
 }
 
-/* { dg-final { run-gcov branches { -b pr16855.C } } } */
+/* { dg-final { run-gcov branches { -b pr16855.C } { xfail *-*-darwin* *-*-dragonfly* *-*-solaris2* } } } */

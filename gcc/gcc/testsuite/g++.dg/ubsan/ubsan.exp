@@ -1,4 +1,4 @@
-# Copyright (C) 2013-2019 Free Software Foundation, Inc.
+# Copyright (C) 2013-2026 Free Software Foundation, Inc.
 #
 # This file is part of GCC.
 #
@@ -22,11 +22,12 @@ load_lib ubsan-dg.exp
 
 # Initialize `dg'.
 dg-init
-ubsan_init
+# libubsan uses libstdc++ but we assume that's added by the g++ impl.
+ubsan_init 0
 
 # Main loop.
 if [check_effective_target_fsanitize_undefined] {
-  gcc-dg-runtest [lsort [glob -nocomplain $srcdir/$subdir/*.C $srcdir/c-c++-common/ubsan/*.c]] "" ""
+  g++-dg-runtest [lsort [glob -nocomplain $srcdir/$subdir/*.C $srcdir/c-c++-common/ubsan/*.c]] "" ""
 }
 
 # All done.

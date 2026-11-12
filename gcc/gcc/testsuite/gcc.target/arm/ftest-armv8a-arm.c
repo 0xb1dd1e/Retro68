@@ -1,6 +1,5 @@
 /* { dg-do compile } */
-/* { dg-skip-if "avoid conflicting multilib options" { *-*-* } { "-march=*" } { "-march=armv8-a" } } */
-/* { dg-skip-if "avoid conflicting multilib options" { *-*-* } { "-mthumb" } { "" } } */
+/* { dg-require-effective-target arm_arch_v8a_ok }
 /* { dg-options "-marm" } */
 /* { dg-add-options arm_arch_v8a } */
 

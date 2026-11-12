@@ -8,8 +8,8 @@ Disassembly of section \.text:
 0[0-9a-f]+ <[^>]+> bf01      	itttt	eq
 0[0-9a-f]+ <[^>]+> ef22 0152 	vorreq	q0, q1, q1
 0[0-9a-f]+ <[^>]+> ef21 0111 	vorreq	d0, d1, d1
-0[0-9a-f]+ <[^>]+> ef80 0050 	vmoveq\.i32	q0, #0	; 0x00000000
-0[0-9a-f]+ <[^>]+> ef80 0010 	vmoveq\.i32	d0, #0	; 0x00000000
+0[0-9a-f]+ <[^>]+> ef80 0050 	vmoveq\.i32	q0, #0	@ 0x00000000
+0[0-9a-f]+ <[^>]+> ef80 0010 	vmoveq\.i32	d0, #0	@ 0x00000000
 0[0-9a-f]+ <[^>]+> bf01      	itttt	eq
 0[0-9a-f]+ <[^>]+> ee20 2b10 	vmoveq\.32	d0\[1\], r2
 0[0-9a-f]+ <[^>]+> ec42 1b10 	vmoveq	d0, r1, r2
@@ -30,6 +30,9 @@ Disassembly of section \.text:
 0[0-9a-f]+ <[^>]+> bf04      	itt	eq
 0[0-9a-f]+ <[^>]+> ef21 0d02 	vsubeq\.f32	d0, d1, d2
 0[0-9a-f]+ <[^>]+> ef22 0d44 	vsubeq\.f32	q0, q1, q2
+0[0-9a-f]+ <[^>]+> bf04      	itt	eq
+0[0-9a-f]+ <[^>]+> ffb6 1602 	vcvteq\.f16\.f32	d1, q1
+0[0-9a-f]+ <[^>]+> ffb6 2701 	vcvteq\.f32\.f16	q1, d1
 0[0-9a-f]+ <[^>]+> bf04      	itt	eq
 0[0-9a-f]+ <[^>]+> ffb9 0701 	vabseq\.f32	d0, d1
 0[0-9a-f]+ <[^>]+> ffb9 0742 	vabseq\.f32	q0, q1
@@ -53,3 +56,5 @@ Disassembly of section \.text:
 0[0-9a-f]+ <[^>]+> eea0 1b10 	vdupeq\.32	q0, r1
 0[0-9a-f]+ <[^>]+> ffb4 0c01 	vdupeq\.32	d0, d1\[0\]
 0[0-9a-f]+ <[^>]+> ffbc 0c41 	vdupeq\.32	q0, d1\[1\]
+# PE targets can insert an extra NOP for padding -- avoid that breaking tests.
+#pass

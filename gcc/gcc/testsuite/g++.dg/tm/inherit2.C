@@ -1,5 +1,6 @@
 // Testcase from TM TS
 // { dg-options "-std=c++14 -fgnu-tm" }
+// { dg-skip-if "requires hosted libstdc++ for iostream" { ! hostedlib } }
 
 #include <iostream>
 
@@ -26,8 +27,8 @@ int main()
     B b; // ok
     D1 d1; // ok
     B& b1 = d1;
-    D2 x; // { dg-error "" "destructor of D2 is not transaction-safe" }
+    D2 x;
     b1.f(); // ok, calls D1::f()
     delete b2; // undefined behavior: calls unsafe destructor of D2
-  }
+  } // { dg-error "" "destructor of D2 is not transaction-safe" }
 }

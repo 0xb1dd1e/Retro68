@@ -6,7 +6,7 @@
  *                                                                          *
  *                              C Header File                               *
  *                                                                          *
- *          Copyright (C) 1992-2018, Free Software Foundation, Inc.         *
+ *          Copyright (C) 1992-2026, Free Software Foundation, Inc.         *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -48,6 +48,14 @@ extern tree gnat_to_gnu_field_decl (Entity_Id gnat_entity);
 /* Similar, but GNAT_ENTITY is assumed to refer to a GNAT type.  Return
    the GCC type corresponding to that entity.  */
 extern tree gnat_to_gnu_type (Entity_Id gnat_entity);
+
+/* Similar, but GNAT_ENTITY is assumed to refer to a GNAT type.  Return
+   the unpadded version of the GCC type corresponding to that entity.  */
+extern tree get_unpadded_type (Entity_Id gnat_entity);
+
+/* Similar, but GNAT_ENTITY is assumed to refer to a GNAT type.  Return
+   the extended version of the GCC type corresponding to that entity.  */
+extern tree get_unpadded_extended_type (Entity_Id gnat_entity);
 
 /* Update the GCC tree previously built for the profiles involving GNU_TYPE,
    a dummy type which appears in profiles.  */
@@ -107,8 +115,17 @@ extern Entity_Id Gigi_Equivalent_Type (Entity_Id gnat_entity);
    be elaborated at the point of its definition, but do nothing else.  */
 extern void elaborate_entity (Entity_Id gnat_entity);
 
-/* Get the unpadded version of a GNAT type.  */
-extern tree get_unpadded_type (Entity_Id gnat_entity);
+/* Build the template type GNU_TEMPLATE_TYPE for the array type GNAT_ENTITY.
+   GNU_TEMPLATE_REFERENCE is an expression to access the template value from
+   the pointer type.  If GNU_INDEX_TYPES is not null, it's an array where the
+   index types whose bounds are the values of the template are to be stored.
+   If GNU_MAX_SIZE is not NULL_TREE, it's a tree where the maximum size of
+   the array type is computed.  DEBUG_INFO_P is true if debug info needs to
+   be output for this type.  */
+extern void build_template_type (Entity_Id gnat_entity, tree gnu_template_type,
+				 tree gnu_template_reference,
+				 tree *gnu_index_types, tree &gnu_max_size,
+				 bool debug_info_p);
 
 /* Create a record type that contains a SIZE bytes long field of TYPE with a
     starting bit position so that it is aligned to ALIGN bits, and leaving at
@@ -126,7 +143,7 @@ extern tree make_aligning_type (tree type, unsigned int align, tree size,
    MAX_ALIGN alignment if the value is non-zero.  If so, return the new
    type; if not, return the original type.  */
 extern tree make_packable_type (tree type, bool in_record,
-				unsigned int max_align = 0);
+				unsigned int max_align);
 
 /* Given a type TYPE, return a new type whose size is appropriate for SIZE.
    If TYPE is the best type, return it.  Otherwise, make a new type.  We
@@ -138,14 +155,12 @@ extern tree make_type_from_size (tree type, tree size_tree, bool for_biased);
    if needed.  We have already verified that SIZE and ALIGN are large enough.
    GNAT_ENTITY is used to name the resulting record and to issue a warning.
    IS_COMPONENT_TYPE is true if this is being done for the component type of
-   an array.  IS_USER_TYPE is true if the original type needs to be completed.
-   DEFINITION is true if this type is being defined.  SET_RM_SIZE is true if
-   the RM size of the resulting type is to be set to SIZE too; in this case,
-   the padded type is canonicalized before being returned.  */
+   an array.  DEFINITION is true if this type is being defined.  SET_RM_SIZE
+   is true if the RM size of the resulting type is to be set to SIZE too; in
+   this case, the padded type is canonicalized before being returned.  */
 extern tree maybe_pad_type (tree type, tree size, unsigned int align,
 			    Entity_Id gnat_entity, bool is_component_type,
-			    bool is_user_type, bool definition,
-			    bool set_rm_size);
+			    bool definition, bool set_rm_size);
 
 /* Return true if padded TYPE was built with an RM size.  */
 extern bool pad_type_has_rm_size (tree type);
@@ -160,14 +175,14 @@ enum alias_set_op
   ALIAS_SET_SUPERSET
 };
 
-/* Relate the alias sets of GNU_NEW_TYPE and GNU_OLD_TYPE according to OP.
+/* Relate the alias sets of NEW_TYPE and OLD_TYPE according to OP.
    If this is a multi-dimensional array type, do this recursively.
 
    OP may be
    - ALIAS_SET_COPY:     the new set is made a copy of the old one.
    - ALIAS_SET_SUPERSET: the new set is made a superset of the old one.
    - ALIAS_SET_SUBSET:   the new set is made a subset of the old one.  */
-extern void relate_alias_sets (tree gnu_new_type, tree gnu_old_type,
+extern void relate_alias_sets (tree new_type, tree old_type,
 			       enum alias_set_op op);
 
 /* Given GNAT_ENTITY, an object (constant, variable, parameter, exception)
@@ -205,10 +220,10 @@ extern tree create_concat_name (Entity_Id gnat_entity, const char *suffix);
    the name followed by "___" and the specified suffix.  */
 extern tree concat_name (tree gnu_name, const char *suffix);
 
-/* Initialize data structures of the decl.c module.  */
+/* Initialize data structures of the decl.cc module.  */
 extern void init_gnat_decl (void);
 
-/* Destroy data structures of the decl.c module.  */
+/* Destroy data structures of the decl.cc module.  */
 extern void destroy_gnat_decl (void);
 
 /* Highest number in the front-end node table.  */
@@ -235,24 +250,25 @@ extern "C" {
    structures and then generates code.  */
 extern void gigi (Node_Id gnat_root,
 	          int max_gnat_node,
-                  int number_name,
-		  struct Node *nodes_ptr,
-		  struct Flags *Flags_Ptr,
+		  int number_name,
+		  Node_Header *node_offsets_ptr,
+		  any_slot *slots_ptr,
 		  Node_Id *next_node_ptr,
 		  Node_Id *prev_node_ptr,
 		  struct Elist_Header *elists_ptr,
-                  struct Elmt_Item *elmts_ptr,
-                  struct String_Entry *strings_ptr,
-                  Char_Code *strings_chars_ptr,
-                  struct List_Header *list_headers_ptr,
-                  Nat number_file,
-                  struct File_Info_Type *file_info_ptr,
-                  Entity_Id standard_boolean,
-                  Entity_Id standard_integer,
-                  Entity_Id standard_character,
-                  Entity_Id standard_long_long_float,
-                  Entity_Id standard_exception_type,
-                  Int gigi_operating_mode);
+		  struct Elmt_Item *elmts_ptr,
+		  struct String_Entry *strings_ptr,
+		  Char_Code *strings_chars_ptr,
+		  struct List_Header *list_headers_ptr,
+		  Nat number_file,
+		  struct File_Info_Type *file_info_ptr,
+		  Entity_Id standard_address,
+		  Entity_Id standard_boolean,
+		  Entity_Id standard_character,
+		  Entity_Id standard_exception_type,
+		  Entity_Id standard_integer,
+		  Entity_Id standard_long_long_float,
+		  Int gigi_operating_mode);
 
 #ifdef __cplusplus
 }
@@ -327,7 +343,7 @@ extern int double_scalar_alignment;
 
 /* True if floating-point arithmetics may use wider intermediate results.  */
 extern bool fp_arith_may_widen;
-
+
 /* Data structures used to represent attributes.  */
 
 enum attrib_type
@@ -351,7 +367,7 @@ struct attrib
 };
 
 /* Table of machine-independent internal attributes.  */
-extern const struct attribute_spec gnat_internal_attribute_table[];
+extern const struct scoped_attribute_specs gnat_internal_attribute_table;
 
 /* Define the entries in the standard data array.  */
 enum standard_datatypes
@@ -389,27 +405,24 @@ enum standard_datatypes
   /* Function declaration node for run-time reallocation function.  */
   ADT_realloc_decl,
 
-  /* Function decl node for 64-bit multiplication with overflow checking.  */
+  /* Function decl nodes for 64-bit multiplication with overflow checking.  */
   ADT_mulv64_decl,
+  ADT_uns_mulv64_decl,
+
+  /* Function decl nodes for 128-bit multiplication with overflow checking.  */
+  ADT_mulv128_decl,
+  ADT_uns_mulv128_decl,
 
   /* Identifier for the name of the _Parent field in tagged record types.  */
   ADT_parent_name_id,
 
-  /* Identifier for the name of the Exception_Data type.  */
-  ADT_exception_data_name_id,
+  /* Identifier for the name of the _Tag field in tagged record types.  */
+  ADT_tag_name_id,
 
-  /* Types and decls used by the SJLJ exception mechanism.  */
-  ADT_jmpbuf_type,
-  ADT_jmpbuf_ptr_type,
-  ADT_get_jmpbuf_decl,
-  ADT_set_jmpbuf_decl,
-  ADT_get_excptr_decl,
-  ADT_not_handled_by_others_decl,
-  ADT_setjmp_decl,
-  ADT_update_setjmp_buf_decl,
-  ADT_raise_nodefer_decl,
+  /* Identifier for the name of the Not_Handled_By_Others field.  */
+  ADT_not_handled_by_others_name_id,
 
-  /* Types and decls used by the ZCX exception mechanism.  */
+  /* Types and decls used by the exception mechanism.  */
   ADT_reraise_zcx_decl,
   ADT_set_exception_parameter_decl,
   ADT_begin_handler_decl,
@@ -464,27 +477,22 @@ extern GTY(()) tree gnat_raise_decls_ext[(int) LAST_REASON_CODE + 1];
 #define free_decl gnat_std_decls[(int) ADT_free_decl]
 #define realloc_decl gnat_std_decls[(int) ADT_realloc_decl]
 #define mulv64_decl gnat_std_decls[(int) ADT_mulv64_decl]
+#define uns_mulv64_decl gnat_std_decls[(int) ADT_uns_mulv64_decl]
+#define mulv128_decl gnat_std_decls[(int) ADT_mulv128_decl]
+#define uns_mulv128_decl gnat_std_decls[(int) ADT_uns_mulv128_decl]
 #define parent_name_id gnat_std_decls[(int) ADT_parent_name_id]
-#define exception_data_name_id gnat_std_decls[(int) ADT_exception_data_name_id]
-#define jmpbuf_type gnat_std_decls[(int) ADT_jmpbuf_type]
-#define jmpbuf_ptr_type gnat_std_decls[(int) ADT_jmpbuf_ptr_type]
-#define get_jmpbuf_decl gnat_std_decls[(int) ADT_get_jmpbuf_decl]
-#define set_jmpbuf_decl gnat_std_decls[(int) ADT_set_jmpbuf_decl]
-#define get_excptr_decl gnat_std_decls[(int) ADT_get_excptr_decl]
-#define not_handled_by_others_decl \
-	  gnat_std_decls[(int) ADT_not_handled_by_others_decl]
-#define setjmp_decl gnat_std_decls[(int) ADT_setjmp_decl]
-#define update_setjmp_buf_decl gnat_std_decls[(int) ADT_update_setjmp_buf_decl]
-#define raise_nodefer_decl gnat_std_decls[(int) ADT_raise_nodefer_decl]
+#define tag_name_id gnat_std_decls[(int) ADT_tag_name_id]
+#define not_handled_by_others_name_id \
+	  gnat_std_decls[(int) ADT_not_handled_by_others_name_id]
 #define reraise_zcx_decl gnat_std_decls[(int) ADT_reraise_zcx_decl]
 #define set_exception_parameter_decl \
 	  gnat_std_decls[(int) ADT_set_exception_parameter_decl]
 #define begin_handler_decl gnat_std_decls[(int) ADT_begin_handler_decl]
+#define end_handler_decl gnat_std_decls[(int) ADT_end_handler_decl]
+#define unhandled_except_decl gnat_std_decls[(int) ADT_unhandled_except_decl]
 #define others_decl gnat_std_decls[(int) ADT_others_decl]
 #define all_others_decl gnat_std_decls[(int) ADT_all_others_decl]
 #define unhandled_others_decl gnat_std_decls[(int) ADT_unhandled_others_decl]
-#define end_handler_decl gnat_std_decls[(int) ADT_end_handler_decl]
-#define unhandled_except_decl gnat_std_decls[(int) ADT_unhandled_except_decl]
 
 /* Routines expected by the gcc back-end. They must have exactly the same
    prototype and names as below.  */
@@ -500,12 +508,6 @@ extern void gnat_zaplevel (void);
 /* Set SUPERCONTEXT of the BLOCK for the current binding level to FNDECL
    and point FNDECL to this BLOCK.  */
 extern void set_current_block_context (tree fndecl);
-
-/* Set the jmpbuf_decl for the current binding level to DECL.  */
-extern void set_block_jmpbuf_decl (tree decl);
-
-/* Get the setjmp_decl, if any, for the current binding level.  */
-extern tree get_block_jmpbuf_decl (void);
 
 /* Record DECL as belonging to the current lexical scope and use GNAT_NODE
    for location information and flag propagation.  */
@@ -544,7 +546,7 @@ extern int gnat_types_compatible_p (tree t1, tree t2);
 extern bool gnat_useless_type_conversion (tree expr);
 
 /* Return true if T, a {FUNCTION,METHOD}_TYPE, has the specified flags.  */
-extern bool fntype_same_flags_p (const_tree, tree, bool, bool, bool);
+extern bool fntype_same_flags_p (const_tree, tree, bool, bool);
 
 /* Create an expression whose value is that of EXPR,
    converted to type TYPE.  The TREE_TYPE of the value
@@ -560,10 +562,10 @@ extern tree convert_to_index_type (tree expr);
 /* Routines created solely for the tree translator's sake. Their prototypes
    can be changed as desired.  */
 
-/* Initialize data structures of the utils.c module.  */
+/* Initialize data structures of the utils.cc module.  */
 extern void init_gnat_utils (void);
 
-/* Destroy data structures of the utils.c module.  */
+/* Destroy data structures of the utils.cc module.  */
 extern void destroy_gnat_utils (void);
 
 /* GNAT_ENTITY is a GNAT tree node for a defining identifier.
@@ -593,6 +595,11 @@ extern tree get_dummy_type (Entity_Id gnat_type);
 extern void build_dummy_unc_pointer_types (Entity_Id gnat_desig_type,
 					   tree gnu_desig_type);
 
+/* Build dummy extended access types whose designated type is specified by
+   GNAT_DESIG_TYPE/GNU_DESIG_TYPE and attach them to the latter.  */
+extern tree build_dummy_unc_pointer_types_ext (Entity_Id gnat_desig_type,
+					       tree gnu_desig_type);
+
 /* Record TYPE as a builtin type for Ada.  NAME is the name of the type.
    ARTIFICIAL_P is true if the type was generated by the compiler.  */
 extern void record_builtin_type (const char *name, tree type,
@@ -604,6 +611,10 @@ extern void finish_character_type (tree char_type);
 /* Given a record type RECORD_TYPE and a list of FIELD_DECL nodes FIELD_LIST,
    finish constructing the record type as a fat pointer type.  */
 extern void finish_fat_pointer_type (tree record_type, tree field_list);
+
+/* Given a record type RECORD_TYPE and a list of FIELD_DECL nodes FIELD_LIST,
+   finish constructing the record type as an extended access type.  */
+extern void finish_extended_pointer_type (tree record_type, tree field_list);
 
 /* Given a record type RECORD_TYPE and a list of FIELD_DECL nodes FIELD_LIST,
    finish constructing the record or union type.  If REP_LEVEL is zero, this
@@ -648,9 +659,12 @@ extern tree create_type_stub_decl (tree name, tree type);
    used in the declaration.  ARTIFICIAL_P is true if the declaration was
    generated by the compiler.  DEBUG_INFO_P is true if we need to write
    debug information about this type.  GNAT_NODE is used for the position
-   of the decl.  */
+   of the decl.  Normally, an artificial type might be marked as
+   nameless.  However, if CAN_BE_NAMELESS is false, this marking is
+   disabled and the name will always be attached for the type.  */
 extern tree create_type_decl (tree name, tree type, bool artificial_p,
-			      bool debug_info_p, Node_Id gnat_node);
+			      bool debug_info_p, Node_Id gnat_node,
+			      bool can_be_nameless = true);
 
 /* Return a VAR_DECL or CONST_DECL node.
 
@@ -664,6 +678,9 @@ extern tree create_type_decl (tree name, tree type, bool artificial_p,
    PUBLIC_FLAG is true if this is for a reference to a public entity or for a
    definition to be made visible outside of the current compilation unit, for
    instance variable definitions in a package specification.
+
+   LINKONCE_FLAG is true if the entity can be defined in multiple compilation
+   units without generating a linker error.
 
    EXTERN_FLAG is true when processing an external variable declaration (as
    opposed to a definition: no storage is to be allocated for the variable).
@@ -682,8 +699,8 @@ extern tree create_type_decl (tree name, tree type, bool artificial_p,
    GNAT_NODE is used for the position of the decl.  */
 extern tree create_var_decl (tree name, tree asm_name, tree type, tree init,
 			     bool const_flag, bool public_flag,
-			     bool extern_flag, bool static_flag,
-			     bool volatile_flag,
+			     bool linkonce_flag, bool extern_flag,
+			     bool static_flag, bool volatile_flag,
 			     bool artificial_p, bool debug_info_p,
 			     struct attrib *attr_list, Node_Id gnat_node,
 			     bool const_decl_allowed_p = true);
@@ -716,6 +733,9 @@ extern tree create_label_decl (tree name, Node_Id gnat_node);
    PUBLIC_FLAG is true if this is for a reference to a public entity or for a
    definition to be made visible outside of the current compilation unit.
 
+   LINKONCE_FLAG is true if the entity can be defined in multiple compilation
+   units without generating a linker error.
+
    EXTERN_FLAG is true when processing an external subprogram declaration.
 
    ARTIFICIAL_P is true if the subprogram was generated by the compiler.
@@ -730,10 +750,11 @@ extern tree create_label_decl (tree name, Node_Id gnat_node);
 extern tree create_subprog_decl (tree name, tree asm_name, tree type,
 				 tree param_decl_list,
 				 enum inline_status_t inline_status,
-				 bool public_flag, bool extern_flag,
-				 bool artificial_p, bool debug_info_p,
-				 bool definition, struct attrib *attr_list,
-				 Node_Id gnat_node);
+				 bool public_flag, bool linkonce_flag,
+				 bool extern_flag, bool artificial_p,
+				 bool debug_info_p, bool definition,
+				 struct attrib *attr_list = NULL,
+				 Node_Id gnat_node = Empty);
 
 /* Given a subprogram declaration DECL, its assembler name and its type,
    finish constructing the subprogram declaration from ASM_NAME and TYPE.  */
@@ -765,16 +786,17 @@ extern tree build_template (tree template_type, tree array_type, tree expr);
    is an unconstrained array.  This consists of a RECORD_TYPE containing a
    field of TEMPLATE_TYPE and a field of OBJECT_TYPE, which is an ARRAY_TYPE.
    If ARRAY_TYPE is that of an unconstrained array, this is used to represent
-   an arbitrary unconstrained object.  Use NAME as the name of the record.
-   DEBUG_INFO_P is true if we need to write debug information for the type.  */
+   an arbitrary unconstrained object.  Use NAME as the name of the
+   record.  ARTIFICIAL_P is true if the type was generated by the
+   compiler, or false if the type came from source.  DEBUG_INFO_P is
+   true if we need to write debug information for the type.  */
 extern tree build_unc_object_type (tree template_type, tree object_type,
-				   tree name, bool debug_info_p);
+				   tree name, bool artificial_p,
+				   bool debug_info_p);
 
-/* Same as build_unc_object_type, but taking a thin or fat pointer type
-   instead of the template type.  */
-extern tree build_unc_object_type_from_ptr (tree thin_fat_ptr_type,
-					    tree object_type, tree name,
-					    bool debug_info_p);
+/* Same, taking a pointer type instead of a template type.  */
+extern tree build_unc_object_type_from_ptr (tree ptr_type, tree object_type,
+					    tree name, bool debug_info_p);
 
 /* Update anything previously pointing to OLD_TYPE to point to NEW_TYPE.  In
    the normal case this is just two adjustments, but we have more to do
@@ -785,6 +807,12 @@ extern void update_pointer_to (tree old_type, tree new_type);
    discriminant references, replace them with the maximum (if MAX_P) or
    minimum (if !MAX_P) possible value of the discriminant.  */
 extern tree max_size (tree exp, bool max_p);
+
+/* Try to compute the maximum (if MAX_P) or minimum (if !MAX_P) value for the
+   expression EXP, for very simple expressions.  Substitute variable references
+   with their respective type's min/max values.  Return the computed value if
+   any, or EXP if no value can be computed. */
+extern tree max_value (tree exp, bool max_p);
 
 /* Remove all conversions that are done in EXP.  This includes converting
    from a padded type or to a left-justified modular type.  If TRUE_ADDRESS
@@ -835,9 +863,13 @@ extern tree get_base_type (tree type);
    in bits.  If we don't know anything about the alignment, return 0.  */
 extern unsigned int known_alignment (tree exp);
 
+/* Return true if TYPE is a type with variable size or a padding type with a
+   field of variable size or a record that has a field with such a type.  */
+extern bool type_has_variable_size (tree type);
+
 /* Return true if VALUE is a multiple of FACTOR. FACTOR must be a power
    of 2.  */
-extern bool value_factor_p (tree value, HOST_WIDE_INT factor);
+extern bool value_factor_p (tree value, unsigned HOST_WIDE_INT factor);
 
 /* Build an atomic load for the underlying atomic object in SRC.  SYNC is
    true if the load requires synchronization.  */
@@ -897,7 +929,7 @@ extern tree build_call_raise_range (int msg, Node_Id gnat_node, char kind,
 				    tree index, tree first, tree last);
 
 /* Return a CONSTRUCTOR of TYPE whose elements are V.  This is not the
-   same as build_constructor in the language-independent tree.c.  */
+   same as build_constructor in the language-independent tree.cc.  */
 extern tree gnat_build_constructor (tree type, vec<constructor_elt, va_gc> *v);
 
 /* Return a COMPONENT_REF to access FIELD in RECORD, or NULL_EXPR and generate
@@ -919,7 +951,7 @@ extern tree build_call_alloc_dealloc (tree gnu_obj, tree gnu_size,
 				      Entity_Id gnat_pool, Node_Id gnat_node);
 
 /* Build a GCC tree to correspond to allocating an object of TYPE whose
-   initial value if INIT, if INIT is nonzero.  Convert the expression to
+   initial value is INIT, if INIT is nonzero.  Convert the expression to
    RESULT_TYPE, which must be some type of pointer.  Return the tree.
 
    GNAT_PROC and GNAT_POOL optionally give the procedure to call and
@@ -932,11 +964,39 @@ extern tree build_allocator (tree type, tree init, tree result_type,
                              Entity_Id gnat_proc, Entity_Id gnat_pool,
                              Node_Id gnat_node, bool);
 
+/* Build a load of SRC using the storage model of GNAT_SMO.  */
+extern tree build_storage_model_load (Entity_Id gnat_smo, tree src);
+
+/* Build a load of SRC into DEST using the storage model of GNAT_SMO.
+   If SIZE is specified, use it, otherwise use the size of SRC.  */
+extern tree build_storage_model_load (Entity_Id gnat_smo, tree dest, tree src,
+				      tree size = NULL_TREE);
+
+/* Build a store of SRC into DEST using the storage model of GNAT_SMO.
+   If SIZE is specified, use it, otherwise use the size of DEST.  */
+extern tree build_storage_model_store (Entity_Id gnat_smo, tree dest, tree src,
+				       tree size = NULL_TREE);
+
+/* Given a tree EXP, instantiate occurrences of LOAD_EXPR in it and associate
+   them with the storage model of GNAT_SMO.  */
+extern tree instantiate_load_in_expr (tree exp, Entity_Id gnat_smo);
+
+/* This macro calls the above function but short-circuits the common
+   case of a constant to save time and also checks for NULL.  */
+
+#define INSTANTIATE_LOAD_IN_EXPR(EXP, GNAT_SMO) \
+  ((EXP) == NULL_TREE || TREE_CONSTANT (EXP) ? (EXP)	\
+   : instantiate_load_in_expr (EXP, GNAT_SMO))
+
+/* Given an array or slice reference, instantiate occurrences of LOAD_EXPR in
+   it and associate them with the storage model of GNAT_SMO.  */
+extern void instantiate_load_in_array_ref (tree ref, Entity_Id gnat_smo);
+
 /* Indicate that we need to take the address of T and that it therefore
    should not be allocated in a register.  Returns true if successful.  */
 extern bool gnat_mark_addressable (tree t);
 
-/* Save EXP for later use or reuse.  This is equivalent to save_expr in tree.c
+/* Save EXP for later use or reuse.  This is equivalent to save_expr in tree.cc
    but we know how to handle our own nodes.  */
 extern tree gnat_save_expr (tree exp);
 
@@ -945,7 +1005,7 @@ extern tree gnat_save_expr (tree exp);
    its subsequent reuse(s) except through its potential reevaluation.  */
 extern tree gnat_protect_expr (tree exp);
 
-/* This is equivalent to stabilize_reference in tree.c but we know how to
+/* This is equivalent to stabilize_reference in tree.cc but we know how to
    handle our own nodes and we take extra arguments.  FORCE says whether to
    force evaluation of everything in REF.  INIT is set to the first arm of
    a COMPOUND_EXPR present in REF, if any.  */
@@ -958,7 +1018,7 @@ typedef tree (*rewrite_fn) (tree, void *);
 extern tree gnat_rewrite_reference (tree ref, rewrite_fn func, void *data,
 				    tree *init);
 
-/* This is equivalent to get_inner_reference in expr.c but it returns the
+/* This is equivalent to get_inner_reference in expr.cc but it returns the
    ultimate containing object only if the reference (lvalue) is constant,
    i.e. if it doesn't depend on the context in which it is evaluated.  */
 extern tree get_inner_constant_reference (tree exp);
@@ -993,6 +1053,10 @@ extern bool must_pass_by_ref (tree gnu_type);
 /* Return the size of the FP mode with precision PREC.  */
 extern int fp_prec_to_size (int prec);
 
+/* Return the default alignment of a FIELD of TYPE declared in a record or
+   union type as specified by the ABI of the target architecture.  */
+extern unsigned int default_field_alignment (tree field, tree type);
+
 /* Return the precision of the FP mode with size SIZE.  */
 extern int fp_size_to_prec (int size);
 
@@ -1018,6 +1082,18 @@ extern Entity_Id get_debug_scope (Node_Id gnat_node, bool *is_subprogram);
    should be synchronized with Exp_Dbug.Debug_Renaming_Declaration.  */
 extern bool can_materialize_object_renaming_p (Node_Id expr);
 
+/* Return whether GNAT_ENTITY is a simple constant, i.e. it represents only
+   its value and reading it has no side effects.  */
+extern bool simple_constant_p (Entity_Id gnat_entity);
+
+/* Return the size of TYPE, which must be a positive power of 2.  */
+extern unsigned int resolve_atomic_size (tree type);
+
+/* Try to compute the reduction of OP modulo MODULUS in PRECISION bits with a
+   division-free algorithm.  Return NULL_TREE if this is not easily doable.  */
+extern tree fast_modulo_reduction (tree op, tree modulus,
+				   unsigned int precision);
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -1032,6 +1108,7 @@ extern Pos get_target_short_size (void);
 extern Pos get_target_int_size (void);
 extern Pos get_target_long_size (void);
 extern Pos get_target_long_long_size (void);
+extern Pos get_target_long_long_long_size (void);
 extern Pos get_target_pointer_size (void);
 extern Pos get_target_maximum_default_alignment (void);
 extern Pos get_target_system_allocator_alignment (void);
@@ -1054,19 +1131,11 @@ extern void enumerate_modes (void (*f) (const char *, int, int, int, int, int,
 }
 #endif
 
-/* If EXP's type is a VECTOR_TYPE, return EXP converted to the associated
-   TYPE_REPRESENTATIVE_ARRAY.  */
-
-static inline tree
-maybe_vector_array (tree exp)
-{
-  tree etype = TREE_TYPE (exp);
-
-  if (VECTOR_TYPE_P (etype))
-    exp = convert (TYPE_REPRESENTATIVE_ARRAY (etype), exp);
-
-  return exp;
-}
+/* Use gigi_checking_assert to test invariants in code generation mode.
+   It's effective only if the compiler is configured with more checking
+   than the release mode and can be disabled by means of -fchecking.  */
+#define gigi_checking_assert(EXPR) \
+  gcc_checking_assert ((EXPR) || type_annotate_only)
 
 /* Return the smallest power of 2 larger than X.  */
 
@@ -1088,6 +1157,28 @@ call_is_atomic_load (tree exp)
 
   enum built_in_function code = DECL_FUNCTION_CODE (fndecl);
   return BUILT_IN_ATOMIC_LOAD_N <= code && code <= BUILT_IN_ATOMIC_LOAD_16;
+}
+
+/* Return true if TYPE is a tagged type or a CW-equivalent type.  */
+
+static inline bool
+type_is_tagged_or_cw_equivalent (tree type)
+{
+  if (!RECORD_OR_UNION_TYPE_P (type))
+    return false;
+
+  tree field = TYPE_FIELDS (type);
+  if (!field)
+    return false;
+
+  /* The tag can be put into the REP part of a record type.  */
+  if (DECL_INTERNAL_P (field))
+    return type_is_tagged_or_cw_equivalent (TREE_TYPE (field));
+
+  tree name = DECL_NAME (field);
+
+  /* See Exp_Util.Make_CW_Equivalent_Type for the CW-equivalent case.  */
+  return name == tag_name_id || name == parent_name_id;
 }
 
 /* Return true if TYPE is padding a self-referential type.  */
@@ -1133,12 +1224,41 @@ gnat_signed_type_for (tree type_node)
   return gnat_signed_or_unsigned_type_for (0, type_node);
 }
 
+/* Like build_qualified_type, but TYPE_QUALS is added to the existing
+   qualifiers on TYPE.  */
+
+static inline tree
+change_qualified_type (tree type, int type_quals)
+{
+  /* Qualifiers must be put on the associated array type.  */
+  if (TREE_CODE (type) == UNCONSTRAINED_ARRAY_TYPE)
+    return type;
+
+  return build_qualified_type (type, TYPE_QUALS (type) | type_quals);
+}
+
+/* If EXPR's type is a VECTOR_TYPE, return EXPR converted to the associated
+   TYPE_REPRESENTATIVE_ARRAY.  */
+
+static inline tree
+maybe_vector_array (tree expr)
+{
+  tree type = TREE_TYPE (expr);
+
+  if (VECTOR_TYPE_P (type))
+    expr = convert (TYPE_REPRESENTATIVE_ARRAY (type), expr);
+
+  return expr;
+}
+
 /* Adjust the character type TYPE if need be.  */
 
 static inline tree
 maybe_character_type (tree type)
 {
-  if (TYPE_STRING_FLAG (type) && !TYPE_UNSIGNED (type))
+  if (TREE_CODE (type) == INTEGER_TYPE
+      && TYPE_STRING_FLAG (type)
+      && !TYPE_UNSIGNED (type))
     type = gnat_unsigned_type_for (type);
 
   return type;
@@ -1151,7 +1271,9 @@ maybe_character_value (tree expr)
 {
   tree type = TREE_TYPE (expr);
 
-  if (TYPE_STRING_FLAG (type) && !TYPE_UNSIGNED (type))
+  if (TREE_CODE (type) == INTEGER_TYPE
+      && TYPE_STRING_FLAG (type)
+      && !TYPE_UNSIGNED (type))
     {
       type = gnat_unsigned_type_for (type);
       expr = convert (type, expr);
@@ -1171,15 +1293,39 @@ maybe_debug_type (tree type)
   return type;
 }
 
-/* Like build_qualified_type, but TYPE_QUALS is added to the existing
-   qualifiers on TYPE.  */
+/* Remove the padding around EXPR if need be.  */
 
 static inline tree
-change_qualified_type (tree type, int type_quals)
+maybe_padded_object (tree expr)
 {
-  /* Qualifiers must be put on the associated array type.  */
-  if (TREE_CODE (type) == UNCONSTRAINED_ARRAY_TYPE)
-    return type;
+  tree type = TREE_TYPE (expr);
 
-  return build_qualified_type (type, TYPE_QUALS (type) | type_quals);
+  if (TYPE_IS_PADDING_P (type))
+    expr = convert (TREE_TYPE (TYPE_FIELDS (type)), expr);
+
+  return expr;
+}
+
+/* Return the type of operand #0 of EXPR.  */
+
+static inline tree
+operand_type (tree expr)
+{
+  return TREE_TYPE (TREE_OPERAND (expr, 0));
+}
+
+/* Return the second value of a list.  */
+
+static inline tree
+list_second (tree list)
+{
+  return TREE_VALUE (TREE_CHAIN (list));
+}
+
+/* Return the third value of a list.  */
+
+static inline tree
+list_third (tree list)
+{
+  return TREE_VALUE (TREE_CHAIN (TREE_CHAIN (list)));
 }

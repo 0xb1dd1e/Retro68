@@ -4,7 +4,7 @@
    in the Stratus FTX/Golf Object File Format (SED-1762) dated
    February 1994.
 
-   Copyright (C) 1990-2018 Free Software Foundation, Inc.
+   Copyright (C) 1990-2026 Free Software Foundation, Inc.
 
    Written by:
 
@@ -49,20 +49,20 @@ int elf32_hppa_setup_section_lists
 void elf32_hppa_next_input_section
   (struct bfd_link_info *, asection *);
 
-bfd_boolean elf32_hppa_size_stubs
-  (bfd *, bfd *, struct bfd_link_info *, bfd_boolean, bfd_signed_vma,
+bool elf32_hppa_size_stubs
+  (bfd *, bfd *, struct bfd_link_info *, bool, bfd_signed_vma,
    asection * (*) (const char *, asection *), void (*) (void));
 
-bfd_boolean elf32_hppa_set_gp
+bool elf32_hppa_set_gp
   (bfd *, struct bfd_link_info *);
 
-bfd_boolean elf32_hppa_build_stubs
+bool elf32_hppa_build_stubs
   (struct bfd_link_info *);
 
 elf_hppa_reloc_type elf32_hppa_reloc_final_type
   (bfd *, elf_hppa_reloc_type, int, unsigned int);
 
-extern elf_hppa_reloc_type ** _bfd_elf32_hppa_gen_reloc_type
+extern elf_hppa_reloc_type **bfd_elf32_hppa_gen_reloc_type
   (bfd *, elf_hppa_reloc_type, int, unsigned int, int, asymbol *);
 
 /* Define groups of basic relocations.  FIXME:  These should

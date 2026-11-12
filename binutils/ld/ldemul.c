@@ -1,5 +1,5 @@
 /* ldemul.c -- clearing house for ld emulation states
-   Copyright (C) 1991-2018 Free Software Foundation, Inc.
+   Copyright (C) 1991-2026 Free Software Foundation, Inc.
 
    This file is part of the GNU Binutils.
 
@@ -22,6 +22,7 @@
 #include "bfd.h"
 #include "getopt.h"
 #include "bfdlink.h"
+#include "ctf-api.h"
 
 #include "ld.h"
 #include "ldmisc.h"
@@ -33,6 +34,14 @@
 #include "ldemul-list.h"
 
 static ld_emulation_xfer_type *ld_emulation;
+
+struct bfd_link_hash_entry *
+ldemul_find_alt_start_symbol (struct bfd_sym_chain *entry)
+{
+  if (ld_emulation->find_alt_start_symbol)
+    return ld_emulation->find_alt_start_symbol (entry);
+  return NULL;
+}
 
 void
 ldemul_hll (char *name)
@@ -59,6 +68,13 @@ ldemul_before_parse (void)
 }
 
 void
+ldemul_before_plugin_all_symbols_read (void)
+{
+  if (ld_emulation->before_plugin_all_symbols_read)
+    ld_emulation->before_plugin_all_symbols_read ();
+}
+
+void
 ldemul_after_open (void)
 {
   ld_emulation->after_open ();
@@ -68,6 +84,12 @@ void
 ldemul_after_check_relocs (void)
 {
   ld_emulation->after_check_relocs ();
+}
+
+void
+ldemul_before_place_orphans (void)
+{
+  ld_emulation->before_place_orphans ();
 }
 
 void
@@ -114,13 +136,13 @@ ldemul_get_script (int *isfile)
   return ld_emulation->get_script (isfile);
 }
 
-bfd_boolean
+bool
 ldemul_open_dynamic_archive (const char *arch, search_dirs_type *search,
 			     lang_input_statement_type *entry)
 {
   if (ld_emulation->open_dynamic_archive)
     return (*ld_emulation->open_dynamic_archive) (arch, search, entry);
-  return FALSE;
+  return false;
 }
 
 lang_output_section_statement_type *
@@ -141,41 +163,41 @@ ldemul_add_options (int ns, char **shortopts, int nl,
 				  nrl, really_longopts);
 }
 
-bfd_boolean
+bool
 ldemul_handle_option (int optc)
 {
   if (ld_emulation->handle_option)
     return (*ld_emulation->handle_option) (optc);
-  return FALSE;
+  return false;
 }
 
-bfd_boolean
+bool
 ldemul_parse_args (int argc, char **argv)
 {
   /* Try and use the emulation parser if there is one.  */
   if (ld_emulation->parse_args)
     return (*ld_emulation->parse_args) (argc, argv);
-  return FALSE;
+  return false;
 }
 
 /* Let the emulation code handle an unrecognized file.  */
 
-bfd_boolean
+bool
 ldemul_unrecognized_file (lang_input_statement_type *entry)
 {
   if (ld_emulation->unrecognized_file)
     return (*ld_emulation->unrecognized_file) (entry);
-  return FALSE;
+  return false;
 }
 
 /* Let the emulation code handle a recognized file.  */
 
-bfd_boolean
+bool
 ldemul_recognized_file (lang_input_statement_type *entry)
 {
   if (ld_emulation->recognized_file)
     return (*ld_emulation->recognized_file) (entry);
-  return FALSE;
+  return false;
 }
 
 char *
@@ -213,7 +235,7 @@ after_parse_default (void)
   if (entry_symbol.name != NULL
       && (bfd_link_executable (&link_info) || entry_from_cmdline))
     {
-      bfd_boolean is_vma = FALSE;
+      bool is_vma = false;
 
       if (entry_from_cmdline)
 	{
@@ -225,16 +247,38 @@ after_parse_default (void)
       if (!is_vma)
 	ldlang_add_undef (entry_symbol.name, entry_from_cmdline);
     }
-  if (config.maxpagesize == 0)
-    config.maxpagesize = bfd_emul_get_maxpagesize (default_target);
-  if (config.commonpagesize == 0)
-    config.commonpagesize = bfd_emul_get_commonpagesize (default_target,
-							 link_info.relro);
+  if (link_info.maxpagesize == 0)
+    link_info.maxpagesize = bfd_emul_get_maxpagesize (default_target);
+  if (link_info.commonpagesize == 0)
+    link_info.commonpagesize = bfd_emul_get_commonpagesize (default_target);
 }
 
 void
 after_open_default (void)
 {
+  link_info.big_endian = true;
+
+  if (bfd_big_endian (link_info.output_bfd))
+    ;
+  else if (bfd_little_endian (link_info.output_bfd))
+    link_info.big_endian = false;
+  else
+    {
+      if (command_line.endian == ENDIAN_BIG)
+	;
+      else if (command_line.endian == ENDIAN_LITTLE)
+	link_info.big_endian = false;
+      else if (command_line.endian == ENDIAN_UNSET)
+	{
+	  LANG_FOR_EACH_INPUT_STATEMENT (s)
+	    if (s->the_bfd != NULL)
+	      {
+		if (bfd_little_endian (s->the_bfd))
+		  link_info.big_endian = false;
+		break;
+	      }
+	}
+    }
 }
 
 void
@@ -243,9 +287,14 @@ after_check_relocs_default (void)
 }
 
 void
+before_place_orphans_default (void)
+{
+}
+
+void
 after_allocation_default (void)
 {
-  lang_relax_sections (FALSE);
+  lang_relax_sections (false);
 }
 
 void
@@ -258,8 +307,14 @@ before_allocation_default (void)
 void
 finish_default (void)
 {
+  lang_output_section_statement_type *os;
+  for (os = (void *) lang_os_list.head; os != NULL; os = os->next)
+    {
+      free (os->data);
+      os->data = NULL;
+    }
   if (!bfd_link_relocatable (&link_info))
-    _bfd_fix_excluded_sec_syms (link_info.output_bfd, &link_info);
+    bfd_fix_excluded_sec_syms (&link_info);
 }
 
 void
@@ -268,9 +323,6 @@ set_output_arch_default (void)
   /* Set the output architecture and machine if possible.  */
   bfd_set_arch_mach (link_info.output_bfd,
 		     ldfile_output_architecture, ldfile_output_machine);
-
-  bfd_emul_set_maxpagesize (output_target, config.maxpagesize);
-  bfd_emul_set_commonpagesize (output_target, config.commonpagesize);
 }
 
 void
@@ -305,19 +357,19 @@ ldemul_choose_mode (char *target)
   einfo (_("%P: unrecognised emulation mode: %s\n"), target);
   einfo (_("Supported emulations: "));
   ldemul_list_emulations (stderr);
-  einfo ("%F\n");
+  fatal ("\n");
 }
 
 void
 ldemul_list_emulations (FILE *f)
 {
   ld_emulation_xfer_type **eptr = ld_emulations;
-  bfd_boolean first = TRUE;
+  bool first = true;
 
   for (; *eptr; eptr++)
     {
       if (first)
-	first = FALSE;
+	first = false;
       else
 	fprintf (f, " ");
       fprintf (f, "%s", (*eptr)->emulation_name);
@@ -370,4 +422,38 @@ ldemul_extra_map_file_text (bfd *abfd, struct bfd_link_info *info, FILE *mapf)
 {
   if (ld_emulation->extra_map_file_text)
     ld_emulation->extra_map_file_text (abfd, info, mapf);
+}
+
+int
+ldemul_emit_ctf_early (void)
+{
+  if (ld_emulation->emit_ctf_early)
+    return ld_emulation->emit_ctf_early ();
+  /* If the emulation doesn't know if it wants to emit CTF early, it is going
+     to do so.  */
+  return 1;
+}
+
+void
+ldemul_acquire_strings_for_ctf (struct ctf_dict *ctf_output,
+				struct elf_strtab_hash *symstrtab)
+{
+  if (ld_emulation->acquire_strings_for_ctf)
+    ld_emulation->acquire_strings_for_ctf (ctf_output, symstrtab);
+}
+
+void
+ldemul_new_dynsym_for_ctf (struct ctf_dict *ctf_output, int symidx,
+			   struct elf_internal_sym *sym)
+{
+  if (ld_emulation->new_dynsym_for_ctf)
+    ld_emulation->new_dynsym_for_ctf (ctf_output, symidx, sym);
+}
+
+bool
+ldemul_print_symbol (struct bfd_link_hash_entry *hash_entry, void *ptr)
+{
+  if (ld_emulation->print_symbol)
+    return ld_emulation->print_symbol (hash_entry, ptr);
+  return print_one_symbol (hash_entry, ptr);
 }

@@ -1,3 +1,6 @@
+/* { dg-skip-if "too many arguments in function call" { bpf-*-* } } */
+/* { dg-additional-options "-std=gnu89" } */
+
 struct foo
 {
   int a, b, c, d;

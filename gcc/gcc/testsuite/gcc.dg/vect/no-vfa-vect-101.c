@@ -1,4 +1,5 @@
 /* { dg-require-effective-target vect_int } */
+/* { dg-additional-options "--param vect-max-version-for-alias-checks=0" } */
 
 #include <stdlib.h>
 #include <stdarg.h>
@@ -22,6 +23,7 @@ int main1 (int x, int y) {
   p = (struct extraction *) malloc (sizeof (struct extraction));
 
   /* Not vectorizable: different unknown offset.  */
+#pragma GCC unroll 0
   for (i = 0; i < N; i++)
     {
       *((int *)p + x + i) = a[i];
@@ -29,6 +31,7 @@ int main1 (int x, int y) {
     }
 
   /* check results: */
+#pragma GCC novector
   for (i = 0; i < N; i++)
     {
        if (p->a[i] != a[i] || p->b[i] != b[i])

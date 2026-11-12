@@ -1,4 +1,5 @@
 // { dg-do assemble  }
+// Explicit { dg-require-effective-target exceptions_enabled } to avoid verify compiler messages FAILs for '-fno-exceptions'.
 // { dg-options "-W -pedantic -ansi" }
 
 // Copyright (C) 1999, 2000 Free Software Foundation, Inc.
@@ -23,8 +24,8 @@ void fn(int i)
   int j;
 
   j = (i ? e1 : e2);    // { dg-warning "mismatch" }
-  d = (i ? e1 : 1.0);   // { dg-warning "non-enumeral" }
-  d = (i ? 1.0 : e2);   // { dg-warning "non-enumeral" }
+  d = (i ? e1 : 1.0);   // { dg-warning "non-enumerated" }
+  d = (i ? 1.0 : e2);   // { dg-warning "non-enumerated" }
   E1 e = (i ? e1 : e1); // ok
   j = (i ? 1 : e2);     // ok
   j = (i ? e1 : 1);     // ok
@@ -35,8 +36,8 @@ void fn(int i)
   (i ? throw X() : throw X());  // ok, void
   
   (i ? i : j) = 1; // ok, int &
-  (i ? throw X() : j) = 1;    // { dg-error "lvalue" }
-  (i ? j : throw X()) = 1;    // { dg-error "lvalue" }
+  (i ? throw X() : j) = 1; // ok, int &
+  (i ? j : throw X()) = 1; // ok, int &
   (i ? throw X() : throw X()) = 1;  // { dg-error "lvalue" }
   
   (i ? (void)1 : i++);        // { dg-error "throw-expression" }

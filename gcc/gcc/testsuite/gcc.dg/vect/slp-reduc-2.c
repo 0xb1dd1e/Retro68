@@ -1,4 +1,7 @@
+/* Disabling epilogues until we find a better way to deal with scans.  */
+/* { dg-additional-options "--param vect-epilogues-nomask=0" } */
 /* { dg-require-effective-target vect_int } */
+/* { dg-require-effective-target vect_perm } */
 
 #include <stdarg.h>
 #include "tree-vect.h"
@@ -39,4 +42,5 @@ int main (void)
 
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect" { xfail vect_no_int_add } } } */
 /* { dg-final { scan-tree-dump-times "vectorizing stmts using SLP" 1 "vect" { xfail vect_no_int_add } } } */
+/* { dg-final { scan-tree-dump-times "VEC_PERM_EXPR" 0 "vect" } } */
 

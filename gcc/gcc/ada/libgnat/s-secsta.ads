@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -28,8 +28,6 @@
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
-
-pragma Compiler_Unit_Warning;
 
 with System.Parameters;
 with System.Storage_Elements;
@@ -71,11 +69,13 @@ package System.Secondary_Stack is
 
    procedure SS_Allocate
      (Addr         : out Address;
-      Storage_Size : SSE.Storage_Count);
+      Storage_Size : SSE.Storage_Count;
+      Alignment    : SSE.Storage_Count := Standard'Maximum_Alignment);
    --  Allocate enough space on the secondary stack of the invoking task to
-   --  accommodate an alloction of size Storage_Size. Return the address of the
-   --  first byte of the allocation in Addr. The routine may carry out one or
-   --  more of the following actions:
+   --  accommodate an allocation of size Storage_Size. Return the address of
+   --  the first byte of the allocation in Addr, which is a multiple of
+   --  Alignment. The routine may carry out one or more of the following
+   --  actions:
    --
    --    * Reuse an existing chunk that is big enough to accommodate the
    --      requested Storage_Size.
@@ -263,8 +263,7 @@ private
 
    type Chunk_Memory is array (Memory_Size range <>) of SSE.Storage_Element;
    for Chunk_Memory'Alignment use Standard'Maximum_Alignment;
-   --  The memory storage of a single chunk. It utilizes maximum alignment in
-   --  order to guarantee efficient operations.
+   --  The memory storage of a single chunk
 
    --------------
    -- SS_Chunk --

@@ -1,6 +1,6 @@
 /* Data structures and functions for streaming trees.
 
-   Copyright (C) 2011-2019 Free Software Foundation, Inc.
+   Copyright (C) 2011-2026 Free Software Foundation, Inc.
    Contributed by Diego Novillo <dnovillo@google.com>
 
 This file is part of GCC.
@@ -57,27 +57,25 @@ struct streamer_tree_cache_d
   unsigned next_idx;
 };
 
-/* In tree-streamer-in.c.  */
-tree streamer_read_string_cst (struct data_in *, struct lto_input_block *);
-tree streamer_read_chain (struct lto_input_block *, struct data_in *);
-tree streamer_alloc_tree (struct lto_input_block *, struct data_in *,
+/* In tree-streamer-in.cc.  */
+tree streamer_read_string_cst (class data_in *, class lto_input_block *);
+tree streamer_alloc_tree (class lto_input_block *, class data_in *,
 		          enum LTO_tags);
-void streamer_read_tree_body (struct lto_input_block *, struct data_in *, tree);
-tree streamer_get_pickled_tree (struct lto_input_block *, struct data_in *);
-void streamer_read_tree_bitfields (struct lto_input_block *,
-				   struct data_in *, tree);
+void streamer_read_tree_body (class lto_input_block *, class data_in *, tree);
+tree streamer_get_pickled_tree (class lto_input_block *, class data_in *);
+void streamer_read_tree_bitfields (class lto_input_block *,
+				   class data_in *, tree);
 
-/* In tree-streamer-out.c.  */
+/* In tree-streamer-out.cc.  */
 void streamer_write_string_cst (struct output_block *,
 				struct lto_output_stream *, tree);
-void streamer_write_chain (struct output_block *, tree, bool);
 void streamer_write_tree_header (struct output_block *, tree);
 void streamer_write_tree_bitfields (struct output_block *, tree);
-void streamer_write_tree_body (struct output_block *, tree, bool);
-void streamer_write_integer_cst (struct output_block *, tree, bool);
+void streamer_write_tree_body (struct output_block *, tree);
+void streamer_write_integer_cst (struct output_block *, tree);
 
-/* In tree-streamer.c.  */
-extern unsigned char streamer_mode_table[1 << 8];
+/* In tree-streamer.cc.  */
+extern unsigned char streamer_mode_table[MAX_MACHINE_MODE];
 void streamer_check_handled_ts_structures (void);
 bool streamer_tree_cache_insert (struct streamer_tree_cache_d *, tree,
 				 hashval_t, unsigned *);
@@ -92,7 +90,7 @@ void streamer_tree_cache_delete (struct streamer_tree_cache_d *);
 
 /* Return the tree node at slot IX in CACHE.  */
 
-static inline tree
+inline tree
 streamer_tree_cache_get_tree (struct streamer_tree_cache_d *cache, unsigned ix)
 {
   return cache->nodes[ix];
@@ -100,25 +98,30 @@ streamer_tree_cache_get_tree (struct streamer_tree_cache_d *cache, unsigned ix)
 
 /* Return the tree hash value at slot IX in CACHE.  */
 
-static inline hashval_t
+inline hashval_t
 streamer_tree_cache_get_hash (struct streamer_tree_cache_d *cache, unsigned ix)
 {
   return cache->hashes[ix];
 }
 
-static inline void
+inline void
 bp_pack_machine_mode (struct bitpack_d *bp, machine_mode mode)
 {
   streamer_mode_table[mode] = 1;
-  bp_pack_enum (bp, machine_mode, 1 << 8, mode);
+  int last = 1 << ceil_log2 (MAX_MACHINE_MODE);
+  bp_pack_enum (bp, machine_mode, last, mode);
 }
 
-static inline machine_mode
+inline machine_mode
 bp_unpack_machine_mode (struct bitpack_d *bp)
 {
-  return (machine_mode)
-	   ((struct lto_input_block *)
-	    bp->stream)->mode_table[bp_unpack_enum (bp, machine_mode, 1 << 8)];
+  lto_input_block *ib = (class lto_input_block *) bp->stream;
+  int last = 1 << ib->file_data->mode_bits;
+  unsigned ix = bp_unpack_enum (bp, machine_mode, last);
+  if (ib->file_data->mode_table)
+    return (machine_mode) ib->file_data->mode_table[ix];
+  else
+    return (machine_mode) ix;
 }
 
 #endif  /* GCC_TREE_STREAMER_H  */

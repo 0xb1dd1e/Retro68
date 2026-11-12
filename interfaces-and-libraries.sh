@@ -23,7 +23,7 @@ function locateInterfaceThing()
     local varname=$1
     local name=$2
     printf "Searching for %-25s" "$name..."
-    local found=`find -L "$INTERFACES_DIR"/ -name ".*" -prune -o -name $name -print`
+    local found=`find -L "$INTERFACES_DIR"/ -name ".*" -prune -o \( -name $name -o -name $name.bin \) -print`
     if [ -n "$found" ]; then
         eval "$varname=\$found"
         echo ${found#$INTERFACES_DIR/}
@@ -60,6 +60,13 @@ function explainInterfaces()
     echo "  - (for 68K) a directory containing Interface.o (usually \"Libraries\")"
     echo "  - (for PPC) a directory containing InterfaceLib (usually \"SharedLibraries\")"
     echo "  - (for Carbon) Carbon.h and CarbonLib, in the same directories"
+    echo
+    echo "Especially on non-macOS platforms, make sure that the Mac resource fork of the"
+    echo "PowerPC library files is included in a format recognized by Retro68."
+    echo
+    echo "Recognized formats include MacBinary II (Interfacelib.bin),"
+    echo "AppleDouble (._InterfaceLib or %InterfaceLib) or Basilisk/Sheepshaver resource"
+    echo "forks (.rsrc/InterfaceLib)."
     echo
     echo "The Interfaces&Libraries folder from Apple's last MPW release (MPW 3.5 "
     echo "aka MPW GM 'Golden Master') is known to work."
@@ -186,7 +193,7 @@ function removeConflictingHeaders()
 {
     # On case-insensitive file systems, there will be some conflicts with
     # newlib. For now, universal interfaces get the right of way.
-    rm -f "$1/Threads.h"        # thread.h: does not currently work anyways
+    rm -f "$1/Threads.h"        # threads.h: does not currently work anyways
     rm -f "$1/Memory.h"         # memory.h: non-standard aliasof string.h
     cp "$1/strings.h" "$1/bsdstrings.h"
     rm -f "$1/Strings.h"        # strings.h: traditional bsd string functions

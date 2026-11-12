@@ -1,3 +1,5 @@
+/* Disabling epilogues until we find a better way to deal with scans.  */
+/* { dg-additional-options "--param vect-epilogues-nomask=0" } */
 /* { dg-require-effective-target vect_int } */
 /* { dg-require-effective-target arm_v8_2a_dotprod_neon_hw { target { aarch64*-*-* || arm*-*-* } } } */
 /* { dg-additional-options "-march=armv8.2-a+dotprod" { target { aarch64*-*-* } } } */
@@ -51,7 +53,7 @@ int main (void)
   return 0;
 }
 
-/* { dg-final { scan-tree-dump-times "vect_recog_dot_prod_pattern: detected" 1 "vect" } } */
+/* { dg-final { scan-tree-dump-times "vect_recog_dot_prod_pattern: detected(?:(?!Analysis failed).)*Analysis succeeded" 1 "vect" { target { vect_udot_qi || { vect_widen_mult_qi_to_hi && vect_widen_sum_qi_to_si } } } } } */
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect" { target vect_udot_qi } } } */
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect" { target { vect_widen_mult_qi_to_hi && vect_widen_sum_qi_to_si } } } } */
 

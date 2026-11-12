@@ -14,11 +14,14 @@
 ;; You should have received a copy of the GNU General Public License
 ;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-(
- (tcl-mode . ((tcl-indent-level . 4)
+((tcl-mode . ((tcl-indent-level . 4)
 	      (tcl-continued-indent-level . 4)
 	      (indent-tabs-mode . t)))
- (nil . ((bug-reference-url-format . "http://gcc.gnu.org/PR%s")))
+ (nil . ((bug-reference-url-format . "https://gcc.gnu.org/PR%s")))
+ ;; Please keep C and C++ in sync.
  (c-mode . ((c-file-style . "GNU")
-	    (indent-tabs-mode . t)))
-)
+	    (indent-tabs-mode . t)
+	    (fill-column . 79)))
+ (c++-mode . ((c-file-style . "GNU")
+	      (indent-tabs-mode . t)
+	      (fill-column . 79))))

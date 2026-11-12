@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -53,9 +53,7 @@ package System.Parameters is
    -- Task And Stack Allocation Control --
    ---------------------------------------
 
-   type Size_Type is range
-     -(2 ** (Integer'(Standard'Address_Size) - 1)) ..
-     +(2 ** (Integer'(Standard'Address_Size) - 1)) - 1;
+   type Size_Type is range -Memory_Size / 2 .. Memory_Size / 2 - 1;
    --  Type used to provide task stack sizes to the runtime. Sized to permit
    --  stack sizes of up to half the total addressable memory space. This may
    --  seem excessively large (even for 32-bit systems), however there are many
@@ -92,7 +90,7 @@ package System.Parameters is
 
    Runtime_Default_Sec_Stack_Size : constant Size_Type := 10 * 1024;
    --  The run-time chosen default size for secondary stacks that may be
-   --  overriden by the user with the use of binder -D switch.
+   --  overridden by the user with the use of binder -D switch.
 
    Sec_Stack_Dynamic : constant Boolean := True;
    --  Indicates if secondary stacks can grow and shrink at run-time. If False,
@@ -144,19 +142,6 @@ package System.Parameters is
    --  In the following sections, constant parameters are defined to
    --  allow some optimizations and fine tuning within the tasking run time
    --  based on restrictions on the tasking features.
-
-   ----------------------
-   -- Locking Strategy --
-   ----------------------
-
-   Single_Lock : constant Boolean := False;
-   --  Indicates whether a single lock should be used within the tasking
-   --  run-time to protect internal structures. If True, a single lock
-   --  will be used, meaning less locking/unlocking operations, but also
-   --  more global contention. In general, Single_Lock should be set to
-   --  True on single processor machines, and to False to multi-processor
-   --  systems, but this can vary from application to application and also
-   --  depends on the scheduling policy.
 
    -------------------
    -- Task Abortion --

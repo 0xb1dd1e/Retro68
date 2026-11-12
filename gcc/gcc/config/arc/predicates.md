@@ -1,5 +1,5 @@
 ;; Predicate definitions for Synopsys DesignWare ARC.
-;; Copyright (C) 2007-2019 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2026 Free Software Foundation, Inc.
 ;;
 ;; This file is part of GCC.
 ;;
@@ -22,13 +22,6 @@
 {
   return register_operand (op, mode);
 })
-
-(define_predicate "mpy_dest_reg_operand"
-  (match_code "reg,subreg")
-{
-  return register_operand (op, mode);
-})
-
 
 ;; Returns 1 if OP is a symbol reference.
 (define_predicate "symbolic_operand"
@@ -285,6 +278,8 @@
 	return GET_MODE (op) == SFmode;
       return 0;
     case REG :
+      if (REGNO (op) == LP_COUNT)
+	return 1;
       return register_operand (op, mode);
     case SUBREG :
       /* (subreg (mem ...) ...) can occur here if the inner part was once a
@@ -424,6 +419,8 @@
       return code == EQ || code == NE;
     case E_CC_Cmode:
       return code == LTU || code == GEU;
+    case E_CC_Vmode:
+      return code == EQ || code == NE;
     case E_CC_FP_GTmode:
       return code == GT || code == UNLE;
     case E_CC_FP_GEmode:
@@ -437,6 +434,7 @@
 	      || code == ORDERED || code == UNORDERED);
 
     case E_CC_FPUmode:
+    case E_CC_FPUEmode:
       return 1;
     case E_CC_FPU_UNEQmode:
       return 1;
@@ -455,7 +453,12 @@
 })
 
 (define_predicate "equality_comparison_operator"
-  (match_code "eq, ne"))
+  (match_code "eq, ne")
+  {
+    machine_mode opmode = GET_MODE (XEXP (op, 0));
+    return opmode != CC_Vmode;
+  }
+)
 
 (define_predicate "ge_lt_comparison_operator"
   (match_code "ge, lt"))
@@ -545,31 +548,6 @@
 (define_predicate "shift_operator"
   (match_code "ashiftrt, lshiftrt, ashift")
 )
-
-;; Return true if OP is a left shift operator that can be implemented in
-;; four insn words or less without a barrel shifter or multiplier.
-(define_predicate "shiftl4_operator"
-  (and (match_code "ashift")
-       (match_test "const_int_operand (XEXP (op, 1), VOIDmode) ")
-       (match_test "UINTVAL (XEXP (op, 1)) <= 9U
-		    || INTVAL (XEXP (op, 1)) == 29
-		    || INTVAL (XEXP (op, 1)) == 30
-		    || INTVAL (XEXP (op, 1)) == 31")))
-
-;; Return true if OP is a right shift operator that can be implemented in
-;; four insn words or less without a barrel shifter or multiplier.
-(define_predicate "shiftr4_operator"
-  (and (match_code "ashiftrt, lshiftrt")
-       (match_test "const_int_operand (XEXP (op, 1), VOIDmode) ")
-       (match_test "UINTVAL (XEXP (op, 1)) <= 4U
-		    || INTVAL (XEXP (op, 1)) == 30
-		    || INTVAL (XEXP (op, 1)) == 31")))
-
-;; Return true if OP is a shift operator that can be implemented in
-;; four insn words or less without a barrel shifter or multiplier.
-(define_predicate "shift4_operator"
-  (ior (match_operand 0 "shiftl4_operator")
-       (match_operand 0 "shiftr4_operator")))
 
 (define_predicate "mult_operator"
     (and (match_code "mult") (match_test "TARGET_MPY"))
@@ -685,11 +663,11 @@
 
 (define_predicate "mlo_operand"
   (and (match_code "reg")
-       (match_test "REGNO (op) == (TARGET_BIG_ENDIAN ? 59 : 58)")))
+       (match_test "REGNO (op) == R58_REG")))
 
 (define_predicate "mhi_operand"
   (and (match_code "reg")
-       (match_test "REGNO (op) == (TARGET_BIG_ENDIAN ? 58 : 59)")))
+       (match_test "REGNO (op) == R59_REG")))
 
 (define_predicate "accl_operand"
   (and (match_code "reg")
@@ -792,3 +770,8 @@
   {
    return arc_check_multi (op, false);
 })
+
+(define_predicate "arc_nonmemory_operand"
+  (ior (match_test "register_operand (op, mode)")
+       (and (match_code "const_int, symbol_ref")
+	    (match_test "!optimize_size"))))

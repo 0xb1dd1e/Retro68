@@ -1,6 +1,6 @@
 /* Definitions for Motorola 68k running Linux-based GNU systems with
    ELF format.
-   Copyright (C) 1995-2019 Free Software Foundation, Inc.
+   Copyright (C) 1995-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -73,6 +73,9 @@ along with GCC; see the file COPYING3.  If not see
 
 #define GLIBC_DYNAMIC_LINKER "/lib/ld.so.1"
 
+#undef MUSL_DYNAMIC_LINKER
+#define MUSL_DYNAMIC_LINKER "/lib/ld-musl-m68k.so.1"
+
 #undef LINK_SPEC
 #define LINK_SPEC "-m m68kelf %{shared} \
   %{!shared: \
@@ -87,7 +90,7 @@ along with GCC; see the file COPYING3.  If not see
 
 /* Currently, JUMP_TABLES_IN_TEXT_SECTION must be defined in order to
    keep switch tables in the text section.  */
-   
+
 #define JUMP_TABLES_IN_TEXT_SECTION 1
 
 /* Use the default action for outputting the case label.  */
@@ -99,12 +102,12 @@ along with GCC; see the file COPYING3.  If not see
 	if (ADDRESS_REG_P (operands[0]))		\
 	  return "jmp %%pc@(2,%0:l)";			\
 	else if (TARGET_LONG_JUMP_TABLE_OFFSETS)	\
-	  return "jmp %%pc@(2,%0:l)";			\
+	  return "jmp %%pc@(%l1,%0:l)";			\
 	else						\
 	  return "ext%.l %0\n\tjmp %%pc@(2,%0:l)";	\
       }							\
     else if (TARGET_LONG_JUMP_TABLE_OFFSETS)		\
-      return "jmp %%pc@(2,%0:l)";			\
+      return "jmp %%pc@(%l1,%0:l)";			\
     else						\
       return "jmp %%pc@(2,%0:w)";			\
   } while (0)
@@ -142,10 +145,6 @@ along with GCC; see the file COPYING3.  If not see
   else									\
     fprintf (FILE, "\tjbsr _mcount\n");					\
 }
-
-/* Do not break .stabs pseudos into continuations.  */
-
-#define DBX_CONTIN_LENGTH 0
 
 /* 1 if N is a possible register number for a function value.  For
    m68k/SVR4 allow d0, a0, or fp0 as return registers, for integral,
@@ -191,10 +190,10 @@ along with GCC; see the file COPYING3.  If not see
 
 #undef FINALIZE_TRAMPOLINE
 #define FINALIZE_TRAMPOLINE(TRAMP)					\
-  emit_library_call (gen_rtx_SYMBOL_REF (Pmode, "__clear_cache"),	\
-		     LCT_NORMAL, VOIDmode, TRAMP, Pmode,		\
-		     plus_constant (Pmode, TRAMP, TRAMPOLINE_SIZE), 	\
-		     Pmode);
+  maybe_emit_call_builtin___clear_cache ((TRAMP),			\
+					 plus_constant (Pmode,		\
+							(TRAMP),	\
+							TRAMPOLINE_SIZE))
 
 /* Clear the instruction cache from `beg' to `end'.  This makes an
    inline system call to SYS_cacheflush.  The arguments are as
@@ -225,8 +224,8 @@ along with GCC; see the file COPYING3.  If not see
 
 #define TARGET_ASM_FILE_END file_end_indicate_exec_stack
 
-#undef DBX_REGISTER_NUMBER
-#define DBX_REGISTER_NUMBER(REGNO) (REGNO)
+#undef DEBUGGER_REGNO
+#define DEBUGGER_REGNO(REGNO) (REGNO)
 
 #undef  SIZE_TYPE
 #define SIZE_TYPE "unsigned int"

@@ -1,4 +1,4 @@
-// Copyright (C) 1997-2019 Free Software Foundation, Inc.
+// Copyright (C) 1997-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -206,6 +206,12 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   void
   locale::facet::_S_initialize_once()
   {
+    // Need to check this because we could get called once from
+    // _S_get_c_locale() when the program is single-threaded, and then again
+    // (via __gthread_once) when it's multi-threaded.
+    if (_S_c_locale)
+      return;
+
     // Initialize the underlying locale model.
     _S_create_c_locale(_S_c_locale, _S_c_name);
   }
@@ -216,12 +222,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 #ifdef __GTHREADS
     if (__gthread_active_p())
       __gthread_once(&_S_once, _S_initialize_once);
-    else
 #endif
-      {
-	if (!_S_c_locale)
-	  _S_initialize_once();
-      }
+    if (__builtin_expect (!_S_c_locale, 0))
+      _S_initialize_once();
     return _S_c_locale;
   }
 
@@ -320,7 +323,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   locale::_Impl::
   _M_install_facet(const locale::id* __idp, const facet* __fp)
   {
-    if (__fp)
+    if (__builtin_expect(__fp != 0, 1))
       {
 	size_t __index = __idp->_M_id();
 
@@ -474,6 +477,31 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   // Definitions for static const data members of locale::id
   _Atomic_word locale::id::_S_refcount;  // init'd to 0 by linker
 
+  // XXX GLIBCXX_ABI Deprecated
+#ifdef _GLIBCXX_LONG_DOUBLE_COMPAT
+namespace {
+  inline locale::id*
+  find_ldbl_sync_facet(const locale::id* __idp)
+  {
+# define _GLIBCXX_SYNC_ID(facet, mangled) \
+    if (__idp == &::mangled)		  \
+      return &facet::id
+
+    _GLIBCXX_SYNC_ID (num_get<char>, _ZNSt7num_getIcSt19istreambuf_iteratorIcSt11char_traitsIcEEE2idE);
+    _GLIBCXX_SYNC_ID (num_put<char>, _ZNSt7num_putIcSt19ostreambuf_iteratorIcSt11char_traitsIcEEE2idE);
+    _GLIBCXX_SYNC_ID (money_get<char>, _ZNSt9money_getIcSt19istreambuf_iteratorIcSt11char_traitsIcEEE2idE);
+    _GLIBCXX_SYNC_ID (money_put<char>, _ZNSt9money_putIcSt19ostreambuf_iteratorIcSt11char_traitsIcEEE2idE);
+# ifdef _GLIBCXX_USE_WCHAR_T
+    _GLIBCXX_SYNC_ID (num_get<wchar_t>, _ZNSt7num_getIwSt19istreambuf_iteratorIwSt11char_traitsIwEEE2idE);
+    _GLIBCXX_SYNC_ID (num_put<wchar_t>, _ZNSt7num_putIwSt19ostreambuf_iteratorIwSt11char_traitsIwEEE2idE);
+    _GLIBCXX_SYNC_ID (money_get<wchar_t>, _ZNSt9money_getIwSt19istreambuf_iteratorIwSt11char_traitsIwEEE2idE);
+    _GLIBCXX_SYNC_ID (money_put<wchar_t>, _ZNSt9money_putIwSt19ostreambuf_iteratorIwSt11char_traitsIwEEE2idE);
+# endif
+    return 0;
+  }
+} // namespace
+#endif
+
   size_t
   locale::id::_M_id() const throw()
   {
@@ -481,26 +509,38 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       {
 	// XXX GLIBCXX_ABI Deprecated
 #ifdef _GLIBCXX_LONG_DOUBLE_COMPAT
-	locale::id *f = 0;
-# define _GLIBCXX_SYNC_ID(facet, mangled) \
-	if (this == &::mangled)				\
-	  f = &facet::id
-	_GLIBCXX_SYNC_ID (num_get<char>, _ZNSt7num_getIcSt19istreambuf_iteratorIcSt11char_traitsIcEEE2idE);
-	_GLIBCXX_SYNC_ID (num_put<char>, _ZNSt7num_putIcSt19ostreambuf_iteratorIcSt11char_traitsIcEEE2idE);
-	_GLIBCXX_SYNC_ID (money_get<char>, _ZNSt9money_getIcSt19istreambuf_iteratorIcSt11char_traitsIcEEE2idE);
-	_GLIBCXX_SYNC_ID (money_put<char>, _ZNSt9money_putIcSt19ostreambuf_iteratorIcSt11char_traitsIcEEE2idE);
-# ifdef _GLIBCXX_USE_WCHAR_T
-	_GLIBCXX_SYNC_ID (num_get<wchar_t>, _ZNSt7num_getIwSt19istreambuf_iteratorIwSt11char_traitsIwEEE2idE);
-	_GLIBCXX_SYNC_ID (num_put<wchar_t>, _ZNSt7num_putIwSt19ostreambuf_iteratorIwSt11char_traitsIwEEE2idE);
-	_GLIBCXX_SYNC_ID (money_get<wchar_t>, _ZNSt9money_getIwSt19istreambuf_iteratorIwSt11char_traitsIwEEE2idE);
-	_GLIBCXX_SYNC_ID (money_put<wchar_t>, _ZNSt9money_putIwSt19ostreambuf_iteratorIwSt11char_traitsIwEEE2idE);
-# endif
-	if (f)
-	  _M_index = 1 + f->_M_id();
+	if (locale::id* f = find_ldbl_sync_facet(this))
+	{
+	  const size_t sync_id = f->_M_id();
+	  _M_index = 1 + sync_id;
+	  return sync_id;
+	}
+#endif
+
+#ifdef __GTHREADS
+	if (!__gnu_cxx::__is_single_threaded())
+	  {
+	    if (__atomic_always_lock_free(sizeof(_M_index), &_M_index))
+	      {
+		const _Atomic_word next
+		  = 1 + __gnu_cxx::__exchange_and_add(&_S_refcount, 1);
+		size_t expected = 0;
+		__atomic_compare_exchange_n(&_M_index, &expected, next,
+					    /* weak = */ false,
+					    /* success = */ __ATOMIC_ACQ_REL,
+					    /* failure = */ __ATOMIC_ACQUIRE);
+	      }
+	    else
+	      {
+		static __gnu_cxx::__mutex m;
+		__gnu_cxx::__scoped_lock l(m);
+		if (!_M_index)
+		  _M_index = ++_S_refcount;
+	      }
+	  }
 	else
 #endif
-	  _M_index = 1 + __gnu_cxx::__exchange_and_add_dispatch(&_S_refcount,
-								1);
+	_M_index = ++_S_refcount; // single-threaded case
       }
     return _M_index - 1;
   }

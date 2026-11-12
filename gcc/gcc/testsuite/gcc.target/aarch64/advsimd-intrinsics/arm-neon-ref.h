@@ -7,9 +7,12 @@
 #include <inttypes.h>
 
 /* helper type, to help write floating point results in integer form.  */
+typedef uint8_t hmfloat8_t;
 typedef uint16_t hfloat16_t;
 typedef uint32_t hfloat32_t;
 typedef uint64_t hfloat64_t;
+
+typedef uint16_t hbfloat16_t;
 
 extern void abort(void);
 extern void *memset(void *, int, size_t);
@@ -36,9 +39,23 @@ extern size_t strlen(const char *);
    Use this macro to guard against them.  */
 #ifdef __aarch64__
 #define AARCH64_ONLY(X) X
+#define MFLOAT8_SUPPORTED 1
 #else
 #define AARCH64_ONLY(X)
+#define MFLOAT8_SUPPORTED 0
 #endif
+
+#if MFLOAT8_SUPPORTED
+#define MFLOAT8_ONLY(X) X
+#define MFLOAT8(X) (((union { uint8_t x; mfloat8_t y; }) { X }).y)
+#define CONVERT(T, X) \
+  ((T) _Generic ((T){}, mfloat8_t: MFLOAT8(X), default: X))
+#else
+#define MFLOAT8_ONLY(X)
+#define CONVERT(T, X) ((T) X)
+#endif
+
+#define BITEQUAL(X, Y) (__builtin_memcmp (&X, &Y, sizeof(X)) == 0)
 
 #define xSTR(X) #X
 #define STR(X) xSTR(X)
@@ -107,7 +124,7 @@ extern size_t strlen(const char *);
       {									\
 	union fp_operand {						\
 	  uint##W##_t i;						\
-	  float##W##_t f;						\
+	  T##W##_t f;							\
 	} tmp_res, tmp_exp;						\
 	tmp_res.f = VECT_VAR(result, T, W, N)[i];			\
 	tmp_exp.i = VECT_VAR(EXPECTED, h##T, W, N)[i];			\
@@ -180,6 +197,9 @@ static ARRAY(result, poly, 16, 4);
 #if defined (__ARM_FEATURE_CRYPTO)
 static ARRAY(result, poly, 64, 1);
 #endif
+#if MFLOAT8_SUPPORTED
+static ARRAY(result, mfloat, 8, 8);
+#endif
 #if defined (__ARM_FP16_FORMAT_IEEE) || defined (__ARM_FP16_FORMAT_ALTERNATIVE)
 static ARRAY(result, float, 16, 4);
 #endif
@@ -199,6 +219,9 @@ static ARRAY(result, poly, 8, 16);
 static ARRAY(result, poly, 16, 8);
 #if defined (__ARM_FEATURE_CRYPTO)
 static ARRAY(result, poly, 64, 2);
+#endif
+#if MFLOAT8_SUPPORTED
+static ARRAY(result, mfloat, 8, 16);
 #endif
 #if defined (__ARM_FP16_FORMAT_IEEE) || defined (__ARM_FP16_FORMAT_ALTERNATIVE)
 static ARRAY(result, float, 16, 8);
@@ -220,6 +243,9 @@ extern ARRAY(expected, uint, 32, 2);
 extern ARRAY(expected, uint, 64, 1);
 extern ARRAY(expected, poly, 8, 8);
 extern ARRAY(expected, poly, 16, 4);
+#if MFLOAT8_SUPPORTED
+extern ARRAY(expected, hmfloat, 8, 8);
+#endif
 extern ARRAY(expected, hfloat, 16, 4);
 extern ARRAY(expected, hfloat, 32, 2);
 extern ARRAY(expected, hfloat, 64, 1);
@@ -233,6 +259,9 @@ extern ARRAY(expected, uint, 32, 4);
 extern ARRAY(expected, uint, 64, 2);
 extern ARRAY(expected, poly, 8, 16);
 extern ARRAY(expected, poly, 16, 8);
+#if MFLOAT8_SUPPORTED
+extern ARRAY(expected, hmfloat, 8, 16);
+#endif
 extern ARRAY(expected, hfloat, 16, 8);
 extern ARRAY(expected, hfloat, 32, 4);
 extern ARRAY(expected, hfloat, 64, 2);
@@ -249,6 +278,8 @@ extern ARRAY(expected, hfloat, 64, 2);
     CHECK(test_name, uint, 64, 1, PRIx64, EXPECTED, comment);		\
     CHECK_POLY(test_name, poly, 8, 8, PRIx8, EXPECTED, comment);	\
     CHECK_POLY(test_name, poly, 16, 4, PRIx16, EXPECTED, comment);	\
+    MFLOAT8_ONLY(CHECK_FP(test_name, mfloat, 8, 8, PRIx8,		\
+			  EXPECTED, comment);)				\
     CHECK_FP(test_name, float, 32, 2, PRIx32, EXPECTED, comment);	\
 									\
     CHECK(test_name, int, 8, 16, PRIx8, EXPECTED, comment);		\
@@ -261,6 +292,8 @@ extern ARRAY(expected, hfloat, 64, 2);
     CHECK(test_name, uint, 64, 2, PRIx64, EXPECTED, comment);		\
     CHECK_POLY(test_name, poly, 8, 16, PRIx8, EXPECTED, comment);	\
     CHECK_POLY(test_name, poly, 16, 8, PRIx16, EXPECTED, comment);	\
+    MFLOAT8_ONLY(CHECK_FP(test_name, mfloat, 8, 16, PRIx8,		\
+			  EXPECTED, comment);)				\
     CHECK_FP(test_name, float, 32, 4, PRIx32, EXPECTED, comment);	\
   }									\
 
@@ -354,73 +387,6 @@ static volatile int __read_neon_cumulative_sat (void) {
   }
 #endif
 
-/* Declare expected cumulative saturation results, one for each
-   size. They are defined and initialized in relevant test files.  */
-extern int VECT_VAR(expected_cumulative_sat, int, 8, 8);
-extern int VECT_VAR(expected_cumulative_sat, int, 16, 4);
-extern int VECT_VAR(expected_cumulative_sat, int, 32, 2);
-extern int VECT_VAR(expected_cumulative_sat, int, 64, 1);
-extern int VECT_VAR(expected_cumulative_sat, uint, 8, 8);
-extern int VECT_VAR(expected_cumulative_sat, uint, 16, 4);
-extern int VECT_VAR(expected_cumulative_sat, uint, 32, 2);
-extern int VECT_VAR(expected_cumulative_sat, uint, 64, 1);
-extern int VECT_VAR(expected_cumulative_sat, int, 8, 16);
-extern int VECT_VAR(expected_cumulative_sat, int, 16, 8);
-extern int VECT_VAR(expected_cumulative_sat, int, 32, 4);
-extern int VECT_VAR(expected_cumulative_sat, int, 64, 2);
-extern int VECT_VAR(expected_cumulative_sat, uint, 8, 16);
-extern int VECT_VAR(expected_cumulative_sat, uint, 16, 8);
-extern int VECT_VAR(expected_cumulative_sat, uint, 32, 4);
-extern int VECT_VAR(expected_cumulative_sat, uint, 64, 2);
-
-/* Check cumulative saturation flag vs expected value.  */
-#define CHECK_CUMULATIVE_SAT(MSG,T,W,N,EXPECTED,COMMENT)		\
-  {									\
-    if (Neon_Cumulative_Sat !=						\
-	VECT_VAR(EXPECTED, T, W, N)) {					\
-      fprintf(stderr,							\
-	      "ERROR in %s (%s line %d in cumulative_sat '%s') at type %s: " \
-	      "got %d expected %d%s\n",					\
-	      MSG, __FILE__, __LINE__,					\
-	      STR(EXPECTED),						\
-	      STR(VECT_NAME(T, W, N)),					\
-	      Neon_Cumulative_Sat,					\
-	      VECT_VAR(EXPECTED, T, W, N),				\
-	      strlen(COMMENT) > 0 ? " " COMMENT : "");			\
-      abort();								\
-    }									\
-    fprintf(stderr, "CHECKED CUMULATIVE SAT %s %s\n",			\
-	    STR(VECT_TYPE(T, W, N)), MSG);				\
-  }
-
-#define CHECK_CUMULATIVE_SAT_NAMED(test_name,EXPECTED,comment)		\
-  {									\
-    CHECK_CUMULATIVE_SAT(test_name, int, 8, 8, PRIx8, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT(test_name, int, 16, 4, PRIx16, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT(test_name, int, 32, 2, PRIx32, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT(test_name, int, 64, 1, PRIx64, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT(test_name, uint, 8, 8, PRIx8, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT(test_name, uint, 16, 4, PRIx16, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT(test_name, uint, 32, 2, PRIx32, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT(test_name, uint, 64, 1, PRIx64, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT(test_name, poly, 8, 8, PRIx8, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT(test_name, poly, 16, 4, PRIx16, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT_FP(test_name, float, 32, 2, PRIx32, EXPECTED, comment); \
-									\
-    CHECK_CUMULATIVE_SAT(test_name, int, 8, 16, PRIx8, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT(test_name, int, 16, 8, PRIx16, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT(test_name, int, 32, 4, PRIx32, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT(test_name, int, 64, 2, PRIx64, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT(test_name, uint, 8, 16, PRIx8, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT(test_name, uint, 16, 8, PRIx16, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT(test_name, uint, 32, 4, PRIx32, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT(test_name, uint, 64, 2, PRIx64, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT(test_name, poly, 8, 16, PRIx8, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT(test_name, poly, 16, 8, PRIx16, EXPECTED, comment); \
-    CHECK_CUMULATIVE_SAT_FP(test_name, float, 32, 4, PRIx32, EXPECTED, comment); \
-  }									\
-
-
 /* Clean output buffers before execution.  */
 static void clean_results (void)
 {
@@ -436,6 +402,9 @@ static void clean_results (void)
   CLEAN(result, poly, 16, 4);
 #if defined (__ARM_FEATURE_CRYPTO)
   CLEAN(result, poly, 64, 1);
+#endif
+#if MFLOAT8_SUPPORTED
+  CLEAN(result, mfloat, 8, 8);
 #endif
 #if defined (__ARM_FP16_FORMAT_IEEE) || defined (__ARM_FP16_FORMAT_ALTERNATIVE)
   CLEAN(result, float, 16, 4);
@@ -455,10 +424,15 @@ static void clean_results (void)
 #if defined (__ARM_FEATURE_CRYPTO)
   CLEAN(result, poly, 64, 2);
 #endif
+#if MFLOAT8_SUPPORTED
+  CLEAN(result, mfloat, 8, 16);
+#endif
 #if defined (__ARM_FP16_FORMAT_IEEE) || defined (__ARM_FP16_FORMAT_ALTERNATIVE)
   CLEAN(result, float, 16, 8);
 #endif
   CLEAN(result, float, 32, 4);
+
+  AARCH64_ONLY(CLEAN(result, float, 64, 2));
 
 #if defined(__aarch64__)
   /* On AArch64, make sure to return DefaultNaN to have the same
@@ -523,6 +497,7 @@ static void clean_results (void)
   DECL_VARIABLE(VAR, poly, 8, 8);		\
   DECL_VARIABLE(VAR, poly, 16, 4);		\
   DECL_VARIABLE_CRYPTO(VAR, poly, 64, 1);	\
+  MFLOAT8_ONLY(DECL_VARIABLE(VAR, mfloat, 8, 8);) \
   DECL_VARIABLE(VAR, float, 16, 4);		\
   DECL_VARIABLE(VAR, float, 32, 2)
 #else
@@ -543,8 +518,10 @@ static void clean_results (void)
   DECL_VARIABLE(VAR, poly, 8, 16);		\
   DECL_VARIABLE(VAR, poly, 16, 8);		\
   DECL_VARIABLE_CRYPTO(VAR, poly, 64, 2);	\
+  MFLOAT8_ONLY(DECL_VARIABLE(VAR, mfloat, 8, 16);) \
   DECL_VARIABLE(VAR, float, 16, 8);		\
-  DECL_VARIABLE(VAR, float, 32, 4)
+  DECL_VARIABLE(VAR, float, 32, 4);		\
+  AARCH64_ONLY(DECL_VARIABLE(VAR, float, 64, 2))
 #else
 #define DECL_VARIABLE_128BITS_VARIANTS(VAR)	\
   DECL_VARIABLE_128BITS_SIGNED_VARIANTS(VAR);	\
@@ -552,7 +529,9 @@ static void clean_results (void)
   DECL_VARIABLE(VAR, poly, 8, 16);		\
   DECL_VARIABLE(VAR, poly, 16, 8);		\
   DECL_VARIABLE_CRYPTO(VAR, poly, 64, 2);	\
-  DECL_VARIABLE(VAR, float, 32, 4)
+  MFLOAT8_ONLY(DECL_VARIABLE(VAR, mfloat, 8, 16);) \
+  DECL_VARIABLE(VAR, float, 32, 4);		\
+  AARCH64_ONLY(DECL_VARIABLE(VAR, float, 64, 2))
 #endif
 /* Declare all variants.  */
 #define DECL_VARIABLE_ALL_VARIANTS(VAR)		\

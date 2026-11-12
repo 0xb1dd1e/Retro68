@@ -1,5 +1,5 @@
 /*
-   Copyright (C) 2001-2019 Free Software Foundation, Inc.
+   Copyright (C) 2001-2026 Free Software Foundation, Inc.
    See license.html for license.
 
    This just provides documentation for stuff that doesn't need to be in the
@@ -19,6 +19,9 @@
 /** @namespace std
  *  @brief ISO C++ entities toplevel namespace is std.
 */
+/** @namespace std::literals
+ *  @brief ISO C++ inline namespace for literal suffixes.
+*/
 /** @namespace std::__detail
  *  @brief Implementation details not part of the namespace std interface.
 */
@@ -29,22 +32,27 @@
  *  @brief Implementation details not part of the namespace std::tr1 interface.
 */
 /** @namespace std::tr2
- *  @brief ISO C++ TR2 entities toplevel namespace is std::tr2.
+ *  @brief Namespace for non-standard "TR2" extensions.
+ *  @ingroup extensions
 */
 /** @namespace std::tr2::__detail
  *  @brief Implementation details not part of the namespace std::tr2 interface.
 */
 /** @namespace __gnu_cxx
  *  @brief GNU extensions for public use.
+ *  @ingroup extensions
 */
 /** @namespace __gnu_cxx::__detail
- *  @brief Implementation details not part of the namespace __gnu_cxx 
+ *  @brief Implementation details not part of the namespace __gnu_cxx
  *  interface.
 */
 /** @namespace __gnu_internal
  *  @brief GNU implemenation details, not for public use or
  *  export. Used only when anonymous namespaces cannot be substituted.
 */
+/** @namespace std::experimental
+ *  @brief Namespace for features defined in ISO Technical Specifications.
+ */
 // // // // // // // // // // // // // // // // // // // // // // // //
 
 /**
@@ -154,4 +162,31 @@ summarized in <a href="tables.html">tables</a>.  */
  *
  * Components for concurrent operations, including threads, mutexes,
  * and condition variables.
+ */
+
+/**
+ * @defgroup variable_templates Variable Templates
+ * @ingroup metaprogramming
+ * @since C++17
+ *
+ * Each trait in `<type_traits>` that has a `value` static data member is
+ * also available as a variable template, using the same name with a `_v`
+ * suffix. For example, `std::is_integral_v<T>` is a `bool` constant with
+ * the same value as `std::is_integral<T>::value`.
+ *
+ * In some cases, using the variable template instead of the `::value` member
+ * avoids instantiating the class template for the trait. This gives the
+ * compiler less work to do and can make your code compile a little faster.
+ */
+
+/**
+ * @defgroup experimental Technical Specifications
+ *
+ * Components specified by various Technical Specifications.
+ *
+ * As indicated by the std::experimental namespace and the header paths,
+ * the contents of these Technical Specifications are experimental and not
+ * part of the C++ standard. As such the interfaces and implementations may
+ * change in the future, and there is <STRONG> no guarantee of compatibility
+ * between different GCC releases </STRONG> for these features.
  */

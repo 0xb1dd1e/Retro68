@@ -1,5 +1,5 @@
 /* Definitions of target machine for GNU compiler, for IBM S/390
-   Copyright (C) 1999-2019 Free Software Foundation, Inc.
+   Copyright (C) 1999-2026 Free Software Foundation, Inc.
    Contributed by Hartmut Penner (hpenner@de.ibm.com) and
 		  Ulrich Weigand (uweigand@de.ibm.com).
 		  Andreas Krebbel (Andreas.Krebbel@de.ibm.com)
@@ -41,12 +41,16 @@ enum processor_flags
   PF_Z14 = 2048,
   PF_VXE = 4096,
   PF_VXE2 = 8192,
-  PF_ARCH13 = 16384
+  PF_Z15 = 16384,
+  PF_NNPA = 32768,
+  PF_Z16 = 65536,
+  PF_VXE3 = 131072,
+  PF_Z17 = 262144
 };
 
 /* This is necessary to avoid a warning about comparing different enum
    types.  */
-#define s390_tune_attr ((enum attr_cpu)(s390_tune > PROCESSOR_8561_ARCH13 ? PROCESSOR_8561_ARCH13 : s390_tune ))
+#define s390_tune_attr ((enum attr_cpu)(s390_tune > PROCESSOR_9175_Z17 ? PROCESSOR_9175_Z17 : s390_tune ))
 
 /* These flags indicate that the generated code should run on a cpu
    providing the respective hardware facility regardless of the
@@ -100,14 +104,30 @@ enum processor_flags
 	(s390_arch_flags & PF_VXE)
 #define TARGET_CPU_VXE_P(opts) \
 	(opts->x_s390_arch_flags & PF_VXE)
-#define TARGET_CPU_ARCH13 \
-	(s390_arch_flags & PF_ARCH13)
-#define TARGET_CPU_ARCH13_P(opts) \
-	(opts->x_s390_arch_flags & PF_ARCH13)
+#define TARGET_CPU_Z15 \
+	(s390_arch_flags & PF_Z15)
+#define TARGET_CPU_Z15_P(opts) \
+	(opts->x_s390_arch_flags & PF_Z15)
 #define TARGET_CPU_VXE2 \
 	(s390_arch_flags & PF_VXE2)
 #define TARGET_CPU_VXE2_P(opts) \
 	(opts->x_s390_arch_flags & PF_VXE2)
+#define TARGET_CPU_Z16 \
+	(s390_arch_flags & PF_Z16)
+#define TARGET_CPU_Z16_P(opts) \
+	(opts->x_s390_arch_flags & PF_Z16)
+#define TARGET_CPU_NNPA \
+	(s390_arch_flags & PF_NNPA)
+#define TARGET_CPU_NNPA_P(opts) \
+	(opts->x_s390_arch_flags & PF_NNPA)
+#define TARGET_CPU_VXE3 \
+	(s390_arch_flags & PF_VXE3)
+#define TARGET_CPU_VXE3_P(opts) \
+	(opts->x_s390_arch_flags & PF_VXE3)
+#define TARGET_CPU_Z17 \
+	(s390_arch_flags & PF_Z17)
+#define TARGET_CPU_Z17_P(opts) \
+	(opts->x_s390_arch_flags & PF_Z17)
 
 #define TARGET_HARD_FLOAT_P(opts) (!TARGET_SOFT_FLOAT_P(opts))
 
@@ -160,13 +180,40 @@ enum processor_flags
 	(TARGET_VX && TARGET_CPU_VXE)
 #define TARGET_VXE_P(opts)						\
 	(TARGET_VX_P (opts) && TARGET_CPU_VXE_P (opts))
-#define TARGET_ARCH13 (TARGET_ZARCH && TARGET_CPU_ARCH13)
-#define TARGET_ARCH13_P(opts)						\
-	(TARGET_ZARCH_P (opts->x_target_flags) && TARGET_CPU_ARCH13_P (opts))
+#define TARGET_Z15 (TARGET_ZARCH && TARGET_CPU_Z15)
+#define TARGET_Z15_P(opts)						\
+	(TARGET_ZARCH_P (opts->x_target_flags) && TARGET_CPU_Z15_P (opts))
 #define TARGET_VXE2					\
 	(TARGET_VX && TARGET_CPU_VXE2)
 #define TARGET_VXE2_P(opts)						\
 	(TARGET_VX_P (opts) && TARGET_CPU_VXE2_P (opts))
+#define TARGET_Z16 (TARGET_ZARCH && TARGET_CPU_Z16)
+#define TARGET_Z16_P(opts)						\
+	(TARGET_ZARCH_P (opts->x_target_flags) && TARGET_CPU_Z16_P (opts))
+#define TARGET_NNPA					\
+	(TARGET_ZARCH && TARGET_CPU_NNPA)
+#define TARGET_NNPA_P(opts)						\
+	(TARGET_ZARCH_P (opts) && TARGET_CPU_NNPA_P (opts))
+#define TARGET_VXE3 \
+	(TARGET_VX && TARGET_CPU_VXE3)
+#define TARGET_VXE3_P(opts)						\
+	(TARGET_VX_P (opts) && TARGET_CPU_VXE3_P (opts))
+#define TARGET_Z17 (TARGET_ZARCH && TARGET_CPU_Z17)
+#define TARGET_Z17_P(opts)						\
+	(TARGET_ZARCH_P (opts->x_target_flags) && TARGET_CPU_Z17_P (opts))
+
+#if defined(HAVE_AS_VECTOR_LOADSTORE_ALIGNMENT_HINTS_ON_Z13)
+#define TARGET_VECTOR_LOADSTORE_ALIGNMENT_HINTS TARGET_Z13
+#elif defined(HAVE_AS_VECTOR_LOADSTORE_ALIGNMENT_HINTS)
+#define TARGET_VECTOR_LOADSTORE_ALIGNMENT_HINTS TARGET_Z14
+#else
+#define TARGET_VECTOR_LOADSTORE_ALIGNMENT_HINTS 0
+#endif
+
+/* Evaluate to true if it is ok to emit a non-signaling vector
+   comparison.  */
+#define TARGET_NONSIGNALING_VECTOR_COMPARE_OK \
+  (TARGET_VX && !TARGET_VXE && (flag_finite_math_only || !flag_trapping_math))
 
 #ifdef HAVE_AS_MACHINE_MACHINEMODE
 #define S390_USE_TARGET_ATTRIBUTE 1
@@ -204,6 +251,9 @@ enum processor_flags
    && (s390_tune < PROCESSOR_2964_Z13 || (VAL) != const0_rtx)		\
    && (!CONST_INT_P (LEN) || INTVAL ((LEN)) > TARGET_SETMEM_PREFETCH_DISTANCE))
 
+#define TARGET_SP_GLOBAL_GUARD (s390_stack_protector_guard == SP_GLOBAL)
+#define TARGET_SP_TLS_GUARD    (s390_stack_protector_guard == SP_TLS)
+
 /* Run-time target specification.  */
 
 /* Defaults for option flags defined only on some subtargets.  */
@@ -217,9 +267,6 @@ enum processor_flags
 /* Target CPU builtins.  */
 #define TARGET_CPU_CPP_BUILTINS() s390_cpu_cpp_builtins (pfile)
 
-/* Target CPU versions for D.  */
-#define TARGET_D_CPU_VERSIONS s390_d_target_versions
-
 #ifdef DEFAULT_TARGET_64BIT
 #define TARGET_DEFAULT     (MASK_64BIT | MASK_ZARCH | MASK_HARD_DFP	\
 			    | MASK_OPT_HTM | MASK_OPT_VX)
@@ -227,11 +274,13 @@ enum processor_flags
 #define TARGET_DEFAULT             0
 #endif
 
-/* Support for configure-time defaults.  */
+/* Support for configure-time defaults.
+   The order here is important so that -march doesn't squash the
+   tune values.  */
 #define OPTION_DEFAULT_SPECS					\
   { "mode", "%{!mesa:%{!mzarch:-m%(VALUE)}}" },			\
-  { "arch", "%{!march=*:-march=%(VALUE)}" },			\
-  { "tune", "%{!mtune=*:%{!march=*:-mtune=%(VALUE)}}" }
+  { "tune", "%{!mtune=*:%{!march=*:-mtune=%(VALUE)}}" },	\
+  { "arch", "%{!march=*:-march=%(VALUE)}" }
 
 #ifdef __s390__
 extern const char *s390_host_detect_local_cpu (int argc, const char **argv);
@@ -259,37 +308,6 @@ extern const char *s390_host_detect_local_cpu (int argc, const char **argv);
   "%{!mesa:%{!mzarch:%{m31:-mesa}%{m64:-mzarch}}}",		\
   "%{!march=*:-march=z900}"
 
-/* Constants needed to control the TEST DATA CLASS (TDC) instruction.  */
-#define S390_TDC_POSITIVE_ZERO                     (1 << 11)
-#define S390_TDC_NEGATIVE_ZERO                     (1 << 10)
-#define S390_TDC_POSITIVE_NORMALIZED_BFP_NUMBER    (1 << 9)
-#define S390_TDC_NEGATIVE_NORMALIZED_BFP_NUMBER    (1 << 8)
-#define S390_TDC_POSITIVE_DENORMALIZED_BFP_NUMBER  (1 << 7)
-#define S390_TDC_NEGATIVE_DENORMALIZED_BFP_NUMBER  (1 << 6)
-#define S390_TDC_POSITIVE_INFINITY                 (1 << 5)
-#define S390_TDC_NEGATIVE_INFINITY                 (1 << 4)
-#define S390_TDC_POSITIVE_QUIET_NAN                (1 << 3)
-#define S390_TDC_NEGATIVE_QUIET_NAN                (1 << 2)
-#define S390_TDC_POSITIVE_SIGNALING_NAN            (1 << 1)
-#define S390_TDC_NEGATIVE_SIGNALING_NAN            (1 << 0)
-
-/* The following values are different for DFP.  */
-#define S390_TDC_POSITIVE_DENORMALIZED_DFP_NUMBER (1 << 9)
-#define S390_TDC_NEGATIVE_DENORMALIZED_DFP_NUMBER (1 << 8)
-#define S390_TDC_POSITIVE_NORMALIZED_DFP_NUMBER   (1 << 7)
-#define S390_TDC_NEGATIVE_NORMALIZED_DFP_NUMBER   (1 << 6)
-
-/* For signbit, the BFP-DFP-difference makes no difference. */
-#define S390_TDC_SIGNBIT_SET (S390_TDC_NEGATIVE_ZERO \
-			  | S390_TDC_NEGATIVE_NORMALIZED_BFP_NUMBER \
-			  | S390_TDC_NEGATIVE_DENORMALIZED_BFP_NUMBER\
-			  | S390_TDC_NEGATIVE_INFINITY \
-			  | S390_TDC_NEGATIVE_QUIET_NAN \
-			  | S390_TDC_NEGATIVE_SIGNALING_NAN )
-
-#define S390_TDC_INFINITY (S390_TDC_POSITIVE_INFINITY \
-			  | S390_TDC_NEGATIVE_INFINITY )
-
 /* Target machine storage layout.  */
 
 /* Everything is big-endian.  */
@@ -298,6 +316,11 @@ extern const char *s390_host_detect_local_cpu (int argc, const char **argv);
 #define WORDS_BIG_ENDIAN 1
 
 #define STACK_SIZE_MODE (Pmode)
+
+/* Make the stack pointer to be moved downwards while issuing stack probes with
+   -fstack-check.  We need this to prevent memory below the stack pointer from
+   being accessed.  */
+#define STACK_CHECK_MOVING_SP 1
 
 #ifndef IN_LIBGCC2
 
@@ -362,11 +385,8 @@ extern const char *s390_host_detect_local_cpu (int argc, const char **argv);
 #define INT_TYPE_SIZE 32
 #define LONG_TYPE_SIZE (TARGET_64BIT ? 64 : 32)
 #define LONG_LONG_TYPE_SIZE 64
-#define FLOAT_TYPE_SIZE 32
-#define DOUBLE_TYPE_SIZE 64
-#define LONG_DOUBLE_TYPE_SIZE (TARGET_LONG_DOUBLE_128 ? 128 : 64)
 
-/* Work around target_flags dependency in ada/targtyps.c.  */
+/* Work around target_flags dependency in ada/targtyps.cc.  */
 #define WIDEST_HARDWARE_FP_SIZE 64
 
 /* We use "unsigned char" as default.  */
@@ -452,22 +472,6 @@ extern const char *s390_host_detect_local_cpu (int argc, const char **argv);
   0, 0, 0, 0,					\
   0, 0, 0, 0,					\
   0, 0, 0, 0 }
-
-#define CALL_USED_REGISTERS			\
-{ 1, 1, 1, 1,					\
-  1, 1, 0, 0,					\
-  0, 0, 0, 0,					\
-  0, 1, 1, 1,					\
-  1, 1, 1, 1,					\
-  1, 1, 1, 1,					\
-  1, 1, 1, 1,					\
-  1, 1, 1, 1,					\
-  1, 1, 1, 1,					\
-  1, 1,						\
-  1, 1, 1, 1,					\
-  1, 1, 1, 1,					\
-  1, 1, 1, 1,					\
-  1, 1, 1, 1 }
 
 #define CALL_REALLY_USED_REGISTERS		\
 { 1, 1, 1, 1,	/* r0 - r15 */			\
@@ -683,7 +687,7 @@ extern const enum reg_class regclass_map[FIRST_PSEUDO_REGISTER];
 /* Define the dwarf register mapping.
    v16-v31 -> 68-83
    rX      -> X      otherwise  */
-#define DBX_REGISTER_NUMBER(regno)				\
+#define DEBUGGER_REGNO(regno)				\
   (((regno) >= 38 && (regno) <= 53) ? (regno) + 30 : (regno))
 
 /* Frame registers.  */
@@ -770,6 +774,8 @@ CUMULATIVE_ARGS;
 
 #define PROFILE_BEFORE_PROLOGUE 1
 
+#define NO_PROFILE_COUNTERS 1
+
 
 /* Trampolines for nested functions.  */
 
@@ -793,7 +799,7 @@ CUMULATIVE_ARGS;
 
 /* Try a machine-dependent way of reloading an illegitimate address
    operand.  If we find one, push the reload and jump to WIN.  This
-   macro is used in only one place: `find_reloads_address' in reload.c.  */
+   macro is used in only one place: `find_reloads_address' in reload.cc.  */
 #define LEGITIMIZE_RELOAD_ADDRESS(AD, MODE, OPNUM, TYPE, IND, WIN)	\
   do {									\
     rtx new_rtx = legitimize_reload_address ((AD), (MODE),		\
@@ -805,7 +811,7 @@ CUMULATIVE_ARGS;
       }									\
   } while (0)
 
-/* Helper macro for s390.c and s390.md to check for symbolic constants.  */
+/* Helper macro for s390.cc and s390.md to check for symbolic constants.  */
 #define SYMBOLIC_CONST(X)						\
   (GET_CODE (X) == SYMBOL_REF						\
    || GET_CODE (X) == LABEL_REF						\
@@ -998,7 +1004,10 @@ do {									\
 #define FUNCTION_MODE QImode
 
 /* Specify the value which is used when clz operand is zero.  */
-#define CLZ_DEFINED_VALUE_AT_ZERO(MODE, VALUE) ((VALUE) = 64, 1)
+#define CLZ_DEFINED_VALUE_AT_ZERO(MODE, VALUE) ((VALUE) = GET_MODE_PRECISION (MODE), 2)
+
+/* Specify the value which is used when ctz operand is zero.  */
+#define CTZ_DEFINED_VALUE_AT_ZERO(MODE, VALUE) ((VALUE) = 64, 2)
 
 /* Machine-specific symbol_ref flags.  */
 #define SYMBOL_FLAG_ALIGN_SHIFT	  SYMBOL_FLAG_MACH_DEP_SHIFT
@@ -1188,5 +1197,41 @@ struct GTY(()) machine_function
 
 #define TARGET_INDIRECT_BRANCH_TABLE s390_indirect_branch_table
 
+#ifdef GENERATOR_FILE
+/* gencondmd.cc is built before insn-flags.h.  Use an arbitrary opaque value
+   that cannot be optimized away by gen_insn.  */
+#define HAVE_TF(icode) TARGET_HARD_FLOAT
+#else
+#define HAVE_TF(icode) (HAVE_##icode##_fpr || HAVE_##icode##_vr)
+#endif
+
+/* Dispatcher for movtf.  */
+#define EXPAND_MOVTF(icode)                                                   \
+  do                                                                          \
+    {                                                                         \
+      if (TARGET_VXE)                                                         \
+	emit_insn (gen_##icode##_vr (operands[0], operands[1]));              \
+      else                                                                    \
+	emit_insn (gen_##icode##_fpr (operands[0], operands[1]));             \
+      DONE;                                                                   \
+    }                                                                         \
+  while (false)
+
+/* Like EXPAND_MOVTF, but also legitimizes operands.  */
+#define EXPAND_TF(icode, nops)                                                \
+  do                                                                          \
+    {                                                                         \
+      const size_t __nops = (nops);                                           \
+      expand_operand ops[__nops];                                             \
+      create_output_operand (&ops[0], operands[0], GET_MODE (operands[0]));   \
+      for (size_t i = 1; i < __nops; i++)                                     \
+	create_input_operand (&ops[i], operands[i], GET_MODE (operands[i]));  \
+      if (TARGET_VXE)                                                         \
+	expand_insn (CODE_FOR_##icode##_vr, __nops, ops);                     \
+      else                                                                    \
+	expand_insn (CODE_FOR_##icode##_fpr, __nops, ops);                    \
+      DONE;                                                                   \
+    }                                                                         \
+  while (false)
 
 #endif /* S390_H */

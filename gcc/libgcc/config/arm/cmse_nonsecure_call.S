@@ -1,7 +1,7 @@
 /* CMSE wrapper function used to save, clear and restore callee saved registers
    for cmse_nonsecure_call's.
 
-   Copyright (C) 2016-2019 Free Software Foundation, Inc.
+   Copyright (C) 2016-2026 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is free software; you can redistribute it and/or modify it
@@ -25,7 +25,7 @@
 
 .syntax unified
 #ifdef __ARM_PCS_VFP
-# if __ARM_FP & 0x8
+# if (__ARM_FP & 0x8) || (__ARM_FEATURE_MVE & 1)
 	.fpu fpv5-d16
 # else
 	.fpu fpv4-sp-d16
@@ -33,6 +33,7 @@
 #endif
 
 .thumb
+.type __gnu_cmse_nonsecure_call, %function
 .global __gnu_cmse_nonsecure_call
 __gnu_cmse_nonsecure_call:
 #if defined(__ARM_ARCH_8M_MAIN__)
@@ -59,7 +60,7 @@ vmov	    s24, s25, r5, r5
 vmov	    s26, s27, r5, r5
 vmov	    s28, s29, r5, r5
 vmov	    s30, s31, r5, r5
-#elif __ARM_FP & 0x08
+#elif (__ARM_FP & 0x8) || (__ARM_FEATURE_MVE & 1)
 vmov.f64    d9, d8
 vmov.f64    d10, d8
 vmov.f64    d11, d8
@@ -102,6 +103,11 @@ blxns	    r4
 #ifdef __ARM_PCS_VFP
 vpop.f64    {d8-d15}
 #else
+/* VLLDM erratum mitigation sequence. */
+mrs	    r5, control
+tst	    r5, #8	  /* CONTROL_S.SFPA */
+it	    ne
+.inst.w	    0xeeb00a40	  /* vmovne s0, s0 */
 vlldm	    sp		  /* Lazy restore of d0-d16 and FPSCR.  */
 add	    sp, sp, #0x88 /* Free space used to save floating point registers.  */
 #endif /* __ARM_PCS_VFP */
@@ -137,3 +143,4 @@ pop	    {r5-r7, pc}
 #else
 #error "This should only be used for armv8-m base- and mainline."
 #endif
+.size __gnu_cmse_nonsecure_call, .-__gnu_cmse_nonsecure_call

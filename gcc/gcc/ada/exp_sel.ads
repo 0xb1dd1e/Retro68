@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -31,29 +31,23 @@ with Types; use Types;
 package Exp_Sel is
 
    function Build_Abort_Block
-     (Loc         : Source_Ptr;
-      Abr_Blk_Ent : Entity_Id;
-      Cln_Blk_Ent : Entity_Id;
-      Blk         : Node_Id) return Node_Id;
+     (Loc     : Source_Ptr;
+      Blk_Ent : Entity_Id;
+      Blk     : Node_Id) return Node_Id;
    --  Generate:
    --    begin
    --       Blk
    --    exception
-   --       when Abort_Signal => Abort_Undefer / null;
+   --       when Abort_Signal => null;
    --    end;
-   --  Abr_Blk_Ent is the name of the generated block, Cln_Blk_Ent is the name
-   --  of the encapsulated cleanup block, Blk is the actual block name.
+   --  Blk_Ent is the identifier of Blk.
    --  The exception handler code is built by Build_Abort_Block_Handler.
 
    function Build_Abort_Block_Handler (Loc : Source_Ptr) return Node_Id;
-   --  Generate if front-end exception:
-   --    when others =>
-   --      Abort_Undefer;
-   --  or if back-end exception:
-   --    when others =>
-   --      null;
+   --  Generate:
+   --    when Abort_Signal => null;
    --  This is an exception handler to stop propagation of aborts, without
-   --  modifying the deferal level.
+   --  modifying the deferral level.
 
    function Build_B
      (Loc   : Source_Ptr;

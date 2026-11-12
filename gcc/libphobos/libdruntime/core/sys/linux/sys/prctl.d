@@ -8,7 +8,6 @@ module core.sys.linux.sys.prctl;
 
 version (linux):
 extern (C):
-@system:
 @nogc:
 nothrow:
 
@@ -141,7 +140,7 @@ struct prctl_mm_map
     ulong*   auxv;
     uint     auxv_size;
     uint     exe_fd;
-};
+}
 
 int prctl(int option, size_t arg2, size_t arg3, size_t arg4, size_t arg5);
 

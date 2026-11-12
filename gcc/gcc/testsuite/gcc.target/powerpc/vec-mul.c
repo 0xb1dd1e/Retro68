@@ -1,5 +1,5 @@
-/* { dg-do run { target { powerpc64*-*-* } } } */
-/* { dg-require-effective-target powerpc_vsx_ok } */
+/* { dg-do compile { target { { ! vsx_hw } && powerpc_vsx } } } */
+/* { dg-do run { target vsx_hw } } */
 /* { dg-options "-mvsx -O3" } */
 
 /* Test that the vec_mul builtin works as expected.  */

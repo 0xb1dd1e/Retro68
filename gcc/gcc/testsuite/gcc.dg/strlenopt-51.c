@@ -17,7 +17,7 @@
 /* Macro to emit a call to funcation named
      call_in_true_branch_not_eliminated_on_line_NNN()
    for each call that's expected to be eliminated.  The dg-final
-   scan-tree-dump-time directive at the bottom of the test verifies
+   scan-tree-dump-times directive at the bottom of the test verifies
    that no such call appears in output.  */
 #define ELIM(expr) \
   if (!(expr)) FAIL (in_true_branch_not_eliminated, __COUNTER__); else (void)0
@@ -84,4 +84,4 @@ void test_elim_a9_9 (unsigned i)
   T (0); T (1); T (2); T (3); T (4); T (5); T (6); T (7); T (8);
 }
 
-/* { dg-final { scan-tree-dump-times "strlen" 0 "gimple" } } */
+/* { dg-final { scan-tree-dump-times "strlen1" 0 "gimple" } } */

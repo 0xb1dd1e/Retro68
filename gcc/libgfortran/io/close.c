@@ -1,4 +1,4 @@
-/* Copyright (C) 2002-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2002-2026 Free Software Foundation, Inc.
    Contributed by Andy Vaught
 
 This file is part of the GNU Fortran 95 runtime library (libgfortran).
@@ -31,7 +31,7 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #endif
 
 typedef enum
-{ CLOSE_DELETE, CLOSE_KEEP, CLOSE_UNSPECIFIED }
+{ CLOSE_INVALID = - 1, CLOSE_DELETE, CLOSE_KEEP, CLOSE_UNSPECIFIED }
 close_status;
 
 static const st_option status_opt[] = {
@@ -61,6 +61,12 @@ st_close (st_parameter_close *clp)
     find_option (&clp->common, clp->status, clp->status_len,
 		 status_opt, "Bad STATUS parameter in CLOSE statement");
 
+  if (status == CLOSE_INVALID)
+    {
+      library_end ();
+      return;
+    }
+
   u = find_unit (clp->common.unit);
 
   if (ASYNC_IO && u && u->au)
@@ -78,8 +84,17 @@ st_close (st_parameter_close *clp)
 
   if (u != NULL)
     {
-      if (close_share (u) < 0)
-	generate_error (&clp->common, LIBERROR_OS, "Problem in CLOSE");
+      if (u->s == NULL)
+	{
+	  if (u->unit_number < 0)
+	    generate_error (&clp->common, LIBERROR_BAD_UNIT,
+			    "Unit number is negative with no associated file");
+	  library_end ();
+	  return;
+	}
+      else
+	if (close_share (u) < 0)
+	  generate_error (&clp->common, LIBERROR_OS, "Problem in CLOSE");
       if (u->flags.status == STATUS_SCRATCH)
 	{
 	  if (status == CLOSE_KEEP)

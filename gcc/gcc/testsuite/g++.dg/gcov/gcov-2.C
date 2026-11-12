@@ -1,7 +1,7 @@
 /* Verify line coverage counts for simple member functions. */
 
-/* { dg-options "-fprofile-arcs -ftest-coverage" } */
-/* { dg-do run { target native } } */
+/* { dg-options "-fprofile-arcs -ftest-coverage -fno-implicit-constexpr" } */
+/* { dg-do run } */
 
 class C {
 public:
@@ -20,9 +20,9 @@ private:
 
 void foo()
 {
-  C c;					/* count(2) */
+  C c;					/* count(1) */
   c.seti (1);				/* count(1) */
-}
+}					/* count(1) */
 
 int main()
 {

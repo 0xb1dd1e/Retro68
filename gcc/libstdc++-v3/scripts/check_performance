@@ -32,11 +32,14 @@ SH_FLAG="-Wl,--rpath -Wl,$BUILD_DIR/../../gcc \
          -Wl,--rpath -Wl,$BUILD_DIR/src/.libs"
 ST_FLAG="-static"
 LINK=$SH_FLAG
-CXX="$COMPILER $INCLUDES $FLAGS -std=gnu++0x $CXXFLAGS $LINK"
+CXX="$COMPILER $INCLUDES $FLAGS -std=gnu++11 $CXXFLAGS $LINK"
 LIBS="./libtestc++.a"
 TESTS_FILE="testsuite_files_performance"
 
 echo CXX is $CXX
+
+
+echo "=== $(date -u) ===" >> $BUILD_DIR/testsuite/libstdc++-performance.sum
 
 for NAME in `cat $TESTS_FILE`
 do

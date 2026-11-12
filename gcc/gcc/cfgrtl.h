@@ -1,5 +1,5 @@
 /* Define control flow data structures for the CFG.
-   Copyright (C) 2014-2019 Free Software Foundation, Inc.
+   Copyright (C) 2014-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -26,8 +26,9 @@ extern void delete_insn_chain (rtx, rtx_insn *, bool);
 extern basic_block create_basic_block_structure (rtx_insn *, rtx_insn *,
 						 rtx_note *, basic_block);
 extern void compute_bb_for_insn (void);
-extern unsigned int free_bb_for_insn (void);
+extern void free_bb_for_insn (void);
 extern rtx_insn *entry_of_function (void);
+extern void update_bb_for_insn_chain (rtx_insn *, rtx_insn *, basic_block);
 extern void update_bb_for_insn (basic_block);
 extern bool contains_no_active_insn_p (const_basic_block);
 extern bool forwarder_block_p (const_basic_block);
@@ -38,6 +39,7 @@ extern edge try_redirect_by_replacing_jump (edge, basic_block, bool);
 extern void emit_barrier_after_bb (basic_block bb);
 extern basic_block force_nonfallthru_and_redirect (edge, basic_block, rtx);
 extern void insert_insn_on_edge (rtx, edge);
+extern void prepend_insn_to_edge (rtx, edge);
 extern void commit_one_edge_insertion (edge e);
 extern void commit_edge_insertions (void);
 extern void print_rtl_with_bb (FILE *, const rtx_insn *, dump_flags_t);
@@ -47,9 +49,11 @@ extern void fixup_partitions (void);
 extern bool purge_dead_edges (basic_block);
 extern bool purge_all_dead_edges (void);
 extern bool fixup_abnormal_edges (void);
+extern void update_cfg_for_uncondjump (rtx_insn *);
 extern rtx_insn *unlink_insn_chain (rtx_insn *, rtx_insn *);
 extern void relink_block_chain (bool);
-extern rtx_insn *duplicate_insn_chain (rtx_insn *, rtx_insn *);
+extern rtx_insn *duplicate_insn_chain (rtx_insn *, rtx_insn *,
+				       class loop *, class copy_bb_data *);
 extern void cfg_layout_initialize (int);
 extern void cfg_layout_finalize (void);
 extern void break_superblocks (void);

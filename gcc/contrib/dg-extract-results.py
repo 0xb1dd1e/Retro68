@@ -1,6 +1,6 @@
 #!/usr/bin/python
 #
-# Copyright (C) 2014 Free Software Foundation, Inc.
+# Copyright (C) 2014-2026 Free Software Foundation, Inc.
 #
 # This script is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -113,11 +113,12 @@ class Prog:
         # Whether to create .sum rather than .log output.
         self.do_sum = True
         # Regexps used while parsing.
-        self.test_run_re = re.compile (r'^Test Run By (\S+) on (.*)$')
+        self.test_run_re = re.compile (r'^Test run by (\S+) on (.*)$',
+                                       re.IGNORECASE)
         self.tool_re = re.compile (r'^\t\t=== (.*) tests ===$')
         self.result_re = re.compile (r'^(PASS|XPASS|FAIL|XFAIL|UNRESOLVED'
                                      r'|WARNING|ERROR|UNSUPPORTED|UNTESTED'
-                                     r'|KFAIL):\s*(.+)')
+                                     r'|KFAIL|KPASS|PATH|DUPLICATE):\s*(.+)')
         self.completed_re = re.compile (r'.* completed at (.*)')
         # Pieces of text to write at the head of the output.
         # start_line is a pair in which the first element is a datetime
@@ -143,7 +144,10 @@ class Prog:
             '# of known failures\t\t',
             '# of untested testcases\t\t',
             '# of unresolved testcases\t',
-            '# of unsupported tests\t\t'
+            '# of unsupported tests\t\t',
+            '# of paths in test names\t',
+            '# of duplicate test names\t',
+            '# of unexpected core files\t'
         ]
         self.runs = dict()
 

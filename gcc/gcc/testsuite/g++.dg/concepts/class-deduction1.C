@@ -2,7 +2,7 @@
 // { dg-options "-fconcepts" }
 
 template <class T>
-concept bool Isint = __is_same_as(T,int);
+concept Isint = __is_same_as(T,int);
 
 template <class T>
 struct A

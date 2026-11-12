@@ -1,5 +1,5 @@
 /* tc-sh.c -- Assemble code for the Renesas / SuperH SH
-   Copyright (C) 1993-2018 Free Software Foundation, Inc.
+   Copyright (C) 1993-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -25,7 +25,6 @@
 #define DEFINE_TABLE
 #include "opcodes/sh-opc.h"
 #include "safe-ctype.h"
-#include "struc-symbol.h"
 
 #ifdef OBJ_ELF
 #include "elf/sh.h"
@@ -241,7 +240,7 @@ const relax_typeS md_relax_table[C (END, 0)] = {
 
 #undef EMPTY
 
-static struct hash_control *opcode_hash_control;	/* Opcode mnemonics */
+static htab_t opcode_hash_control;	/* Opcode mnemonics */
 
 
 #ifdef OBJ_ELF
@@ -446,14 +445,14 @@ sh_elf_cons (int nbytes)
   do
     {
       expression (&exp);
-      emit_expr (&exp, (unsigned int) nbytes);
+      emit_expr (&exp, nbytes);
     }
   while (*input_line_pointer++ == ',');
 
   input_line_pointer--;		/* Put terminator back into stream.  */
   if (*input_line_pointer == '#' || *input_line_pointer == '!')
     {
-       while (! is_end_of_line[(unsigned char) *input_line_pointer++]);
+       while (! is_end_of_stmt (*input_line_pointer++));
     }
   else
     demand_empty_rest_of_line ();
@@ -462,7 +461,7 @@ sh_elf_cons (int nbytes)
 /* The regular frag_offset_fixed_p doesn't work for rs_align_test
    frags.  */
 
-static bfd_boolean
+static bool
 align_test_frag_offset_fixed_p (const fragS *frag1, const fragS *frag2,
 				bfd_vma *offset)
 {
@@ -475,7 +474,7 @@ align_test_frag_offset_fixed_p (const fragS *frag1, const fragS *frag2,
   if (frag1 == frag2)
     {
       *offset = off;
-      return TRUE;
+      return true;
     }
 
   /* Maybe frag2 is after frag1.  */
@@ -493,7 +492,7 @@ align_test_frag_offset_fixed_p (const fragS *frag1, const fragS *frag2,
       if (frag == frag2)
 	{
 	  *offset = off;
-	  return TRUE;
+	  return true;
 	}
     }
 
@@ -513,11 +512,11 @@ align_test_frag_offset_fixed_p (const fragS *frag1, const fragS *frag2,
       if (frag == frag1)
 	{
 	  *offset = off;
-	  return TRUE;
+	  return true;
 	}
     }
 
-  return FALSE;
+  return false;
 }
 
 /* Optimize a difference of symbols which have rs_align_test frag if
@@ -545,6 +544,7 @@ sh_optimize_expr (expressionS *l, operatorT op, expressionS *r)
       add_to_result (l, symval_diff, symval_diff < 0);
       l->X_op = O_constant;
       l->X_add_symbol = 0;
+      l->X_unsigned = 0;
       return 1;
     }
   return 0;
@@ -565,7 +565,7 @@ md_begin (void)
     = preset_target_arch ? preset_target_arch : arch_sh_up & ~arch_sh_has_dsp;
   valid_arch = target_arch;
 
-  opcode_hash_control = hash_new ();
+  opcode_hash_control = str_htab_create ();
 
   /* Insert unique names into hash table.  */
   for (opcode = sh_table; opcode->name; opcode++)
@@ -575,7 +575,7 @@ md_begin (void)
 	  if (!SH_MERGE_ARCH_SET_VALID (opcode->arch, target_arch))
 	    continue;
 	  prev_name = opcode->name;
-	  hash_insert (opcode_hash_control, opcode->name, (char *) opcode);
+	  str_hash_insert (opcode_hash_control, opcode->name, opcode, 0);
 	}
     }
 }
@@ -605,7 +605,7 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
       if (l1 == '1')
 	{
 	  if (src[2] >= '0' && src[2] <= '5'
-	      && ! IDENT_CHAR ((unsigned char) src[3]))
+	      && ! IDENT_CHAR (src[3]))
 	    {
 	      *mode = A_REG_N;
 	      *reg = 10 + src[2] - '0';
@@ -613,26 +613,26 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
 	    }
 	}
       if (l1 >= '0' && l1 <= '9'
-	  && ! IDENT_CHAR ((unsigned char) src[2]))
+	  && ! IDENT_CHAR (src[2]))
 	{
 	  *mode = A_REG_N;
 	  *reg = (l1 - '0');
 	  return 2;
 	}
       if (l1 >= '0' && l1 <= '7' && strncasecmp (&src[2], "_bank", 5) == 0
-	  && ! IDENT_CHAR ((unsigned char) src[7]))
+	  && ! IDENT_CHAR (src[7]))
 	{
 	  *mode = A_REG_B;
 	  *reg  = (l1 - '0');
 	  return 7;
 	}
 
-      if (l1 == 'e' && ! IDENT_CHAR ((unsigned char) src[2]))
+      if (l1 == 'e' && ! IDENT_CHAR (src[2]))
 	{
 	  *mode = A_RE;
 	  return 2;
 	}
-      if (l1 == 's' && ! IDENT_CHAR ((unsigned char) src[2]))
+      if (l1 == 's' && ! IDENT_CHAR (src[2]))
 	{
 	  *mode = A_RS;
 	  return 2;
@@ -643,13 +643,13 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
     {
       if (l1 == '0')
 	{
-	  if (! IDENT_CHAR ((unsigned char) src[2]))
+	  if (! IDENT_CHAR (src[2]))
 	    {
 	      *mode = DSP_REG_N;
 	      *reg = A_A0_NUM;
 	      return 2;
 	    }
-	  if (TOLOWER (src[2]) == 'g' && ! IDENT_CHAR ((unsigned char) src[3]))
+	  if (TOLOWER (src[2]) == 'g' && ! IDENT_CHAR (src[3]))
 	    {
 	      *mode = DSP_REG_N;
 	      *reg = A_A0G_NUM;
@@ -658,13 +658,13 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
 	}
       if (l1 == '1')
 	{
-	  if (! IDENT_CHAR ((unsigned char) src[2]))
+	  if (! IDENT_CHAR (src[2]))
 	    {
 	      *mode = DSP_REG_N;
 	      *reg = A_A1_NUM;
 	      return 2;
 	    }
-	  if (TOLOWER (src[2]) == 'g' && ! IDENT_CHAR ((unsigned char) src[3]))
+	  if (TOLOWER (src[2]) == 'g' && ! IDENT_CHAR (src[3]))
 	    {
 	      *mode = DSP_REG_N;
 	      *reg = A_A1G_NUM;
@@ -673,21 +673,21 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
 	}
 
       if (l1 == 'x' && src[2] >= '0' && src[2] <= '1'
-	  && ! IDENT_CHAR ((unsigned char) src[3]))
+	  && ! IDENT_CHAR (src[3]))
 	{
 	  *mode = A_REG_N;
 	  *reg = 4 + (l1 - '0');
 	  return 3;
 	}
       if (l1 == 'y' && src[2] >= '0' && src[2] <= '1'
-	  && ! IDENT_CHAR ((unsigned char) src[3]))
+	  && ! IDENT_CHAR (src[3]))
 	{
 	  *mode = A_REG_N;
 	  *reg = 6 + (l1 - '0');
 	  return 3;
 	}
       if (l1 == 's' && src[2] >= '0' && src[2] <= '3'
-	  && ! IDENT_CHAR ((unsigned char) src[3]))
+	  && ! IDENT_CHAR (src[3]))
 	{
 	  int n = l1 - '0';
 
@@ -697,7 +697,7 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
 	}
     }
 
-  if (l0 == 'i' && l1 && ! IDENT_CHAR ((unsigned char) src[2]))
+  if (l0 == 'i' && l1 && ! IDENT_CHAR (src[2]))
     {
       if (l1 == 's')
 	{
@@ -720,7 +720,7 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
     }
 
   if (l0 == 'x' && l1 >= '0' && l1 <= '1'
-      && ! IDENT_CHAR ((unsigned char) src[2]))
+      && ! IDENT_CHAR (src[2]))
     {
       *mode = DSP_REG_N;
       *reg = A_X0_NUM + l1 - '0';
@@ -728,7 +728,7 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
     }
 
   if (l0 == 'y' && l1 >= '0' && l1 <= '1'
-      && ! IDENT_CHAR ((unsigned char) src[2]))
+      && ! IDENT_CHAR (src[2]))
     {
       *mode = DSP_REG_N;
       *reg = A_Y0_NUM + l1 - '0';
@@ -736,7 +736,7 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
     }
 
   if (l0 == 'm' && l1 >= '0' && l1 <= '1'
-      && ! IDENT_CHAR ((unsigned char) src[2]))
+      && ! IDENT_CHAR (src[2]))
     {
       *mode = DSP_REG_N;
       *reg = l1 == '0' ? A_M0_NUM : A_M1_NUM;
@@ -745,59 +745,59 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
 
   if (l0 == 's'
       && l1 == 's'
-      && TOLOWER (src[2]) == 'r' && ! IDENT_CHAR ((unsigned char) src[3]))
+      && TOLOWER (src[2]) == 'r' && ! IDENT_CHAR (src[3]))
     {
       *mode = A_SSR;
       return 3;
     }
 
   if (l0 == 's' && l1 == 'p' && TOLOWER (src[2]) == 'c'
-      && ! IDENT_CHAR ((unsigned char) src[3]))
+      && ! IDENT_CHAR (src[3]))
     {
       *mode = A_SPC;
       return 3;
     }
 
   if (l0 == 's' && l1 == 'g' && TOLOWER (src[2]) == 'r'
-      && ! IDENT_CHAR ((unsigned char) src[3]))
+      && ! IDENT_CHAR (src[3]))
     {
       *mode = A_SGR;
       return 3;
     }
 
   if (l0 == 'd' && l1 == 's' && TOLOWER (src[2]) == 'r'
-      && ! IDENT_CHAR ((unsigned char) src[3]))
+      && ! IDENT_CHAR (src[3]))
     {
       *mode = A_DSR;
       return 3;
     }
 
   if (l0 == 'd' && l1 == 'b' && TOLOWER (src[2]) == 'r'
-      && ! IDENT_CHAR ((unsigned char) src[3]))
+      && ! IDENT_CHAR (src[3]))
     {
       *mode = A_DBR;
       return 3;
     }
 
-  if (l0 == 's' && l1 == 'r' && ! IDENT_CHAR ((unsigned char) src[2]))
+  if (l0 == 's' && l1 == 'r' && ! IDENT_CHAR (src[2]))
     {
       *mode = A_SR;
       return 2;
     }
 
-  if (l0 == 's' && l1 == 'p' && ! IDENT_CHAR ((unsigned char) src[2]))
+  if (l0 == 's' && l1 == 'p' && ! IDENT_CHAR (src[2]))
     {
       *mode = A_REG_N;
       *reg = 15;
       return 2;
     }
 
-  if (l0 == 'p' && l1 == 'r' && ! IDENT_CHAR ((unsigned char) src[2]))
+  if (l0 == 'p' && l1 == 'r' && ! IDENT_CHAR (src[2]))
     {
       *mode = A_PR;
       return 2;
     }
-  if (l0 == 'p' && l1 == 'c' && ! IDENT_CHAR ((unsigned char) src[2]))
+  if (l0 == 'p' && l1 == 'c' && ! IDENT_CHAR (src[2]))
     {
       /* Don't use A_DISP_PC here - that would accept stuff like 'mova pc,r0'
          and use an uninitialized immediate.  */
@@ -805,26 +805,26 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
       return 2;
     }
   if (l0 == 'g' && l1 == 'b' && TOLOWER (src[2]) == 'r'
-      && ! IDENT_CHAR ((unsigned char) src[3]))
+      && ! IDENT_CHAR (src[3]))
     {
       *mode = A_GBR;
       return 3;
     }
   if (l0 == 'v' && l1 == 'b' && TOLOWER (src[2]) == 'r'
-      && ! IDENT_CHAR ((unsigned char) src[3]))
+      && ! IDENT_CHAR (src[3]))
     {
       *mode = A_VBR;
       return 3;
     }
 
   if (l0 == 't' && l1 == 'b' && TOLOWER (src[2]) == 'r'
-      && ! IDENT_CHAR ((unsigned char) src[3]))
+      && ! IDENT_CHAR (src[3]))
     {
       *mode = A_TBR;
       return 3;
     }
   if (l0 == 'm' && l1 == 'a' && TOLOWER (src[2]) == 'c'
-      && ! IDENT_CHAR ((unsigned char) src[4]))
+      && ! IDENT_CHAR (src[4]))
     {
       if (TOLOWER (src[3]) == 'l')
 	{
@@ -838,7 +838,7 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
 	}
     }
   if (l0 == 'm' && l1 == 'o' && TOLOWER (src[2]) == 'd'
-      && ! IDENT_CHAR ((unsigned char) src[3]))
+      && ! IDENT_CHAR (src[3]))
     {
       *mode = A_MOD;
       return 3;
@@ -848,7 +848,7 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
       if (src[2] == '1')
 	{
 	  if (src[3] >= '0' && src[3] <= '5'
-	      && ! IDENT_CHAR ((unsigned char) src[4]))
+	      && ! IDENT_CHAR (src[4]))
 	    {
 	      *mode = F_REG_N;
 	      *reg = 10 + src[3] - '0';
@@ -856,7 +856,7 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
 	    }
 	}
       if (src[2] >= '0' && src[2] <= '9'
-	  && ! IDENT_CHAR ((unsigned char) src[3]))
+	  && ! IDENT_CHAR (src[3]))
 	{
 	  *mode = F_REG_N;
 	  *reg = (src[2] - '0');
@@ -868,7 +868,7 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
       if (src[2] == '1')
 	{
 	  if (src[3] >= '0' && src[3] <= '4' && ! ((src[3] - '0') & 1)
-	      && ! IDENT_CHAR ((unsigned char) src[4]))
+	      && ! IDENT_CHAR (src[4]))
 	    {
 	      *mode = D_REG_N;
 	      *reg = 10 + src[3] - '0';
@@ -876,7 +876,7 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
 	    }
 	}
       if (src[2] >= '0' && src[2] <= '8' && ! ((src[2] - '0') & 1)
-	  && ! IDENT_CHAR ((unsigned char) src[3]))
+	  && ! IDENT_CHAR (src[3]))
 	{
 	  *mode = D_REG_N;
 	  *reg = (src[2] - '0');
@@ -888,7 +888,7 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
       if (src[2] == '1')
 	{
 	  if (src[3] >= '0' && src[3] <= '4' && ! ((src[3] - '0') & 1)
-	      && ! IDENT_CHAR ((unsigned char) src[4]))
+	      && ! IDENT_CHAR (src[4]))
 	    {
 	      *mode = X_REG_N;
 	      *reg = 11 + src[3] - '0';
@@ -896,7 +896,7 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
 	    }
 	}
       if (src[2] >= '0' && src[2] <= '8' && ! ((src[2] - '0') & 1)
-	  && ! IDENT_CHAR ((unsigned char) src[3]))
+	  && ! IDENT_CHAR (src[3]))
 	{
 	  *mode = X_REG_N;
 	  *reg = (src[2] - '0') + 1;
@@ -905,14 +905,14 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
     }
   if (l0 == 'f' && l1 == 'v')
     {
-      if (src[2] == '1'&& src[3] == '2' && ! IDENT_CHAR ((unsigned char) src[4]))
+      if (src[2] == '1'&& src[3] == '2' && ! IDENT_CHAR (src[4]))
 	{
 	  *mode = V_REG_N;
 	  *reg = 12;
 	  return 4;
 	}
       if ((src[2] == '0' || src[2] == '4' || src[2] == '8')
-	  && ! IDENT_CHAR ((unsigned char) src[3]))
+	  && ! IDENT_CHAR (src[3]))
 	{
 	  *mode = V_REG_N;
 	  *reg = (src[2] - '0');
@@ -921,7 +921,7 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
     }
   if (l0 == 'f' && l1 == 'p' && TOLOWER (src[2]) == 'u'
       && TOLOWER (src[3]) == 'l'
-      && ! IDENT_CHAR ((unsigned char) src[4]))
+      && ! IDENT_CHAR (src[4]))
     {
       *mode = FPUL_N;
       return 4;
@@ -929,7 +929,7 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
 
   if (l0 == 'f' && l1 == 'p' && TOLOWER (src[2]) == 's'
       && TOLOWER (src[3]) == 'c'
-      && TOLOWER (src[4]) == 'r' && ! IDENT_CHAR ((unsigned char) src[5]))
+      && TOLOWER (src[4]) == 'r' && ! IDENT_CHAR (src[5]))
     {
       *mode = FPSCR_N;
       return 5;
@@ -937,7 +937,7 @@ parse_reg_without_prefix (char *src, sh_arg_type *mode, int *reg)
 
   if (l0 == 'x' && l1 == 'm' && TOLOWER (src[2]) == 't'
       && TOLOWER (src[3]) == 'r'
-      && TOLOWER (src[4]) == 'x' && ! IDENT_CHAR ((unsigned char) src[5]))
+      && TOLOWER (src[4]) == 'x' && ! IDENT_CHAR (src[5]))
     {
       *mode = XMTRX_M4;
       return 5;
@@ -1223,21 +1223,23 @@ static char *
 get_operands (sh_opcode_info *info, char *args, sh_operand_info *operand)
 {
   char *ptr = args;
+
+  operand[0].type = 0;
+  operand[1].type = 0;
+  operand[2].type = 0;
   if (info->arg[0])
     {
       /* The pre-processor will eliminate whitespace in front of '@'
 	 after the first argument; we may be called multiple times
 	 from assemble_ppi, so don't insist on finding whitespace here.  */
-      if (*ptr == ' ')
+      if (is_whitespace (*ptr))
 	ptr++;
 
       get_operand (&ptr, operand + 0);
       if (info->arg[1])
 	{
 	  if (*ptr == ',')
-	    {
-	      ptr++;
-	    }
+	    ptr++;
 	  get_operand (&ptr, operand + 1);
 	  /* ??? Hack: psha/pshl have a varying operand number depending on
 	     the type of the first operand.  We handle this by having the
@@ -1248,27 +1250,10 @@ get_operands (sh_opcode_info *info, char *args, sh_operand_info *operand)
 	  if (info->arg[2] && operand[0].type != A_IMM)
 	    {
 	      if (*ptr == ',')
-		{
-		  ptr++;
-		}
+		ptr++;
 	      get_operand (&ptr, operand + 2);
 	    }
-	  else
-	    {
-	      operand[2].type = 0;
-	    }
 	}
-      else
-	{
-	  operand[1].type = 0;
-	  operand[2].type = 0;
-	}
-    }
-  else
-    {
-      operand[0].type = 0;
-      operand[1].type = 0;
-      operand[2].type = 0;
     }
   return ptr;
 }
@@ -1911,6 +1896,7 @@ insert_loop_bounds (char *output, sh_operand_info *operand)
     {
       static int count = 0;
       char name[11];
+      expressionS *symval;
 
       /* If the last loop insn is a two-byte-insn, it is in danger of being
 	 swapped with the insn after it.  To prevent this, create a new
@@ -1920,14 +1906,15 @@ insert_loop_bounds (char *output, sh_operand_info *operand)
       /* A REPEAT takes 6 bytes.  The SH has a 32 bit address space.
 	 Hence a 9 digit number should be enough to count all REPEATs.  */
       sprintf (name, "_R%x", count++ & 0x3fffffff);
-      end_sym = symbol_new (name, undefined_section, 0, &zero_address_frag);
+      end_sym = symbol_new (name, undefined_section, &zero_address_frag, 0);
       /* Make this a local symbol.  */
 #ifdef OBJ_COFF
       SF_SET_LOCAL (end_sym);
 #endif /* OBJ_COFF */
       symbol_table_insert (end_sym);
-      end_sym->sy_value = operand[1].immediate;
-      end_sym->sy_value.X_add_number += 2;
+      symval = symbol_get_value_expression (end_sym);
+      *symval = operand[1].immediate;
+      symval->X_add_number += 2;
       fix_new (frag_now, frag_now_fix (), 2, end_sym, 0, 1, BFD_RELOC_SH_LABEL);
     }
 
@@ -2090,7 +2077,8 @@ build_Mytes (sh_opcode_info *opcode, sh_operand_info *operand)
 	    case IMM0_8BY2:
 	      insert (output + low_byte, BFD_RELOC_SH_IMM8BY2, 0, operand);
 	      break;
-	    case IMM0_8:
+	    case IMM0_8U:
+	    case IMM0_8S:
 	      insert (output + low_byte, BFD_RELOC_SH_IMM8, 0, operand);
 	      break;
 	    case IMM1_8BY4:
@@ -2163,7 +2151,7 @@ find_cooked_opcode (char **str_p)
   unsigned int nlen = 0;
 
   /* Drop leading whitespace.  */
-  while (*str == ' ')
+  while (is_whitespace (*str))
     str++;
 
   /* Find the op code end.
@@ -2171,9 +2159,8 @@ find_cooked_opcode (char **str_p)
      any '@' after the first argument; we may be called from
      assemble_ppi, so the opcode might be terminated by an '@'.  */
   for (op_start = op_end = (unsigned char *) str;
-       *op_end
-       && nlen < sizeof (name) - 1
-       && !is_end_of_line[*op_end] && *op_end != ' ' && *op_end != '@';
+       nlen < sizeof (name) - 1
+       && !is_end_of_stmt (*op_end) && !is_whitespace (*op_end) && *op_end != '@';
        op_end++)
     {
       unsigned char c = op_start[nlen];
@@ -2194,7 +2181,7 @@ find_cooked_opcode (char **str_p)
   if (nlen == 0)
     as_bad (_("can't find opcode "));
 
-  return (sh_opcode_info *) hash_find (opcode_hash_control, name);
+  return str_hash_find (opcode_hash_control, name);
 }
 
 /* Assemble a parallel processing insn.  */
@@ -2203,12 +2190,12 @@ find_cooked_opcode (char **str_p)
 static unsigned int
 assemble_ppi (char *op_end, sh_opcode_info *opcode)
 {
-  int movx = 0;
-  int movy = 0;
-  int cond = 0;
-  int field_b = 0;
+  unsigned int movx = 0;
+  unsigned int movy = 0;
+  unsigned int cond = 0;
+  unsigned int field_b = 0;
   char *output;
-  int move_code;
+  unsigned int move_code;
   unsigned int size;
 
   for (;;)
@@ -2462,7 +2449,7 @@ assemble_ppi (char *op_end, sh_opcode_info *opcode)
   if (field_b)
     {
       /* Parallel processing insn.  */
-      unsigned long ppi_code = (movx | movy | 0xf800) << 16 | field_b;
+      unsigned int ppi_code = (movx | movy | 0xf800) << 16 | field_b;
 
       output = frag_more (4);
       size = 4;
@@ -2524,37 +2511,32 @@ md_assemble (char *str)
       char *name = initial_str;
       int name_length = 0;
       const sh_opcode_info *op;
-      int found = 0;
+      bool found = false;
 
-      /* identify opcode in string */
-      while (ISSPACE (*name))
-	{
-	  name++;
-	}
-      while (!ISSPACE (name[name_length]))
-	{
-	  name_length++;
-	}
+      /* Identify opcode in string.  */
+      while (is_whitespace (*name))
+	name++;
 
-      /* search for opcode in full list */
+      while (!is_end_of_stmt (name[name_length])
+	     && !is_whitespace (name[name_length]))
+	name_length++;
+
+      /* Search for opcode in full list.  */
       for (op = sh_table; op->name; op++)
 	{
 	  if (strncasecmp (op->name, name, name_length) == 0
 	      && op->name[name_length] == '\0')
 	    {
-	      found = 1;
+	      found = true;
 	      break;
 	    }
 	}
 
-      if ( found )
-	{
-	  as_bad (_("opcode not valid for this cpu variant"));
-	}
+      if (found)
+	as_bad (_("opcode not valid for this cpu variant"));
       else
-	{
-	  as_bad (_("unknown opcode"));
-	}
+	as_bad (_("unknown opcode"));
+
       return;
     }
 
@@ -2595,7 +2577,7 @@ md_assemble (char *str)
 	    {
 	      /* Ignore trailing whitespace.  If there is any, it has already
 		 been compressed to a single space.  */
-	      if (*op_end == ' ')
+	      if (is_whitespace (*op_end))
 		op_end++;
 	    }
 	  else
@@ -2727,8 +2709,8 @@ enum options
   OPTION_DUMMY  /* Not used.  This is just here to make it easy to add and subtract options from this enum.  */
 };
 
-const char *md_shortopts = "";
-struct option md_longopts[] =
+const char md_shortopts[] = "";
+const struct option md_longopts[] =
 {
   {"relax", no_argument, NULL, OPTION_RELAX},
   {"big", no_argument, NULL, OPTION_BIG},
@@ -2751,7 +2733,7 @@ struct option md_longopts[] =
 
   {NULL, no_argument, NULL, 0}
 };
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 int
 md_parse_option (int c, const char *arg ATTRIBUTE_UNUSED)
@@ -2828,7 +2810,7 @@ md_parse_option (int c, const char *arg ATTRIBUTE_UNUSED)
 
 #ifdef OBJ_ELF
     case OPTION_FDPIC:
-      sh_fdpic = TRUE;
+      sh_fdpic = true;
       break;
 #endif /* OBJ_ELF */
 
@@ -2889,7 +2871,7 @@ struct sh_count_relocs
 static void
 sh_count_relocs (bfd *abfd ATTRIBUTE_UNUSED, segT sec, void *data)
 {
-  struct sh_count_relocs *info = (struct sh_count_relocs *) data;
+  struct sh_count_relocs *info = data;
   segment_info_type *seginfo;
   symbolS *sym;
   fixS *fix;
@@ -2922,21 +2904,6 @@ sh_frob_section (bfd *abfd ATTRIBUTE_UNUSED, segT sec,
   seginfo = seg_info (sec);
   if (seginfo == NULL)
     return;
-
-  for (fix = seginfo->fix_root; fix != NULL; fix = fix->fx_next)
-    {
-      symbolS *sym;
-
-      sym = fix->fx_addsy;
-      /* Check for a local_symbol.  */
-      if (sym && sym->bsym == NULL)
-	{
-	  struct local_symbol *ls = (struct local_symbol *)sym;
-	  /* See if it's been converted.  If so, canonicalize.  */
-	  if (local_symbol_converted_p (ls))
-	    fix->fx_addsy = local_symbol_get_real_symbol (ls);
-	}
-    }
 
   for (fix = seginfo->fix_root; fix != NULL; fix = fix->fx_next)
     {
@@ -3051,7 +3018,6 @@ md_convert_frag (bfd *headers ATTRIBUTE_UNUSED, segT seg, fragS *fragP)
     {
     case C (COND_JUMP, COND8):
     case C (COND_JUMP_DELAY, COND8):
-      subseg_change (seg, 0);
       fix_new (fragP, fragP->fr_fix, 2, fragP->fr_symbol, fragP->fr_offset,
 	       1, BFD_RELOC_SH_PCDISP8BY2);
       fragP->fr_fix += 2;
@@ -3059,7 +3025,6 @@ md_convert_frag (bfd *headers ATTRIBUTE_UNUSED, segT seg, fragS *fragP)
       break;
 
     case C (UNCOND_JUMP, UNCOND12):
-      subseg_change (seg, 0);
       fix_new (fragP, fragP->fr_fix, 2, fragP->fr_symbol, fragP->fr_offset,
 	       1, BFD_RELOC_SH_PCDISP12BY2);
       fragP->fr_fix += 2;
@@ -3100,7 +3065,7 @@ md_convert_frag (bfd *headers ATTRIBUTE_UNUSED, segT seg, fragS *fragP)
 	 differently from ones without delay slots.  */
       {
 	unsigned char *buffer =
-	  (unsigned char *) (fragP->fr_fix + fragP->fr_literal);
+	  (unsigned char *) (fragP->fr_fix + &fragP->fr_literal[0]);
 	int highbyte = target_big_endian ? 0 : 1;
 	int lowbyte = target_big_endian ? 1 : 0;
 	int delay = fragP->fr_subtype == C (COND_JUMP_DELAY, COND12);
@@ -3115,7 +3080,6 @@ md_convert_frag (bfd *headers ATTRIBUTE_UNUSED, segT seg, fragS *fragP)
 	   its delay-slot insn already makes the branch reach.  */
 
 	/* Build a relocation to six / four bytes farther on.  */
-	subseg_change (seg, 0);
 	fix_new (fragP, fragP->fr_fix, 2, section_symbol (seg),
 		 fragP->fr_address + fragP->fr_fix + (delay ? 4 : 6),
 		 1, BFD_RELOC_SH_PCDISP8BY2);
@@ -3182,8 +3146,8 @@ md_section_align (segT seg ATTRIBUTE_UNUSED, valueT size)
 #ifdef OBJ_ELF
   return size;
 #else /* ! OBJ_ELF */
-  return ((size + (1 << bfd_get_section_alignment (stdoutput, seg)) - 1)
-	  & -(1 << bfd_get_section_alignment (stdoutput, seg)));
+  return ((size + (1 << bfd_section_alignment (seg)) - 1)
+	  & -(1 << bfd_section_alignment (seg)));
 #endif /* ! OBJ_ELF */
 }
 
@@ -3239,8 +3203,7 @@ sh_cons_align (int nbytes)
       return;
     }
 
-  frag_var (rs_align_test, 1, 1, (relax_substateT) 0,
-	    (symbolS *) NULL, (offsetT) nalign, (char *) NULL);
+  frag_var (rs_align_test, 1, 1, 0, NULL, nalign, NULL);
 
   record_alignment (now_seg, nalign);
 }
@@ -3297,7 +3260,7 @@ sh_handle_align (fragS *frag)
 
 /* See whether the relocation should be resolved locally.  */
 
-static bfd_boolean
+static bool
 sh_local_pcrel (fixS *fix)
 {
   return (! sh_relax
@@ -3346,7 +3309,7 @@ sh_force_relocation (fixS *fix)
 }
 
 #ifdef OBJ_ELF
-bfd_boolean
+bool
 sh_fix_adjustable (fixS *fixP)
 {
   if (fixP->fx_r_type == BFD_RELOC_32_PLT_PCREL
@@ -3430,7 +3393,7 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
   char *buf = fixP->fx_where + fixP->fx_frag->fr_literal;
   int lowbyte = target_big_endian ? 1 : 0;
   int highbyte = target_big_endian ? 0 : 1;
-  long val = (long) *valP;
+  long val = *valP;
   long max, min;
   int shift;
 
@@ -3639,6 +3602,9 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
 
     case BFD_RELOC_32:
     case BFD_RELOC_32_PCREL:
+#if defined (OBJ_COFF) && defined (TE_PE)
+    case BFD_RELOC_RVA:
+#endif
       apply_full_field_fix (fixP, buf, val, 4);
       break;
 
@@ -3737,8 +3703,7 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
       if (val >= 0)
 	val >>= shift;
       else
-	val = ((val >> shift)
-	       | ((long) -1 & ~ ((long) -1 >> shift)));
+	val = (val >> shift) | (-1L & ~ (-1L >> shift));
     }
 
   /* Extend sign for 64-bit host.  */
@@ -3850,7 +3815,7 @@ long
 md_pcrel_from_section (fixS *fixP, segT sec)
 {
   if (! sh_local_pcrel (fixP)
-      && fixP->fx_addsy != (symbolS *) NULL
+      && fixP->fx_addsy != NULL
       && (generic_force_reloc (fixP)
 	  || S_GET_SEGMENT (fixP->fx_addsy) != sec))
     {
@@ -3872,8 +3837,8 @@ tc_gen_reloc (asection *section ATTRIBUTE_UNUSED, fixS *fixp)
   arelent *rel;
   bfd_reloc_code_real_type r_type;
 
-  rel = XNEW (arelent);
-  rel->sym_ptr_ptr = XNEW (asymbol *);
+  rel = notes_alloc (sizeof (arelent));
+  rel->sym_ptr_ptr = notes_alloc (sizeof (asymbol *));
   *rel->sym_ptr_ptr = symbol_get_bfdsym (fixp->fx_addsy);
   rel->address = fixp->fx_frag->fr_address + fixp->fx_where;
 
@@ -3967,13 +3932,13 @@ sh_parse_name (char const *name,
       /* If we have an absolute symbol or a reg, then we know its
 	 value now.  */
       segment = S_GET_SEGMENT (exprP->X_add_symbol);
-      if (mode != expr_defer && segment == absolute_section)
+      if (!expr_defer_p (mode) && segment == absolute_section)
 	{
 	  exprP->X_op = O_constant;
 	  exprP->X_add_number = S_GET_VALUE (exprP->X_add_symbol);
 	  exprP->X_add_symbol = NULL;
 	}
-      else if (mode != expr_defer && segment == reg_section)
+      else if (!expr_defer_p (mode) && segment == reg_section)
 	{
 	  exprP->X_op = O_register;
 	  exprP->X_add_number = S_GET_VALUE (exprP->X_add_symbol);

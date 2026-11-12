@@ -1,7 +1,7 @@
-// { dg-options "-std=gnu++2a" }
-// { dg-do compile { target c++2a } }
+// { dg-do compile { target c++20 } }
+// { dg-add-options no_pch }
 
-// Copyright (C) 2019 Free Software Foundation, Inc.
+// Copyright (C) 2019-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -19,13 +19,14 @@
 // <http://www.gnu.org/licenses/>.
 
 #include <type_traits>
-#include <testsuite_tr1.h>
 
 #ifndef __cpp_lib_bounded_array_traits
 # error "Feature test macro for is_unbounded_array is missing"
 #elif __cpp_lib_bounded_array_traits < 201902L
 # error "Feature test macro for is_unbounded_array has wrong value"
 #endif
+
+#include <testsuite_tr1.h>
 
 void test01()
 {
@@ -44,6 +45,8 @@ void test01()
   static_assert(test_category<is_unbounded_array, ClassType[]>(true), "");
   static_assert(test_category<is_unbounded_array, ClassType[2][3]>(false), "");
   static_assert(test_category<is_unbounded_array, ClassType[][3]>(true), "");
+  static_assert(test_category<is_unbounded_array, IncompleteClass[2][3]>(false), "");
+  static_assert(test_category<is_unbounded_array, IncompleteClass[][3]>(true), "");
   static_assert(test_category<is_unbounded_array, int(*)[2]>(false), "");
   static_assert(test_category<is_unbounded_array, int(*)[]>(false), "");
   static_assert(test_category<is_unbounded_array, int(&)[2]>(false), "");
@@ -51,6 +54,8 @@ void test01()
 
   // Sanity check.
   static_assert(test_category<is_unbounded_array, ClassType>(false), "");
+  static_assert(test_category<is_unbounded_array, IncompleteClass>(false), "");
+  static_assert(test_category<is_unbounded_array, IncompleteUnion>(false), "");
 }
 
 template <class... T> void pos()

@@ -1,6 +1,6 @@
 // Locale support -*- C++ -*-
 
-// Copyright (C) 1997-2019 Free Software Foundation, Inc.
+// Copyright (C) 1997-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -34,11 +34,18 @@
 #ifndef _LOCALE_CLASSES_H
 #define _LOCALE_CLASSES_H 1
 
+#ifdef _GLIBCXX_SYSHDR
 #pragma GCC system_header
+#endif
 
+#include <bits/functexcept.h>
 #include <bits/localefwd.h>
 #include <string>
 #include <ext/atomicity.h>
+
+#ifdef __glibcxx_text_encoding
+#include <text_encoding>
+#endif
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
@@ -82,10 +89,14 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       friend const _Facet&
       use_facet(const locale&);
 
+    template<typename _Facet>
+      friend const _Facet*
+      __try_use_facet(const locale&) _GLIBCXX_NOTHROW;
+
     template<typename _Cache>
       friend struct __use_cache;
 
-    //@{
+    ///@{
     /**
      *  @brief  Category values.
      *
@@ -104,7 +115,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     static const category messages	= 1L << 5;
     static const category all		= (ctype | numeric | collate |
 					   time  | monetary | messages);
-    //@}
+    ///@}
 
     // Construct/copy/destroy:
 
@@ -232,6 +243,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
      *  @throw  std::runtime_error if __other has no facet of type _Facet.
     */
     template<typename _Facet>
+      _GLIBCXX_NODISCARD
       locale
       combine(const locale& __other) const;
 
@@ -240,9 +252,19 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
      *  @brief  Return locale name.
      *  @return  Locale name or "*" if unnamed.
     */
-    _GLIBCXX_DEFAULT_ABI_TAG
+    _GLIBCXX_NODISCARD _GLIBCXX_DEFAULT_ABI_TAG
     string
     name() const;
+
+#ifdef __glibcxx_text_encoding
+# if __CHAR_BIT__ == 8
+    text_encoding
+    encoding() const;
+# else
+    text_encoding
+    encoding() const = delete;
+# endif
+#endif
 
     /**
      *  @brief  Locale equality.
@@ -251,18 +273,22 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
      *  @return  True if other and this refer to the same locale instance, are
      *		 copies, or have the same name.  False otherwise.
     */
+    _GLIBCXX_NODISCARD
     bool
     operator==(const locale& __other) const throw();
 
+#if __cpp_impl_three_way_comparison < 201907L
     /**
      *  @brief  Locale inequality.
      *
      *  @param  __other  The locale to compare against.
      *  @return  ! (*this == __other)
     */
+    _GLIBCXX_NODISCARD
     bool
     operator!=(const locale& __other) const throw()
     { return !(this->operator==(__other)); }
+#endif
 
     /**
      *  @brief  Compare two strings according to collate.
@@ -280,6 +306,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
      *  @return  True if collate<_Char> facet compares __s1 < __s2, else false.
     */
     template<typename _Char, typename _Traits, typename _Alloc>
+      _GLIBCXX_NODISCARD
       bool
       operator()(const basic_string<_Char, _Traits, _Alloc>& __s1,
 		 const basic_string<_Char, _Traits, _Alloc>& __s2) const;
@@ -301,6 +328,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     /**
      *  @brief  Return reference to the C locale.
     */
+    _GLIBCXX_NODISCARD
     static const locale&
     classic();
 
@@ -356,6 +384,12 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 #endif
   };
 
+#if __cpp_lib_type_trait_variable_templates // C++ >= 17
+  template<typename _Tp>
+    constexpr bool __is_facet = is_base_of_v<locale::facet, _Tp>;
+  template<typename _Tp>
+    constexpr bool __is_facet<volatile _Tp> = false;
+#endif
 
   // 22.1.1.1.2  Class locale::facet
   /**
@@ -494,6 +528,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       friend bool
       has_facet(const locale&) throw();
 
+    template<typename _Facet>
+      friend const _Facet*
+      __try_use_facet(const locale&) _GLIBCXX_NOTHROW;
+
     // NB: There is no accessor for _M_index because it may be used
     // before the constructor is run; the effect of calling a member
     // function (even an inline) would be undefined.
@@ -533,6 +571,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     template<typename _Facet>
       friend const _Facet&
       use_facet(const locale&);
+
+    template<typename _Facet>
+      friend const _Facet*
+      __try_use_facet(const locale&) _GLIBCXX_NOTHROW;
 
     template<typename _Cache>
       friend struct __use_cache;
@@ -623,6 +665,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
     void _M_init_extra(facet**);
     void _M_init_extra(void*, void*, const char*, const char*);
+
+#ifdef _GLIBCXX_LONG_DOUBLE_ALT128_COMPAT
+    void _M_init_extra_ldbl128(bool);
+#endif
   };
 
 
@@ -643,11 +689,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     {
     public:
       // Types:
-      //@{
+      ///@{
       /// Public typedefs
       typedef _CharT			char_type;
       typedef basic_string<_CharT>	string_type;
-      //@}
+      ///@}
 
     protected:
       // Underlying "C" library locale information saved from
@@ -816,11 +862,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     class _GLIBCXX_NAMESPACE_CXX11 collate_byname : public collate<_CharT>
     {
     public:
-      //@{
+      ///@{
       /// Public typedefs
       typedef _CharT               char_type;
       typedef basic_string<_CharT> string_type;
-      //@}
+      ///@}
 
       explicit
       collate_byname(const char* __s, size_t __refs = 0)

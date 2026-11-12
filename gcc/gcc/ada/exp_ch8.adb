@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -23,26 +23,28 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with Atree;    use Atree;
-with Einfo;    use Einfo;
-with Exp_Ch3;  use Exp_Ch3;
-with Exp_Ch4;  use Exp_Ch4;
-with Exp_Ch6;  use Exp_Ch6;
-with Exp_Dbug; use Exp_Dbug;
-with Exp_Util; use Exp_Util;
-with Freeze;   use Freeze;
-with Namet;    use Namet;
-with Nmake;    use Nmake;
-with Nlists;   use Nlists;
-with Opt;      use Opt;
-with Sem;      use Sem;
-with Sem_Aux;  use Sem_Aux;
-with Sem_Ch8;  use Sem_Ch8;
-with Sem_Util; use Sem_Util;
-with Sinfo;    use Sinfo;
-with Snames;   use Snames;
-with Stand;    use Stand;
-with Tbuild;   use Tbuild;
+with Atree;          use Atree;
+with Einfo.Entities; use Einfo.Entities;
+with Einfo.Utils;    use Einfo.Utils;
+with Exp_Ch3;        use Exp_Ch3;
+with Exp_Ch4;        use Exp_Ch4;
+with Exp_Ch6;        use Exp_Ch6;
+with Exp_Dbug;       use Exp_Dbug;
+with Exp_Util;       use Exp_Util;
+with Freeze;         use Freeze;
+with Namet;          use Namet;
+with Nmake;          use Nmake;
+with Nlists;         use Nlists;
+with Opt;            use Opt;
+with Sem;            use Sem;
+with Sem_Aux;        use Sem_Aux;
+with Sem_Ch8;        use Sem_Ch8;
+with Sem_Util;       use Sem_Util;
+with Sinfo.Nodes;    use Sinfo.Nodes;
+with Sinfo.Utils;    use Sinfo.Utils;
+with Snames;         use Snames;
+with Stand;          use Stand;
+with Tbuild;         use Tbuild;
 
 package body Exp_Ch8 is
 
@@ -72,7 +74,14 @@ package body Exp_Ch8 is
    --  clause applies (that can specify an arbitrary bit boundary), or where
    --  the enclosing record itself has a non-standard representation.
 
-   --  In these two cases, we pre-evaluate the renaming expression, by
+   --  In Ada 2022, a third case arises when the renamed object is a nonatomic
+   --  subcomponent of an atomic object, because reads of or writes to it must
+   --  access the enclosing atomic object. That's also the case for an object
+   --  subject to the Volatile_Full_Access GNAT aspect/pragma in any language
+   --  version. For the sake of simplicity, we treat any subcomponent of an
+   --  atomic or Volatile_Full_Access object in any language version this way.
+
+   --  In these three cases, we pre-evaluate the renaming expression, by
    --  extracting and freezing the values of any subscripts, and then we
    --  set the flag Is_Renaming_Of_Object which means that any reference
    --  to the object will be handled by macro substitution in the front
@@ -94,20 +103,14 @@ package body Exp_Ch8 is
    --  More comments needed for this para ???
 
    procedure Expand_N_Object_Renaming_Declaration (N : Node_Id) is
-      Nam  : constant Node_Id := Name (N);
-      Decl : Node_Id;
-      T    : Entity_Id;
-
       function Evaluation_Required (Nam : Node_Id) return Boolean;
       --  Determines whether it is necessary to do static name evaluation for
       --  renaming of Nam. It is considered necessary if evaluating the name
       --  involves indexing a packed array, or extracting a component of a
-      --  record to which a component clause applies. Note that we are only
-      --  interested in these operations if they occur as part of the name
-      --  itself, subscripts are just values that are computed as part of the
-      --  evaluation, so their form is unimportant.
-      --  In addition, always return True for Modify_Tree_For_C since the
-      --  code generator doesn't know how to handle renamings.
+      --  record to which a component clause applies, or a subcomponent of an
+      --  atomic object. Note that we are only interested in these operations
+      --  if they occur as part of the name itself, subscripts are just values
+      --  that are computed as part of the evaluation, so they are unimportant.
 
       -------------------------
       -- Evaluation_Required --
@@ -115,12 +118,13 @@ package body Exp_Ch8 is
 
       function Evaluation_Required (Nam : Node_Id) return Boolean is
       begin
-         if Modify_Tree_For_C then
-            return True;
-
-         elsif Nkind_In (Nam, N_Indexed_Component, N_Slice) then
+         if Nkind (Nam) in N_Indexed_Component | N_Slice then
             if Is_Packed (Etype (Prefix (Nam))) then
                return True;
+
+            elsif Is_Full_Access_Object (Prefix (Nam)) then
+               return True;
+
             else
                return Evaluation_Required (Prefix (Nam));
             end if;
@@ -141,6 +145,9 @@ package body Exp_Ch8 is
                then
                   return True;
 
+               elsif Is_Full_Access_Object (Prefix (Nam)) then
+                  return True;
+
                else
                   return Evaluation_Required (Prefix (Nam));
                end if;
@@ -150,6 +157,12 @@ package body Exp_Ch8 is
             return False;
          end if;
       end Evaluation_Required;
+
+      --  Local variables
+
+      Decl : Node_Id;
+      Nam  : constant Node_Id   := Name (N);
+      T    : constant Entity_Id := Etype (Defining_Identifier (N));
 
    --  Start of processing for Expand_N_Object_Renaming_Declaration
 
@@ -162,8 +175,6 @@ package body Exp_Ch8 is
       end if;
 
       --  Deal with construction of subtype in class-wide case
-
-      T := Etype (Defining_Identifier (N));
 
       if Is_Class_Wide_Type (T) then
          Expand_Subtype_From_Expr (N, T, Subtype_Mark (N), Name (N));
@@ -195,10 +206,7 @@ package body Exp_Ch8 is
       --  needing debug info if it comes from sources because the current
       --  setting in Freeze_Entity occurs too late. ???
 
-      if Comes_From_Source (Defining_Identifier (N)) then
-         Set_Debug_Info_Needed (Defining_Identifier (N));
-      end if;
-
+      Set_Debug_Info_Defining_Id (N);
       Decl := Debug_Renaming_Declaration (N);
 
       if Present (Decl) then
@@ -279,18 +287,19 @@ package body Exp_Ch8 is
       begin
          Set_Alias (Id, Empty);
          Set_Has_Completion (Id, False);
-         Rewrite (N,
-           Make_Subprogram_Declaration (Sloc (N),
-             Specification => Specification (N)));
          Set_Has_Delayed_Freeze (Id);
+         Rewrite (N,
+           Make_Subprogram_Declaration (Loc,
+             Specification => Specification (N)));
 
-         Body_Id := Make_Defining_Identifier (Sloc (N), Chars (Id));
+         Body_Id := Make_Defining_Identifier (Loc, Chars (Id));
          Set_Debug_Info_Needed (Body_Id);
 
          if Has_Variant_Part (Typ) then
             Decl :=
               Build_Variant_Record_Equality
                 (Typ         => Typ,
+                 Spec_Id     => Id,
                  Body_Id     => Body_Id,
                  Param_Specs => Copy_Parameter_List (Id));
 
@@ -311,19 +320,16 @@ package body Exp_Ch8 is
                     Result_Definition        =>
                       New_Occurrence_Of (Standard_Boolean, Loc)),
                 Declarations               => Empty_List,
-                Handled_Statement_Sequence => Empty);
-
-            Set_Handled_Statement_Sequence (Decl,
-              Make_Handled_Sequence_Of_Statements (Loc,
-                Statements => New_List (
-                  Make_Simple_Return_Statement (Loc,
-                    Expression =>
-                      Expand_Record_Equality
-                        (Id,
-                         Typ    => Typ,
-                         Lhs    => Make_Identifier (Loc, Chars (Left)),
-                         Rhs    => Make_Identifier (Loc, Chars (Right)),
-                         Bodies => Declarations (Decl))))));
+                Handled_Statement_Sequence =>
+                  Make_Handled_Sequence_Of_Statements (Loc,
+                    Statements => New_List (
+                      Make_Simple_Return_Statement (Loc,
+                        Expression =>
+                          Expand_Record_Equality
+                            (Id,
+                             Typ => Typ,
+                             Lhs => Make_Identifier (Loc, Chars (Left)),
+                             Rhs => Make_Identifier (Loc, Chars (Right)))))));
          end if;
 
          return Decl;
@@ -336,22 +342,9 @@ package body Exp_Ch8 is
    --  Start of processing for Expand_N_Subprogram_Renaming_Declaration
 
    begin
-      --  When the prefix of the name is a function call, we must force the
-      --  call to be made by removing side effects from the call, since we
-      --  must only call the function once.
+      --  Perform name evaluation in all cases
 
-      if Nkind (Nam) = N_Selected_Component
-        and then Nkind (Prefix (Nam)) = N_Function_Call
-      then
-         Remove_Side_Effects (Prefix (Nam));
-
-      --  For an explicit dereference, the prefix must be captured to prevent
-      --  reevaluation on calls through the renaming, which could result in
-      --  calling the wrong subprogram if the access value were to be changed.
-
-      elsif Nkind (Nam) = N_Explicit_Dereference then
-         Force_Evaluation (Prefix (Nam));
-      end if;
+      Evaluate_Name (Nam);
 
       --  Handle cases where we build a body for a renamed equality
 
@@ -360,7 +353,7 @@ package body Exp_Ch8 is
         and then Scope (Entity (Nam)) = Standard_Standard
       then
          declare
-            Typ  : constant Entity_Id := Etype (First_Formal (Id));
+            Typ : constant Entity_Id := Etype (First_Formal (Id));
 
          begin
             --  Check whether this is a renaming of a predefined equality on an

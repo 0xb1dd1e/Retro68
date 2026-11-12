@@ -1,9 +1,9 @@
 /* Verify that overloaded built-ins for vec_extract() with
    double inputs produce the right code with a P8 (LE or BE) target.  */
 
-/* { dg-do compile { target { powerpc*-*-linux* } } } */
-/* { dg-require-effective-target powerpc_p8vector_ok } */
-/* { dg-options "-mdejagnu-cpu=power8 -O2" } */
+/* { dg-do compile } */
+/* { dg-options "-mdejagnu-cpu=power8 -mvsx -O2" } */
+/* { dg-require-effective-target powerpc_vsx } */
 
 // targeting P8, BE and LE. 2 tests.
 // P8 (LE) constants: xxlor

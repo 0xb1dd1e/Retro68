@@ -3,6 +3,7 @@
 ! { dg-options "-fno-inline" }
 ! { dg-additional-options "-msse2" { target sse2_runtime } }
 ! { dg-additional-options "-mavx" { target avx_runtime } }
+! { dg-warning "Specification of the list items as arguments to the modifiers at \\(1\\) is deprecated; since OpenMP 5.2, use 'linear\\(x, y : ref\\)' \\\[-Wdeprecated-openmp\\\]" "" { target *-*-* } 24 }
 
   real :: a(1024), b(1024), c(1024)
   integer :: i
@@ -15,7 +16,7 @@
     c(i) = foo (a(i), b(i))
   end do
   do i = 1, 1024
-    if (c(i).ne.(2 * i)) STOP 1
+    if (c(i).ne.(2 * i)) stop 1
   end do
 contains
   real function foo (x, y)

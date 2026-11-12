@@ -40,10 +40,18 @@ go_create_gogo(const struct go_create_gogo_args* args)
     ::gogo->set_compiling_runtime(args->compiling_runtime);
   if (args->c_header != NULL)
     ::gogo->set_c_header(args->c_header);
+  if (args->importcfg != NULL)
+    ::gogo->read_importcfg(args->importcfg);
+  if (args->embedcfg != NULL)
+    ::gogo->read_embedcfg(args->embedcfg);
   ::gogo->set_debug_escape_level(args->debug_escape_level);
   if (args->debug_escape_hash != NULL)
     ::gogo->set_debug_escape_hash(args->debug_escape_hash);
   ::gogo->set_nil_check_size_threshold(args->nil_check_size_threshold);
+  if (args->debug_optimization)
+    ::gogo->set_debug_optimization(args->debug_optimization);
+  if (args->need_eqtype)
+    ::gogo->set_need_eqtype(args->need_eqtype);
 }
 
 // Parse the input files.
@@ -90,7 +98,7 @@ go_parse_input_files(const char** filenames, unsigned int filename_count,
 		   p != linknames->end();
 		   ++p)
 		go_error_at(p->second.loc,
-			    ("//go:linkname only allowed in Go files that "
+			    ("%<//go:linkname%> only allowed in Go files that "
 			     "import \"unsafe\""));
 	    }
 	  all_linknames.insert(linknames->begin(), linknames->end());
@@ -110,36 +118,49 @@ go_parse_input_files(const char** filenames, unsigned int filename_count,
     ::gogo->add_linkname(p->first, p->second.is_exported, p->second.ext_name,
 			 p->second.loc);
 
+  // Lower calls to builtin functions.
+  ::gogo->lower_builtin_calls();
+
   // Finalize method lists and build stub methods for named types.
   ::gogo->finalize_methods();
 
   // Check that functions have a terminating statement.
   ::gogo->check_return_statements();
 
-  // Now that we have seen all the names, lower the parse tree into a
-  // form which is easier to use.
-  ::gogo->lower_parse_tree();
-
   // At this point we have handled all inline functions, so we no
   // longer need the linemap.
   ::gogo->linemap()->stop();
 
-  // Create function descriptors as needed.
-  ::gogo->create_function_descriptors();
+  // Work out types of unspecified constants and variables.
+  ::gogo->determine_types();
 
   // Now that we have seen all the names, verify that types are
   // correct.
   ::gogo->verify_types();
 
-  // Work out types of unspecified constants and variables.
-  ::gogo->determine_types();
-
   // Check types and issue errors as appropriate.
   ::gogo->check_types();
+
+  // Now that we have seen all the names and we know all the types,
+  // lower the parse tree into a form which is easier to use.
+  ::gogo->lower_parse_tree();
 
   if (only_check_syntax)
     return;
 
+  // Create function descriptors as needed.
+  ::gogo->create_function_descriptors();
+
+  // Record global variable initializer dependencies.
+  ::gogo->record_global_init_refs();
+
+  // Do simple deadcode elimination.
+  ::gogo->remove_deadcode();
+
+  // Make implicit type conversions explicit.
+  ::gogo->add_conversions();
+
+  // Analyze the program flow for escape information.
   ::gogo->analyze_escape();
 
   // Export global identifiers as appropriate.

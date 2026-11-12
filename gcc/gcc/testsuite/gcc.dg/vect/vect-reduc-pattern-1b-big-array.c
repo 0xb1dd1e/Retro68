@@ -1,3 +1,5 @@
+/* Disabling epilogues until we find a better way to deal with scans.  */
+/* { dg-additional-options "--param vect-epilogues-nomask=0" } */
 /* { dg-require-effective-target vect_int } */
 
 #include <stdarg.h>
@@ -39,6 +41,6 @@ main (void)
   return foo ();
 }
 
-/* { dg-final { scan-tree-dump-times "vect_recog_widen_sum_pattern: detected" 1 "vect" } } */
+/* { dg-final { scan-tree-dump-times "vect_recog_widen_sum_pattern: detected(?:(?!Analysis failed).)*Analysis succeeded" 1 "vect" { target { vect_widen_sum_qi_to_si || vect_unpack } } } } */
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 1 "vect" { target { vect_widen_sum_qi_to_si || vect_unpack } } } } */
 /* { dg-final { scan-tree-dump-times "vectorized 1 loops" 0 "vect" { target { { ! vect_widen_sum_qi_to_si } && { ! vect_unpack } } } } } */

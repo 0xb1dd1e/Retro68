@@ -5,15 +5,15 @@
  *
  * Authors: Stewart Gordon
  * License: $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source: $(DRUNTIMESRC src/core/sys/windows/_iphlpapi.d)
+ * Source: $(DRUNTIMESRC core/sys/windows/_iphlpapi.d)
  */
 module core.sys.windows.iphlpapi;
 version (Windows):
 
 import core.sys.windows.ipexport, core.sys.windows.iprtrmib, core.sys.windows.iptypes;
-private import core.sys.windows.winbase, core.sys.windows.windef;
+import core.sys.windows.winbase, core.sys.windows.windef;
 
-extern (Windows) {
+extern (Windows) nothrow @nogc {
     DWORD AddIPAddress(IPAddr, IPMask, DWORD, PULONG, PULONG);
     DWORD CreateIpForwardEntry(PMIB_IPFORWARDROW);
     DWORD CreateIpNetEntry(PMIB_IPNETROW);

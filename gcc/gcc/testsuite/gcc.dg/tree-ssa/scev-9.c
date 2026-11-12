@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O2 -fdump-tree-ivopts-details" } */
+/* { dg-options "-O2 -fno-tree-vectorize -fdump-tree-ivopts-details" } */
 
 int *a;
 
@@ -18,5 +18,5 @@ foo (unsigned char s, unsigned char l)
 }
 
 /* Address of array reference is scev.  */
-/* { dg-final { scan-tree-dump-times "  Type:\\tREFERENCE ADDRESS\n  Use \[0-9\].\[0-9\]:" 1 "ivopts" } } */
+/* { dg-final { scan-tree-dump-times "  Type:\\tREFERENCE ADDRESS\n" 1 "ivopts" } } */
 

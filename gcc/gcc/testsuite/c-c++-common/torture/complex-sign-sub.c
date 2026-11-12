@@ -2,6 +2,7 @@
    subtraction.  */
 /* { dg-do run } */
 /* { dg-options "-std=gnu99" { target c } } */
+/* { dg-skip-if "double support is incomplete" { "avr-*-*" } } */
 
 #include "complex-sign.h"
 
@@ -28,9 +29,7 @@
 void
 check_sub_float (void)
 {
-#ifndef __SPU__
   CHECK_SUB (float, __builtin_copysignf, 0.0f, 0.0if);
-#endif
 }
 
 void

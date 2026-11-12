@@ -91,8 +91,10 @@ target_triplet = @target@
 subdir = testsuite
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/../config/acx.m4 \
+	$(top_srcdir)/../config/clang-plugin.m4 \
 	$(top_srcdir)/../config/enable.m4 \
 	$(top_srcdir)/../config/futex.m4 \
+	$(top_srcdir)/../config/gcc-plugin.m4 \
 	$(top_srcdir)/../config/hwcaps.m4 \
 	$(top_srcdir)/../config/iconv.m4 \
 	$(top_srcdir)/../config/lead-dot.m4 \
@@ -103,7 +105,7 @@ am__aclocal_m4_deps = $(top_srcdir)/../config/acx.m4 \
 	$(top_srcdir)/../config/multi.m4 \
 	$(top_srcdir)/../config/no-executables.m4 \
 	$(top_srcdir)/../config/override.m4 \
-	$(top_srcdir)/../config/stdint.m4 \
+	$(top_srcdir)/../config/toolexeclibdir.m4 \
 	$(top_srcdir)/../config/unwind_ipinfo.m4 \
 	$(top_srcdir)/../libtool.m4 $(top_srcdir)/../ltoptions.m4 \
 	$(top_srcdir)/../ltsugar.m4 $(top_srcdir)/../ltversion.m4 \
@@ -143,6 +145,7 @@ ABI_TWEAKS_SRCDIR = @ABI_TWEAKS_SRCDIR@
 ACLOCAL = @ACLOCAL@
 ALLOCATOR_H = @ALLOCATOR_H@
 ALLOCATOR_NAME = @ALLOCATOR_NAME@
+ALLOC_FILE = @ALLOC_FILE@
 AMTAR = @AMTAR@
 AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
 AR = @AR@
@@ -154,6 +157,10 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
+BACKTRACE_CPPFLAGS = @BACKTRACE_CPPFLAGS@
+BACKTRACE_SUPPORTED = @BACKTRACE_SUPPORTED@
+BACKTRACE_SUPPORTS_THREADS = @BACKTRACE_SUPPORTS_THREADS@
+BACKTRACE_USES_MALLOC = @BACKTRACE_USES_MALLOC@
 BASIC_FILE_CC = @BASIC_FILE_CC@
 BASIC_FILE_H = @BASIC_FILE_H@
 CC = @CC@
@@ -194,11 +201,14 @@ ECHO_C = @ECHO_C@
 ECHO_N = @ECHO_N@
 ECHO_T = @ECHO_T@
 EGREP = @EGREP@
+EH_POOL_FLAGS = @EH_POOL_FLAGS@
 ERROR_CONSTANTS_SRCDIR = @ERROR_CONSTANTS_SRCDIR@
 EXEEXT = @EXEEXT@
 EXTRA_CFLAGS = @EXTRA_CFLAGS@
 EXTRA_CXX_FLAGS = @EXTRA_CXX_FLAGS@
 FGREP = @FGREP@
+FORMAT_FILE = @FORMAT_FILE@
+FREESTANDING_FLAGS = @FREESTANDING_FLAGS@
 GLIBCXX_INCLUDES = @GLIBCXX_INCLUDES@
 GLIBCXX_LIBS = @GLIBCXX_LIBS@
 GREP = @GREP@
@@ -215,7 +225,10 @@ LIBOBJS = @LIBOBJS@
 LIBS = @LIBS@
 LIBTOOL = @LIBTOOL@
 LIPO = @LIPO@
+LLVM_CONFIG = @LLVM_CONFIG@
 LN_S = @LN_S@
+LONG_DOUBLE_128_FLAGS = @LONG_DOUBLE_128_FLAGS@
+LONG_DOUBLE_ALT128_COMPAT_FLAGS = @LONG_DOUBLE_ALT128_COMPAT_FLAGS@
 LONG_DOUBLE_COMPAT_FLAGS = @LONG_DOUBLE_COMPAT_FLAGS@
 LTLIBICONV = @LTLIBICONV@
 LTLIBOBJS = @LTLIBOBJS@
@@ -253,6 +266,7 @@ SYMVER_FILE = @SYMVER_FILE@
 TOPLEVEL_INCLUDES = @TOPLEVEL_INCLUDES@
 USE_NLS = @USE_NLS@
 VERSION = @VERSION@
+VIEW_FILE = @VIEW_FILE@
 VTV_CXXFLAGS = @VTV_CXXFLAGS@
 VTV_CXXLINKFLAGS = @VTV_CXXLINKFLAGS@
 VTV_PCH_CXXFLAGS = @VTV_PCH_CXXFLAGS@
@@ -339,6 +353,7 @@ target_cpu = @target_cpu@
 target_os = @target_os@
 target_vendor = @target_vendor@
 thread_header = @thread_header@
+tmake_file = @tmake_file@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
@@ -360,11 +375,13 @@ toolexeclibdir = $(glibcxx_toolexeclibdir)
 @ENABLE_WERROR_TRUE@WERROR_FLAG = -Werror
 @ENABLE_EXTERN_TEMPLATE_FALSE@XTEMPLATE_FLAGS = 
 @ENABLE_EXTERN_TEMPLATE_TRUE@XTEMPLATE_FLAGS = -fno-implicit-templates
+@GLIBCXX_LDBL_ALT128_COMPAT_FALSE@LDBL_128_FLAGS = 
+@GLIBCXX_LDBL_ALT128_COMPAT_TRUE@LDBL_128_FLAGS = $(LONG_DOUBLE_128_FLAGS)
 
 # These bits are all figured out from configure.  Look in acinclude.m4
 # or configure.ac to see how they are set.  See GLIBCXX_EXPORT_FLAGS.
 CONFIG_CXXFLAGS = \
-	$(SECTION_FLAGS) $(HWCAP_CFLAGS) -frandom-seed=$@
+	$(SECTION_FLAGS) $(HWCAP_CFLAGS) -frandom-seed=$@ $(LDBL_128_FLAGS)
 
 WARN_CXXFLAGS = \
 	$(WARN_FLAGS) $(WERROR_FLAG) -fdiagnostics-show-location=once 
@@ -378,7 +395,8 @@ AM_CPPFLAGS = $(GLIBCXX_INCLUDES) $(CPPFLAGS)
 lists_of_files = \
    testsuite_files \
    testsuite_files_interactive \
-   testsuite_files_performance
+   testsuite_files_performance \
+   testsuite_files_simd
 
 extract_symvers = $(glibcxx_builddir)/scripts/extract_symvers
 baseline_subdir := $(shell $(CXX) $(baseline_subdir_switch))
@@ -401,7 +419,7 @@ compile_script = ${glibcxx_srcdir}/scripts/check_compile
 
 # Runs the testsuite/performance tests.
 # Some of these tests create large (~75MB) files, allocate huge
-# ammounts of memory, or otherwise tie up machine resources. Thus,
+# amounts of memory, or otherwise tie up machine resources. Thus,
 # running this is off by default.
 # XXX Need to add dependency on libtestc++.a
 check_performance_script = ${glibcxx_srcdir}/scripts/check_performance
@@ -418,13 +436,10 @@ libgomp_flags = -B${glibcxx_builddir}/../libgomp \
 atomic_flags = $(ATOMIC_FLAGS)
 parallel_flags = "unix/-D_GLIBCXX_PARALLEL/-fopenmp"
 
-# Runs the testsuite in profile mode.
-profile_flags = "unix/-D_GLIBCXX_PROFILE"
-
 # By adding these files here, automake will remove them for 'make clean'
 CLEANFILES = *.txt *.tst *.exe core* filebuf_* tmp* ostream_* *.log *.sum \
 	     testsuite_* site.exp abi_check baseline_symbols *TEST* *.dat \
-	     *.ii *.s *.o *.cc *.x *.a *.so *.xml *.raw *.out *.gdb
+	     *.ii *.s *.o *.cc *.x *.a *.so *.xml *.raw *.out *.gdb gcm.cache
 
 all: all-am
 
@@ -603,6 +618,7 @@ site.exp: Makefile
 	@echo '## these variables are automatically generated by make ##' >site.tmp
 	@echo '# Do not edit here.  If you wish to override these values' >>site.tmp
 	@echo '# edit the last section' >>site.tmp
+	@echo 'set tool libstdc++' >>site.tmp
 	@echo 'set srcdir $(srcdir)' >>site.tmp
 	@echo "set objdir `pwd`" >>site.tmp
 	@echo 'set build_alias "$(build_alias)"' >>site.tmp
@@ -611,11 +627,11 @@ site.exp: Makefile
 	@echo 'set host_triplet $(host_triplet)' >>site.tmp
 	@echo 'set target_alias "$(target_alias)"' >>site.tmp
 	@echo 'set target_triplet $(target_triplet)' >>site.tmp
-	@echo 'set target_triplet $(target_triplet)' >>site.tmp
 	@echo 'set libiconv "$(LIBICONV)"' >>site.tmp
 	@echo 'set baseline_dir "$(baseline_dir)"' >> site.tmp
 	@echo 'set baseline_subdir_switch "$(baseline_subdir_switch)"' >> site.tmp
 	@echo 'set TEST_GCC_EXEC_PREFIX "$(libdir)/gcc/"' >> site.tmp
+	@echo 'set v3-use-std-list 1' >> site.tmp
 	@echo '## All variables above are generated by configure. Do Not Edit ##' >>site.tmp
 	@test ! -f site.exp || \
 	  sed '1,/^## All variables above are.*##/ d' site.exp >> site.tmp
@@ -633,13 +649,7 @@ baseline_symbols:
 
 new-abi-baseline:
 	-@$(mkinstalldirs) ${baseline_dir}/${baseline_subdir}
-	-@(output=${baseline_dir}/${baseline_subdir}/baseline_symbols.txt; \
-	  if test -f $${output}; then \
-	    output=$${output}.new; \
-	    t=`echo $${output} | sed 's=.*config/abi/=='`; \
-	    echo "Baseline file already exists, writing to $${t} instead."; \
-	  fi; \
-	  ${extract_symvers} ../src/.libs/libstdc++.so $${output})
+	-@${extract_symvers} ../src/.libs/libstdc++.so ${baseline_dir}/${baseline_subdir}/baseline_symbols.txt
 
 %/site.exp: site.exp
 	-@test -d $* || mkdir $*
@@ -655,7 +665,7 @@ $(check_DEJAGNU_normal_targets): check-DEJAGNUnormal%: normal%/site.exp
 
 # Run the testsuite in normal mode.
 check-DEJAGNU $(check_DEJAGNU_normal_targets): check-DEJAGNU%: site.exp
-	$(if $*,@)AR="$(AR)"; export AR; \
+	@$(if $*,@)AR="$(AR)"; export AR; \
 	RANLIB="$(RANLIB)"; export RANLIB; \
 	if [ -z "$*" ] && [ -n "$(filter -j%, $(MFLAGS))" ]; then \
 	  rm -rf normal-parallel || true; \
@@ -708,7 +718,23 @@ check-compile: testsuite_files ${compile_script}
 	  ${compile_script} ${glibcxx_srcdir} ${glibcxx_builddir})
 check-performance: testsuite_files_performance ${performance_script}
 	-@(chmod + ${check_performance_script}; \
+	  CXXFLAGS='$(CXXFLAGS)'; export CXXFLAGS; \
 	  ${check_performance_script} ${glibcxx_srcdir} ${glibcxx_builddir})
+
+# Runs the simd tests.
+check-simd: $(srcdir)/experimental/simd/generate_makefile.sh \
+	    ${glibcxx_srcdir}/scripts/check_simd \
+	    testsuite_files_simd \
+	    ${glibcxx_builddir}/scripts/testsuite_flags
+	@rm -f .simd.summary
+	@echo "Generating simd testsuite subdirs and Makefiles ..."
+	@${glibcxx_srcdir}/scripts/check_simd "${glibcxx_srcdir}" "${glibcxx_builddir}" "$(CXXFLAGS)" | \
+	  while read subdir; do \
+	    $(MAKE) -C "$${subdir}"; \
+	    tail -n20 $${subdir}/simd_testsuite.sum | \
+	      grep -A20 -B1 'Summary ===' >> .simd.summary; \
+	  done; \
+	  cat .simd.summary && rm .simd.summary
 
 check-debug: site.exp
 	outputdir=debug; export outputdir; \
@@ -737,21 +763,12 @@ check-performance-parallel: testsuite_files_performance ${performance_script}
 	CXXFLAGS="-D_GLIBCXX_PARALLEL -fopenmp $(atomic_flags) $(libgomp_flags)"; export CXXFLAGS; \
 	${check_performance_script} ${glibcxx_srcdir} ${glibcxx_builddir})
 
-check-profile: site.exp
-	-@(outputdir=profile; export outputdir; \
-	if test ! -d $${outputdir}; then \
-	  mkdir $${outputdir}; \
-	fi; \
-	srcdir=`$(am__cd) $(srcdir) && pwd`; export srcdir; \
-	EXPECT=$(EXPECT); export EXPECT; \
-	$(MAKE) CXXFLAGS="$(atomic_flags) " RUNTESTFLAGS="$(RUNTESTFLAGS) conformance.exp --outdir $${outputdir} --objdir $${outputdir} --target_board=$(profile_flags)" check-DEJAGNU; )
-
 .PHONY: baseline_symbols new-abi-baseline \
-	check-abi check-compile check-performance check-parallel check-profile
+	check-abi check-compile check-performance check-parallel
 
 # To remove directories.
 clean-local:
-	rm -rf de fr debug parallel profile binaries normal* 
+	rm -rf de fr debug parallel binaries normal* simd
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

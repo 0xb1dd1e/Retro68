@@ -1,7 +1,8 @@
 //===-- ubsan_handlers.h ----------------------------------------*- C++ -*-===//
 //
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -36,6 +37,17 @@ struct TypeMismatchData {
 /// pointer, a null pointer, or a pointer to insufficient storage for the
 /// type.
 RECOVERABLE(type_mismatch_v1, TypeMismatchData *Data, ValueHandle Pointer)
+
+struct AlignmentAssumptionData {
+  SourceLocation Loc;
+  SourceLocation AssumptionLoc;
+  const TypeDescriptor &Type;
+};
+
+/// \brief Handle a runtime alignment assumption check failure,
+/// caused by a misaligned pointer.
+RECOVERABLE(alignment_assumption, AlignmentAssumptionData *Data,
+            ValueHandle Pointer, ValueHandle Alignment, ValueHandle Offset)
 
 struct OverflowData {
   SourceLocation Loc;
@@ -77,6 +89,9 @@ struct OutOfBoundsData {
 
 /// \brief Handle an array index out of bounds error.
 RECOVERABLE(out_of_bounds, OutOfBoundsData *Data, ValueHandle Index)
+
+/// \brief Handle an local object access out of bounds error.
+RECOVERABLE(local_out_of_bounds)
 
 struct UnreachableData {
   SourceLocation Loc;
@@ -126,6 +141,8 @@ enum ImplicitConversionCheckKind : unsigned char {
   ICCK_IntegerTruncation = 0, // Legacy, was only used by clang 7.
   ICCK_UnsignedIntegerTruncation = 1,
   ICCK_SignedIntegerTruncation = 2,
+  ICCK_IntegerSignChange = 3,
+  ICCK_SignedIntegerTruncationOrSignChange = 4,
 };
 
 struct ImplicitConversionData {
@@ -133,6 +150,7 @@ struct ImplicitConversionData {
   const TypeDescriptor &FromType;
   const TypeDescriptor &ToType;
   /* ImplicitConversionCheckKind */ unsigned char Kind;
+  unsigned int BitfieldBits;
 };
 
 /// \brief Implict conversion that changed the value.
@@ -144,6 +162,7 @@ RECOVERABLE(implicit_conversion, ImplicitConversionData *Data, ValueHandle Src,
 enum BuiltinCheckKind : unsigned char {
   BCK_CTZPassedZero,
   BCK_CLZPassedZero,
+  BCK_AssumePassedFalse,
 };
 
 struct InvalidBuiltinData {
@@ -154,14 +173,13 @@ struct InvalidBuiltinData {
 /// Handle a builtin called in an invalid way.
 RECOVERABLE(invalid_builtin, InvalidBuiltinData *Data)
 
-struct FunctionTypeMismatchData {
+struct InvalidObjCCast {
   SourceLocation Loc;
-  const TypeDescriptor &Type;
+  const TypeDescriptor &ExpectedType;
 };
 
-RECOVERABLE(function_type_mismatch,
-            FunctionTypeMismatchData *Data,
-            ValueHandle Val)
+/// Handle an invalid ObjC cast.
+RECOVERABLE(invalid_objc_cast, InvalidObjCCast *Data, ValueHandle Pointer)
 
 struct NonNullReturnData {
   SourceLocation AttrLoc;
@@ -226,6 +244,17 @@ extern "C" SANITIZER_INTERFACE_ATTRIBUTE void __ubsan_handle_cfi_bad_type(
     CFICheckFailData *Data, ValueHandle Vtable, bool ValidVtable,
     ReportOptions Opts);
 
+struct FunctionTypeMismatchData {
+  SourceLocation Loc;
+  const TypeDescriptor &Type;
+};
+
+extern "C" SANITIZER_INTERFACE_ATTRIBUTE void
+__ubsan_handle_function_type_mismatch(FunctionTypeMismatchData *Data,
+                                      ValueHandle Val);
+extern "C" SANITIZER_INTERFACE_ATTRIBUTE void
+__ubsan_handle_function_type_mismatch_abort(FunctionTypeMismatchData *Data,
+                                            ValueHandle Val);
 }
 
 #endif // UBSAN_HANDLERS_H

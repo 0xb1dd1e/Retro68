@@ -1,9 +1,12 @@
 /* PR target/48596  */
+/* { dg-skip-if "too many arguments in function call" { bpf-*-* } } */
+
 enum { nrrdCenterUnknown, nrrdCenterNode, nrrdCenterCell, nrrdCenterLast };
 typedef struct { int size; int center; }  NrrdAxis;
 typedef struct { int dim; NrrdAxis axis[10]; } Nrrd;
 typedef struct { } NrrdKernel;
 typedef struct { const NrrdKernel *kernel[10]; int samples[10]; } Info;
+int _nrrdCenter(int);
 
 void
 foo (Nrrd *nout, Nrrd *nin, const NrrdKernel *kernel, const double *parm,

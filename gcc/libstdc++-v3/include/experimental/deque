@@ -1,6 +1,6 @@
 // <experimental/deque> -*- C++ -*-
 
-// Copyright (C) 2015-2019 Free Software Foundation, Inc.
+// Copyright (C) 2015-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -24,12 +24,17 @@
 
 /** @file experimental/deque
  *  This is a TS C++ Library header.
+ *  @ingroup libfund-ts
  */
 
 #ifndef _GLIBCXX_EXPERIMENTAL_DEQUE
 #define _GLIBCXX_EXPERIMENTAL_DEQUE 1
 
+#ifdef _GLIBCXX_SYSHDR
 #pragma GCC system_header
+#endif
+
+#include <bits/requires_hosted.h> // experimental is currently omitted
 
 #if __cplusplus >= 201402L
 

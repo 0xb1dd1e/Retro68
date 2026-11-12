@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -42,10 +42,8 @@
 --  Inline_Always subprograms, but there are fewer restrictions on the source
 --  of subprograms.
 
-with Alloc;
 with Opt;    use Opt;
 with Sem;    use Sem;
-with Table;
 with Types;  use Types;
 with Warnsw; use Warnsw;
 
@@ -63,8 +61,14 @@ package Inline is
    --  See full description in body of Sem_Ch12 for more details
 
    type Pending_Body_Info is record
+      Inst_Node : Node_Id;
+      --  Node for instantiation that requires the body
+
       Act_Decl : Node_Id;
       --  Declaration for package or subprogram spec for instantiation
+
+      Fin_Scop : Node_Id;
+      --  Enclosing finalization scope for package instantiation
 
       Config_Switches : Config_Switches_Type;
       --  Capture the values of configuration switches
@@ -77,9 +81,6 @@ package Inline is
       Expander_Status : Boolean;
       --  If the body is instantiated only for semantic checking, expansion
       --  must be inhibited.
-
-      Inst_Node : Node_Id;
-      --  Node for instantiation that requires the body
 
       Scope_Suppress           : Suppress_Record;
       Local_Suppress_Stack_Top : Suppress_Stack_Entry_Ptr;
@@ -96,31 +97,9 @@ package Inline is
       --  This means we have to capture this information from the current scope
       --  at the point of instantiation.
 
-      Warnings : Warning_Record;
+      Warnings : Warnings_State;
       --  Capture values of warning flags
    end record;
-
-   package Pending_Instantiations is new Table.Table (
-     Table_Component_Type => Pending_Body_Info,
-     Table_Index_Type     => Int,
-     Table_Low_Bound      => 0,
-     Table_Initial        => Alloc.Pending_Instantiations_Initial,
-     Table_Increment      => Alloc.Pending_Instantiations_Increment,
-     Table_Name           => "Pending_Instantiations");
-
-   --  The following table records subprograms and packages for which
-   --  generation of subprogram descriptors must be delayed.
-
-   package Pending_Descriptor is new Table.Table (
-     Table_Component_Type => Entity_Id,
-     Table_Index_Type     => Int,
-     Table_Low_Bound      => 0,
-     Table_Initial        => Alloc.Pending_Instantiations_Initial,
-     Table_Increment      => Alloc.Pending_Instantiations_Increment,
-     Table_Name           => "Pending_Descriptor");
-
-   --  The following should be initialized in an init call in Frontend, we
-   --  have thoughts of making the frontend reusable in future ???
 
    -----------------
    -- Subprograms --
@@ -143,6 +122,12 @@ package Inline is
    --  Add E's enclosing unit to Inlined_Bodies so that E can be subsequently
    --  retrieved and analyzed. N is the node giving rise to the call to E.
 
+   procedure Add_Pending_Instantiation
+     (Inst     : Node_Id;
+      Act_Decl : Node_Id;
+      Fin_Scop : Node_Id := Empty);
+   --  Add an entry in the table of generic bodies to be instantiated.
+
    procedure Analyze_Inlined_Bodies;
    --  At end of compilation, analyze the bodies of all units that contain
    --  inlined subprograms that are actually called.
@@ -161,8 +146,9 @@ package Inline is
     (N    : Node_Id;
      Subp : Entity_Id) return Boolean;
    --  Returns False if the call in node N to subprogram Subp cannot be inlined
-   --  in GNATprove mode, because it may lead to missing a check on type
-   --  conversion of input parameters otherwise. Returns True otherwise.
+   --  in GNATprove mode, because it may otherwise lead to missing a check
+   --  on type conversion of input parameters, or a missing memory leak on
+   --  an output parameter. Returns True otherwise.
 
    function Can_Be_Inlined_In_GNATprove_Mode
      (Spec_Id : Entity_Id;
@@ -175,15 +161,20 @@ package Inline is
    --  its treatment of the subprogram.
 
    procedure Cannot_Inline
-     (Msg        : String;
-      N          : Node_Id;
-      Subp       : Entity_Id;
-      Is_Serious : Boolean := False);
+     (Msg           : String;
+      N             : Node_Id;
+      Subp          : Entity_Id;
+      Is_Serious    : Boolean := False;
+      Suppress_Info : Boolean := False)
+     with
+       Pre => Msg'First <= Msg'Last
+       and then Msg (Msg'Last) = '?';
    --  This procedure is called if the node N, an instance of a call to
    --  subprogram Subp, cannot be inlined. Msg is the message to be issued,
    --  which ends with ? (it does not end with ?p?, this routine takes care of
-   --  the need to change ? to ?p?). The behavior of this routine depends on
-   --  the value of Back_End_Inlining:
+   --  the need to change ? to ?p?). Suppress_Info is set to True to prevent
+   --  issuing an info message in GNATprove mode. The behavior of this routine
+   --  depends on the value of Back_End_Inlining:
    --
    --    * If Back_End_Inlining is not set (ie. legacy frontend inlining model)
    --      then if Subp has a pragma Always_Inlined, then an error message is
@@ -217,6 +208,15 @@ package Inline is
    --  cases documented in Check_Body_To_Inline) then build the body-to-inline
    --  associated with N and attach it to the declaration node of Spec_Id.
 
+   procedure Check_Object_Renaming_In_GNATprove_Mode (Spec_Id : Entity_Id)
+   with
+     Pre => GNATprove_Mode;
+   --  This procedure is called only in GNATprove mode, on subprograms for
+   --  which a Body_To_Inline was created, to check if the subprogram has
+   --  references to object renamings which will be replaced by the special
+   --  SPARK expansion into nodes of a different kind, which is not expected
+   --  by the inlining mechanism. In that case, the Body_To_Inline is deleted.
+
    procedure Check_Package_Body_For_Inlining (N : Node_Id; P : Entity_Id);
    --  If front-end inlining is enabled and a package declaration contains
    --  inlined subprograms, load and compile the package body to collect the
@@ -247,6 +247,12 @@ package Inline is
       Stats : List_Id) return Boolean;
    --  Check a list of statements, Stats, that make inlining of Subp not
    --  worthwhile, including any tasking statement, nested at any level.
+
+   procedure Inline_Static_Function_Call
+     (N : Node_Id; Subp : Entity_Id);
+   --  Evaluate static call to a static function Subp, substituting actuals in
+   --  place of references to their corresponding formals and rewriting the
+   --  call N as a fully folded and static result expression.
 
    procedure List_Inlining_Info;
    --  Generate listing of calls inlined by the frontend plus listing of

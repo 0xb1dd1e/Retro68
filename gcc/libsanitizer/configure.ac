@@ -29,6 +29,8 @@ GCC_LIBSTDCXX_RAW_CXX_FLAGS
 AM_INIT_AUTOMAKE(foreign no-dist)
 AM_MAINTAINER_MODE
 
+GCC_WITH_TOOLEXECLIBDIR
+
 # Calculate toolexeclibdir
 # Also toolexecdir, though it's only used in toolexeclibdir
 case ${version_specific_libs} in
@@ -44,7 +46,14 @@ case ${version_specific_libs} in
        test x"$with_cross_host" != x"no"; then
       # Install a library built with a cross compiler in tooldir, not libdir.
       toolexecdir='$(exec_prefix)/$(target_alias)'
-      toolexeclibdir='$(toolexecdir)/lib'
+      case ${with_toolexeclibdir} in
+	no)
+	  toolexeclibdir='$(toolexecdir)/lib'
+	  ;;
+	*)
+	  toolexeclibdir=${with_toolexeclibdir}
+	  ;;
+      esac
     else
       toolexecdir='$(libdir)/gcc-lib/$(target_alias)'
       toolexeclibdir='$(libdir)'
@@ -76,6 +85,8 @@ esac
 AC_SUBST(enable_shared)
 AC_SUBST(enable_static)
 
+AM_CONDITIONAL([ENABLE_DARWIN_AT_RPATH], [test x$enable_darwin_at_rpath = xyes])
+
 AC_CHECK_SIZEOF([void *])
 
 if test "${multilib}" = "yes"; then
@@ -87,9 +98,11 @@ fi
 # Get target configury.
 unset TSAN_SUPPORTED
 unset LSAN_SUPPORTED
+unset HWASAN_SUPPORTED
 . ${srcdir}/configure.tgt
 AM_CONDITIONAL(TSAN_SUPPORTED, [test "x$TSAN_SUPPORTED" = "xyes"])
 AM_CONDITIONAL(LSAN_SUPPORTED, [test "x$LSAN_SUPPORTED" = "xyes"])
+AM_CONDITIONAL(HWASAN_SUPPORTED, [test "x$HWASAN_SUPPORTED" = "xyes"])
 
 # Check for functions needed.
 AC_CHECK_FUNCS(clock_getres clock_gettime clock_settime lstat readlink)
@@ -110,6 +123,10 @@ AC_CHECK_LIB(dl, dlsym,
 # Set up the set of additional libraries that we need to link against for libasan.
 link_libasan=$link_sanitizer_common
 AC_SUBST(link_libasan)
+
+# Set up the set of additional libraries that we need to link against for libhwasan.
+link_libhwasan=$link_sanitizer_common
+AC_SUBST(link_libhwasan)
 
 # Set up the set of additional libraries that we need to link against for libtsan.
 link_libtsan=$link_sanitizer_common
@@ -146,7 +163,8 @@ case "$target" in
   *-*-linux*)
     # Some old Linux distributions miss required syscalls.
     sanitizer_supported=no
-    AC_TRY_COMPILE([#include <sys/syscall.h>],[
+    AC_TRY_COMPILE([#include <sys/syscall.h>
+#include <unistd.h>],[
       syscall (__NR_gettid);
       syscall (__NR_futex);
       syscall (__NR_exit_group);
@@ -195,6 +213,19 @@ if test "$libsanitizer_cv_sys_atomic" = "yes"; then
   AC_DEFINE([HAVE_ATOMIC_FUNCTIONS], 1,
 	    [Define to 1 if you have the __atomic functions])
 fi
+
+# Check if assembler supports symbol assignment.
+AC_CACHE_CHECK([assembler symbol assignment],
+[libsanitizer_cv_as_sym_assign],
+[AC_COMPILE_IFELSE(
+  [AC_LANG_PROGRAM([],
+		   [asm("a = b");])],
+  [libsanitizer_cv_as_sym_assign=yes],
+  [libsanitizer_cv_as_sym_assign=no])])
+if test "$libsanitizer_cv_as_sym_assign" = "yes"; then
+  as_sym_assign_defs=-DHAVE_AS_SYM_ASSIGN=1
+fi
+AC_SUBST(AS_SYM_ASSIGN_DEFS, [$as_sym_assign_defs])
 
 # The library needs to be able to read the executable itself.  Compile
 # a file to determine the executable format.  The awk script
@@ -280,12 +311,6 @@ else
   # When built as a GCC target library, we can't do a link test.
   AC_EGREP_HEADER([dl_iterate_phdr], [link.h], [have_dl_iterate_phdr=yes],
 		  [have_dl_iterate_phdr=no])
-  case "${host}" in
-  *-*-solaris2.10*)
-    # Avoid dl_iterate_phdr on Solaris 10, where it is in the
-    # header file but is only in -ldl.
-    have_dl_iterate_phdr=no ;;
-  esac
 fi
 if test "$have_dl_iterate_phdr" = "yes"; then
   AC_DEFINE(HAVE_DL_ITERATE_PHDR, 1, [Define if dl_iterate_phdr is available.])
@@ -373,16 +398,49 @@ _EOF
 ])
 fi
 
+if test "x$HWASAN_SUPPORTED" = "xyes"; then
+  AC_CONFIG_FILES(AC_FOREACH([DIR], [hwasan], [DIR/Makefile ]), 
+    [cat > vpsed$$ << \_EOF
+s!`test -f '$<' || echo '$(srcdir)/'`!!
+_EOF
+    sed -f vpsed$$ $ac_file > tmp$$
+    mv tmp$$ $ac_file
+    rm vpsed$$
+    echo 'MULTISUBDIR =' >> $ac_file
+    ml_norecursion=yes
+    . ${multi_basedir}/config-ml.in
+    AS_UNSET([ml_norecursion])
+])
+fi
+
 AC_SUBST([TSAN_TARGET_DEPENDENT_OBJECTS])
 AC_SUBST([SANITIZER_COMMON_TARGET_DEPENDENT_OBJECTS])
+
+AC_ARG_ENABLE([werror],
+  [AS_HELP_STRING([--disable-werror], [disable building with -Werror])])
+
+ACX_PROG_CC_WARNING_OPTS([-Wextra -Wall -Wwrite-strings \
+                          -Wmissing-format-attribute -Wcast-qual],
+                          [WARN_FLAGS])
+AS_IF([test "x$enable_werror" != "xno"],
+  [WARN_FLAGS="$WARN_FLAGS -Werror"])
+AC_SUBST([WARN_FLAGS])
 
 # Determine what GCC version number to use in filesystem paths.
 GCC_BASE_VER
 
 # Add CET specific flags if Intel CET is enabled.
 GCC_CET_FLAGS(CET_FLAGS)
-EXTRA_CFLAGS="$EXTRA_CFLAGS $CET_FLAGS"
-EXTRA_CXXFLAGS="$EXTRA_CXXFLAGS $CET_FLAGS"
+
+# Always set -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 to sync with LLVM,
+# and keep struct *stat* have the same size.
+case "${host}" in
+  mips*-*) FILE64_FLAGS="-D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64" ;;
+  *) FILE64_FLAGS="" ;;
+esac
+
+EXTRA_CFLAGS="$EXTRA_CFLAGS $CET_FLAGS $FILE64_FLAGS"
+EXTRA_CXXFLAGS="$EXTRA_CXXFLAGS $CET_FLAGS $FILE64_FLAGS"
 EXTRA_ASFLAGS=$CET_FLAGS
 AC_SUBST(EXTRA_ASFLAGS)
 AC_SUBST(EXTRA_CFLAGS)

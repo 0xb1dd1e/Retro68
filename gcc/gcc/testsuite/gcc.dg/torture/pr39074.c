@@ -1,5 +1,5 @@
 /* { dg-do run } */
-/* { dg-options "-fdump-tree-alias" } */
+/* { dg-options "-fdump-tree-alias-details" } */
 /* { dg-skip-if "" { *-*-* } { "-O0" "-fno-fat-lto-objects" } { "" } } */
 
 typedef __INTPTR_TYPE__ intptr_t;
@@ -29,5 +29,5 @@ int main()
   return 0;
 }
 
-/* { dg-final { scan-tree-dump "y.._. = { i }" "alias" } } */
-/* { dg-final { scan-tree-dump "y.._., points-to NULL, points-to vars: { D..... }" "alias" } } */
+/* { dg-final { scan-tree-dump "y.\?.._. = { i }" "alias" } } */
+/* { dg-final { scan-tree-dump "y.\?.._., points-to NULL, points-to vars: { D..... }" "alias" } } */

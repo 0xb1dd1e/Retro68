@@ -1,5 +1,6 @@
 // pr c++/79393
 // { dg-do compile { target c++14 } }
+// Explicit { dg-require-effective-target exceptions_enabled } to avoid verify compiler messages FAILs for '-fno-exceptions'.
 
 struct A 
 {
@@ -18,7 +19,7 @@ struct B : virtual A
 };
 
 B::~B () {
-  throw 1; // { dg-warning "will always call terminate" }
+  throw 1; // { dg-warning "will always call 'terminate'" }
 }
 
 struct C : virtual A

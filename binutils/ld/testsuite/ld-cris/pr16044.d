@@ -1,7 +1,7 @@
 #source: dso-4.s
 #source: dso-2b.s
 #source: dso-1c.s
-#as: --pic --no-underscore --em=criself -I$srcdir/$subdir
+#as: --pic --no-underscore --emulation=criself -I$srcdir/$subdir
 #ld: --shared -m crislinux --hash-style=sysv
 #readelf: -s -r
 
@@ -30,7 +30,7 @@ Relocation section '\.rela\.dyn' at offset 0x[0-9a-f]+ contains 1 entry:
 Symbol table '\.dynsym' contains 4 entries:
  +Num: +Value +Size +Type +Bind +Vis +Ndx +Name
  +0: 0+ +0 +NOTYPE +LOCAL +DEFAULT +UND 
- +1: [0-9a-f]+ +0 +SECTION +LOCAL +DEFAULT +5 
+ +1: [0-9a-f]+ +0 +SECTION +LOCAL +DEFAULT +5.*
  +2: [0-9a-f]+ +0 +FUNC +GLOBAL +DEFAULT +5 export_1
  +3: [0-9a-f]+ +0 +FUNC +GLOBAL +DEFAULT +5 export_2
 

@@ -1,9 +1,12 @@
 /* { dg-require-effective-target vect_int } */
+/* { dg-additional-options "-fno-tree-loop-distribute-patterns" } */
 
 #include <stdarg.h>
 #include "../../tree-vect.h"
 
-#define N 16 
+/* On Power7 without misalign vector support, this case is to check it's not
+   profitable to perform vectorization by peeling to align the store.  */
+#define N 13
 #define OFF 4
 
 /* Check handling of accesses for which the "initial condition" -
@@ -25,6 +28,7 @@ int main1 (int *pib)
 
 
   /* check results:  */
+#pragma GCC novector
   for (i = OFF; i < N; i++)
     {
      if (pib[i - OFF] != ic[i])

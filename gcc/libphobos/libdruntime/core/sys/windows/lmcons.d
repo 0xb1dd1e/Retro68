@@ -4,22 +4,22 @@
  * Translated from MinGW Windows headers
  *
  * License: $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source: $(DRUNTIMESRC src/core/sys/windows/_lmcons.d)
+ * Source: $(DRUNTIMESRC core/sys/windows/_lmcons.d)
  */
 module core.sys.windows.lmcons;
 version (Windows):
 
 version (ANSI) {} else version = Unicode;
 
-private import core.sys.windows.windef;
-private import core.sys.windows.lmerr; // for NERR_BASE
+import core.sys.windows.windef;
+import core.sys.windows.lmerr; // for NERR_BASE
 
 const TCHAR[]
     MESSAGE_FILENAME = "NETMSG",
     OS2MSG_FILENAME = "BASE",
     HELP_MSG_FILENAME = "NETH";
 
-alias DWORD NET_API_STATUS, API_RET_TYPE;
+alias NET_API_STATUS = DWORD, API_RET_TYPE = DWORD;
 
 enum MIN_LANMAN_MESSAGE_ID = NERR_BASE;
 enum MAX_LANMAN_MESSAGE_ID = 5799;
@@ -80,9 +80,9 @@ enum PLATFORM_ID_VMS = 700;
 
 // this is a new typedef in W2K, but it should be harmless for earlier Windows versions.
 version (Unicode) {
-    alias LPWSTR LMSTR;
-    alias LPCWSTR LMCSTR;
+    alias LMSTR = LPWSTR;
+    alias LMCSTR = LPCWSTR;
 } else {
-    alias LPSTR LMSTR;
-    alias LPCSTR LMCSTR;
+    alias LMSTR = LPSTR;
+    alias LMCSTR = LPCSTR;
 }

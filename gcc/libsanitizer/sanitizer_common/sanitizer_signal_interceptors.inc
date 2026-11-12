@@ -1,7 +1,8 @@
 //===-- sanitizer_signal_interceptors.inc -----------------------*- C++ -*-===//
 //
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -28,13 +29,24 @@ using namespace __sanitizer;
 #endif
 
 #ifndef SIGNAL_INTERCEPTOR_SIGACTION_IMPL
-#define SIGNAL_INTERCEPTOR_SIGACTION_IMPL(signum, act, oldact) \
-  { return REAL(sigaction_symname)(signum, act, oldact); }
+#  define SIGNAL_INTERCEPTOR_SIGACTION_IMPL(signum, act, oldact)              \
+    {                                                                         \
+      if (!REAL(sigaction_symname)) {                                         \
+        Printf(                                                               \
+            "Warning: REAL(sigaction_symname) == nullptr. This may happen "   \
+            "if you link with ubsan statically. Sigaction will not work.\n"); \
+        return -1;                                                            \
+      }                                                                       \
+      return REAL(sigaction_symname)(signum, act, oldact);                    \
+    }
 #endif
 
 #if SANITIZER_INTERCEPT_BSD_SIGNAL
 INTERCEPTOR(uptr, bsd_signal, int signum, uptr handler) {
+  SIGNAL_INTERCEPTOR_ENTER();
   if (GetHandleSignalMode(signum) == kHandleSignalExclusive) return 0;
+
+  // TODO: support cloak_sanitizer_signal_handlers
   SIGNAL_INTERCEPTOR_SIGNAL_IMPL(bsd_signal, signum, handler);
 }
 #define INIT_BSD_SIGNAL COMMON_INTERCEPT_FUNCTION(bsd_signal)
@@ -44,16 +56,57 @@ INTERCEPTOR(uptr, bsd_signal, int signum, uptr handler) {
 
 #if SANITIZER_INTERCEPT_SIGNAL_AND_SIGACTION
 INTERCEPTOR(uptr, signal, int signum, uptr handler) {
+  SIGNAL_INTERCEPTOR_ENTER();
   if (GetHandleSignalMode(signum) == kHandleSignalExclusive)
+    // The user can neither view nor change the signal handler, regardless of
+    // the cloak_sanitizer_signal_handlers setting. This differs from
+    // sigaction().
     return (uptr) nullptr;
-  SIGNAL_INTERCEPTOR_SIGNAL_IMPL(signal, signum, handler);
+
+  uptr ret = +[](auto signal, int signum, uptr handler) {
+    SIGNAL_INTERCEPTOR_SIGNAL_IMPL(signal, signum, handler);
+  }(signal, signum, handler);
+
+  if (ret != sig_err && SetSignalHandlerFromSanitizer(signum, false))
+    // If the user sets a signal handler, it becomes uncloaked, even if they
+    // reuse a sanitizer's signal handler.
+    ret = sig_dfl;
+
+  return ret;
 }
 #define INIT_SIGNAL COMMON_INTERCEPT_FUNCTION(signal)
 
 INTERCEPTOR(int, sigaction_symname, int signum,
             const __sanitizer_sigaction *act, __sanitizer_sigaction *oldact) {
-  if (GetHandleSignalMode(signum) == kHandleSignalExclusive) return 0;
-  SIGNAL_INTERCEPTOR_SIGACTION_IMPL(signum, act, oldact);
+  SIGNAL_INTERCEPTOR_ENTER();
+
+  if (GetHandleSignalMode(signum) == kHandleSignalExclusive) {
+    if (!oldact) return 0;
+    act = nullptr;
+    // If cloak_sanitizer_signal_handlers=true, the user can neither view nor
+    // change the signal handle.
+    // If false, the user can view but not change the signal handler. This
+    // differs from signal().
+  }
+
+  int ret = +[](int signum, const __sanitizer_sigaction* act,
+                __sanitizer_sigaction* oldact) {
+    SIGNAL_INTERCEPTOR_SIGACTION_IMPL(signum, act, oldact);
+  }(signum, act, oldact);
+
+  if (act) {
+    if (ret == 0 && SetSignalHandlerFromSanitizer(signum, false)) {
+      // If the user sets a signal handler, it becomes uncloaked, even if they
+      // reuse a sanitizer's signal handler.
+
+      if (oldact)
+        oldact->handler = reinterpret_cast<__sanitizer_sighandler_ptr>(sig_dfl);
+    }
+  } else if (ret == 0 && oldact && IsSignalHandlerFromSanitizer(signum)) {
+    oldact->handler = reinterpret_cast<__sanitizer_sighandler_ptr>(sig_dfl);
+  }
+
+  return ret;
 }
 #define INIT_SIGACTION COMMON_INTERCEPT_FUNCTION(sigaction_symname)
 

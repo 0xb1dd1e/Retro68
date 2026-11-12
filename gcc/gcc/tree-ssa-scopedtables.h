@@ -1,5 +1,5 @@
 /* Header file for SSA dominator optimizations.
-   Copyright (C) 2013-2019 Free Software Foundation, Inc.
+   Copyright (C) 2013-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -96,7 +96,7 @@ class expr_hash_elt
 
   /* A unique stamp, typically the address of the hash
      element itself, used in removing entries from the table.  */
-  struct expr_hash_elt *m_stamp;
+  class expr_hash_elt *m_stamp;
 
   /* We should never be making assignments between objects in this class.
      Though it might allow us to exploit C++11 move semantics if we
@@ -148,7 +148,7 @@ class avail_exprs_stack
 
   /* Lookup and conditionally insert an expression into the table,
      recording enough information to unwind as needed.  */
-  tree lookup_avail_expr (gimple *, bool, bool);
+  tree lookup_avail_expr (gimple *, bool, bool, expr_hash_elt ** = NULL);
 
   void record_cond (cond_equivalence *);
 
@@ -191,7 +191,7 @@ class const_and_copies
   void record_const_or_copy (tree, tree);
 
   /* Special entry point when we want to provide an explicit previous
-     value for the first argument.  Try to get rid of this in the future. 
+     value for the first argument.  Try to get rid of this in the future.
 
      This version may also follow the value chain for the RHS.  */
   void record_const_or_copy (tree, tree, tree);

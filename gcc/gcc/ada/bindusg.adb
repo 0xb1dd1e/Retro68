@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -133,10 +133,20 @@ package body Bindusg is
       Write_Line
         ("  -F        Force checking of elaboration Flags");
 
+      --  Line for -G switch
+
+      Write_Line
+        ("  -G        Generate binder file suitable for CCG");
+
       --  Line for -h switch
 
       Write_Line
         ("  -h        Output this usage (help) information");
+
+      --  Line for -H switch
+
+      Write_Line
+        ("  -H        Legacy elaboration order model enabled");
 
       --  Lines for -I switch
 
@@ -145,6 +155,11 @@ package body Bindusg is
       Write_Line
         ("  -I-       Don't look for sources & library files in default "
          & "directory");
+
+      --  Line for -k switch
+
+      Write_Line
+        ("  -k        Disable checking of elaboration flags");
 
       --  Line for -K switch
 
@@ -167,6 +182,12 @@ package body Bindusg is
       Write_Line
         ("  -mnnn     Limit number of detected errors/warnings to nnn "
          & "(1-999999)");
+
+      --  Line for -minimal switch
+
+      Write_Line
+        ("  -minimal  Generate binder file suitable for space-constrained "
+         & "applications");
 
       --  Line for -M switch
 
@@ -213,7 +234,7 @@ package body Bindusg is
       --  Line for Q switch
 
       Write_Line
-        ("  -Qnnn     Generate nnn default-sized secondary stacks");
+        ("  -Qnnn     Generate nnn additional default-sized secondary stacks");
 
       --  Line for -r switch
 
@@ -298,6 +319,11 @@ package body Bindusg is
 
       Write_Line
         ("  -x        Exclude source files (check object consistency only)");
+
+      --  Line for -xdr switch
+
+      Write_Line
+        ("  -xdr      Use the XDR protocol for streaming");
 
       --  Line for -X switch
 

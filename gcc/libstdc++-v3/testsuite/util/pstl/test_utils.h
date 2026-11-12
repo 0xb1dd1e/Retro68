@@ -10,14 +10,15 @@
 // File contains common utilities that tests rely on
 
 // Do not #include <algorithm>, because if we do we will not detect accidental dependencies.
-#include <sstream>
-#include <iostream>
-#include <cstring>
-#include <iterator>
-#include <vector>
 #include <atomic>
-#include <memory>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+#include <iterator>
+#include <memory>
+#include <sstream>
+#include <vector>
 
 #include "pstl_test_config.h"
 
@@ -29,7 +30,7 @@ typedef float float32_t;
 
 template <class T, std::size_t N>
 constexpr size_t
-const_size(const T (&array)[N]) noexcept
+const_size(const T (&)[N]) noexcept
 {
     return N;
 }
@@ -38,32 +39,30 @@ template <typename T>
 class Sequence;
 
 // Handy macros for error reporting
-#define EXPECT_TRUE(condition, message) TestUtils::expect<true>(condition, __FILE__, __LINE__, message)
-#define EXPECT_FALSE(condition, message) TestUtils::expect<false>(condition, __FILE__, __LINE__, message)
+#define EXPECT_TRUE(condition, message) ::TestUtils::expect(true, condition, __FILE__, __LINE__, message)
+#define EXPECT_FALSE(condition, message) ::TestUtils::expect(false, condition, __FILE__, __LINE__, message)
 
 // Check that expected and actual are equal and have the same type.
-#define EXPECT_EQ(expected, actual, message) TestUtils::expect_equal(expected, actual, __FILE__, __LINE__, message)
+#define EXPECT_EQ(expected, actual, message) ::TestUtils::expect_equal(expected, actual, __FILE__, __LINE__, message)
 
 // Check that sequences started with expected and actual and have had size n are equal and have the same type.
 #define EXPECT_EQ_N(expected, actual, n, message)                                                                      \
-    TestUtils::expect_equal(expected, actual, n, __FILE__, __LINE__, message)
+    ::TestUtils::expect_equal(expected, actual, n, __FILE__, __LINE__, message)
 
 // Issue error message from outstr, adding a newline.
 // Real purpose of this routine is to have a place to hang a breakpoint.
-static void
+inline void
 issue_error_message(std::stringstream& outstr)
 {
     outstr << std::endl;
     std::cerr << outstr.str();
+    std::exit(EXIT_FAILURE);
 }
 
-template <bool B>
-void
-expect(bool condition, const char* file, int32_t line, const char* message)
+inline void
+expect(bool expected, bool condition, const char* file, int32_t line, const char* message)
 {
-    // Templating this function is somewhat silly, but avoids the need to declare it static
-    // or have a separate translation unit.
-    if (condition != B)
+    if (condition != expected)
     {
         std::stringstream outstr;
         outstr << "error at " << file << ":" << line << " - " << message;
@@ -120,7 +119,7 @@ expect_equal(Iterator1 expected_first, Iterator2 actual_first, Size n, const cha
              const char* message)
 {
     size_t error_count = 0;
-    for (size_t k = 0; k < n && error_count < 10; ++k, ++expected_first, ++actual_first)
+    for (Size k = 0; k < n && error_count < 10; ++k, ++expected_first, ++actual_first)
     {
         if (!(*expected_first == *actual_first))
         {
@@ -155,7 +154,7 @@ class ForwardIterator
     explicit ForwardIterator(Iterator i) : my_iterator(i) {}
     reference operator*() const { return *my_iterator; }
     Iterator operator->() const { return my_iterator; }
-    ForwardIterator
+    ForwardIterator&
     operator++()
     {
         ++my_iterator;
@@ -195,13 +194,13 @@ class BidirectionalIterator : public ForwardIterator<Iterator, IteratorTag>
     explicit BidirectionalIterator(Iterator i) : base_type(i) {}
     BidirectionalIterator(const base_type& i) : base_type(i.iterator()) {}
 
-    BidirectionalIterator
+    BidirectionalIterator&
     operator++()
     {
         ++base_type::my_iterator;
         return *this;
     }
-    BidirectionalIterator
+    BidirectionalIterator&
     operator--()
     {
         --base_type::my_iterator;
@@ -231,6 +230,82 @@ fill_data(Iterator first, Iterator last, F f)
         *first = T(f(i));
     }
 }
+
+struct MemoryChecker {
+    // static counters and state tags
+    static std::atomic<std::int64_t> alive_object_counter; // initialized outside
+    static constexpr std::int64_t alive_state = 0xAAAAAAAAAAAAAAAA;
+    static constexpr std::int32_t dead_state = 0; // only used as a set value to cancel alive_state
+
+    std::int32_t _value; // object value used for algorithms
+    std::int64_t _state; // state tag used for checks
+
+    // ctors, dtors, assign ops
+    explicit MemoryChecker(std::int32_t value = 0) : _value(value) {
+        // check for EXPECT_TRUE(state() != alive_state, ...) has not been done since we cannot guarantee that
+        // raw memory for object being constructed does not have a bit sequence being equal to alive_state
+
+        // set constructed state and increment counter for living object
+        inc_alive_objects();
+        _state = alive_state;
+    }
+    MemoryChecker(MemoryChecker&& other) : _value(other.value()) {
+        // check for EXPECT_TRUE(state() != alive_state, ...) has not been done since
+        // compiler can optimize out the move ctor call that results in false positive failure
+        EXPECT_TRUE(other.state() == alive_state, "wrong effect from MemoryChecker(MemoryChecker&&): attempt to construct an object from non-existing object");
+        // set constructed state and increment counter for living object
+        inc_alive_objects();
+        _state = alive_state;
+    }
+    MemoryChecker(const MemoryChecker& other) : _value(other.value()) {
+        // check for EXPECT_TRUE(state() != alive_state, ...) has not been done since
+        // compiler can optimize out the copy ctor call that results in false positive failure
+        EXPECT_TRUE(other.state() == alive_state, "wrong effect from MemoryChecker(const MemoryChecker&): attempt to construct an object from non-existing object");
+        // set constructed state and increment counter for living object
+        inc_alive_objects();
+        _state = alive_state;
+    }
+    MemoryChecker& operator=(MemoryChecker&& other) {
+        // check if we do not assign over uninitialized memory
+        EXPECT_TRUE(state() == alive_state, "wrong effect from MemoryChecker::operator=(MemoryChecker&& other): attempt to assign to non-existing object");
+        EXPECT_TRUE(other.state() == alive_state, "wrong effect from MemoryChecker::operator=(MemoryChecker&& other): attempt to assign from non-existing object");
+        // just assign new value, counter is the same, state is the same
+        _value = other.value();
+
+        return *this;
+    }
+    MemoryChecker& operator=(const MemoryChecker& other) {
+        // check if we do not assign over uninitialized memory
+        EXPECT_TRUE(state() == alive_state, "wrong effect from MemoryChecker::operator=(const MemoryChecker& other): attempt to assign to non-existing object");
+        EXPECT_TRUE(other.state() == alive_state, "wrong effect from MemoryChecker::operator=(const MemoryChecker& other): attempt to assign from non-existing object");
+        // just assign new value, counter is the same, state is the same
+        _value = other.value();
+
+        return *this;
+    }
+    ~MemoryChecker() {
+        // check if we do not double destruct the object
+        EXPECT_TRUE(state() == alive_state, "wrong effect from ~MemoryChecker(): attempt to destroy non-existing object");
+        // set destructed state and decrement counter for living object
+        static_cast<volatile std::int64_t&>(_state) = dead_state;
+        dec_alive_objects();
+    }
+
+    // getters
+    std::int32_t value() const { return _value; }
+    std::int64_t state() const { return _state; }
+    static std::int32_t alive_objects() { return alive_object_counter.load(); }
+private:
+    // setters
+    void inc_alive_objects() { alive_object_counter.fetch_add(1); }
+    void dec_alive_objects() { alive_object_counter.fetch_sub(1); }
+};
+
+std::atomic<std::int64_t> MemoryChecker::alive_object_counter{0};
+
+std::ostream& operator<<(std::ostream& os, const MemoryChecker& val) { return (os << val.value()); }
+bool operator==(const MemoryChecker& v1, const MemoryChecker& v2) { return v1.value() == v2.value(); }
+bool operator<(const MemoryChecker& v1, const MemoryChecker& v2) { return v1.value() < v2.value(); }
 
 // Sequence<T> is a container of a sequence of T with lots of kinds of iterators.
 // Prefixes on begin/end mean:
@@ -573,7 +648,7 @@ struct Matrix2x2
     T a[2][2];
     Matrix2x2() : a{{1, 0}, {0, 1}} {}
     Matrix2x2(T x, T y) : a{{0, x}, {x, y}} {}
-#if !__PSTL_ICL_19_VC14_VC141_TEST_SCAN_RELEASE_BROKEN
+#if !defined(_PSTL_ICL_19_VC14_VC141_TEST_SCAN_RELEASE_BROKEN)
     Matrix2x2(const Matrix2x2& m) : a{{m.a[0][0], m.a[0][1]}, {m.a[1][0], m.a[1][1]}} {}
     Matrix2x2&
     operator=(const Matrix2x2& m)
@@ -606,13 +681,6 @@ multiply_matrix(const Matrix2x2<T>& left, const Matrix2x2<T>& right)
     }
     return result;
 }
-
-// Check that Intel(R) Threading Building Blocks header files are not used when parallel policies are off
-#if !__PSTL_USE_PAR_POLICIES
-#if defined(TBB_INTERFACE_VERSION)
-#error The parallel backend is used while it should not (__PSTL_USE_PAR_POLICIES==0)
-#endif
-#endif
 
 //============================================================================
 // Adapters for creating different types of iterators.
@@ -659,7 +727,7 @@ struct ReverseAdapter
     iterator_type
     operator()(Iterator it)
     {
-#if __PSTL_CPP14_MAKE_REVERSE_ITERATOR_PRESENT
+#if defined(_PSTL_CPP14_MAKE_REVERSE_ITERATOR_PRESENT)
         return std::make_reverse_iterator(it);
 #else
         return iterator_type(it);
@@ -760,7 +828,7 @@ struct invoke_if_<std::false_type, std::false_type>
 {
     template <typename Op, typename... Rest>
     void
-    operator()(bool is_allow, Op op, Rest&&... rest)
+    operator()(bool, Op op, Rest&&... rest)
     {
         op(std::forward<Rest>(rest)...);
     }
@@ -795,14 +863,14 @@ struct non_const_wrapper_tagged : non_const_wrapper
 
     template <typename Policy, typename Iterator>
     typename std::enable_if<IsPositiveCondition != is_same_iterator_category<Iterator, IteratorTag>::value, void>::type
-    operator()(Policy&& exec, Iterator iter)
+    operator()(Policy&&, Iterator)
     {
     }
 
     template <typename Policy, typename InputIterator, typename OutputIterator>
     typename std::enable_if<IsPositiveCondition != is_same_iterator_category<OutputIterator, IteratorTag>::value,
                             void>::type
-    operator()(Policy&& exec, InputIterator input_iter, OutputIterator out_iter)
+    operator()(Policy&&, InputIterator, OutputIterator)
     {
     }
 };
@@ -1007,7 +1075,7 @@ struct iterator_invoker<std::forward_iterator_tag, /*isReverse=*/std::true_type>
 {
     template <typename... Rest>
     void
-    operator()(Rest&&... rest)
+    operator()(Rest&&...)
     {
     }
 };
@@ -1015,18 +1083,18 @@ struct iterator_invoker<std::forward_iterator_tag, /*isReverse=*/std::true_type>
 template <typename IsReverse>
 struct reverse_invoker
 {
-    template <typename... Rest>
+    template <typename Policy, typename Op, typename... Rest>
     void
-    operator()(Rest&&... rest)
+    operator()(Policy&& exec, Op op, Rest&&... rest)
     {
         // Random-access iterator
-        iterator_invoker<std::random_access_iterator_tag, IsReverse>()(std::forward<Rest>(rest)...);
+        iterator_invoker<std::random_access_iterator_tag, IsReverse>()(std::forward<Policy>(exec), op, rest...);
 
         // Forward iterator
-        iterator_invoker<std::forward_iterator_tag, IsReverse>()(std::forward<Rest>(rest)...);
+        iterator_invoker<std::forward_iterator_tag, IsReverse>()(std::forward<Policy>(exec), op, rest...);
 
         // Bidirectional iterator
-        iterator_invoker<std::bidirectional_iterator_tag, IsReverse>()(std::forward<Rest>(rest)...);
+        iterator_invoker<std::bidirectional_iterator_tag, IsReverse>()(std::forward<Policy>(exec), op, rest...);
     }
 };
 
@@ -1052,10 +1120,8 @@ invoke_on_all_policies(Op op, T&&... rest)
     // Try static execution policies
     invoke_on_all_iterator_types()(seq, op, std::forward<T>(rest)...);
     invoke_on_all_iterator_types()(unseq, op, std::forward<T>(rest)...);
-#if __PSTL_USE_PAR_POLICIES
     invoke_on_all_iterator_types()(par, op, std::forward<T>(rest)...);
     invoke_on_all_iterator_types()(par_unseq, op, std::forward<T>(rest)...);
-#endif
 }
 
 template <typename F>
@@ -1201,7 +1267,7 @@ transform_reduce_serial(InputIterator first, InputIterator last, T init, BinaryO
 static const char*
 done()
 {
-#if __PSTL_TEST_SUCCESSFUL_KEYWORD
+#if defined(_PSTL_TEST_SUCCESSFUL_KEYWORD)
     return "done";
 #else
     return "passed";
@@ -1236,10 +1302,14 @@ test_algo_basic_double(F&& f)
 
 template <typename Policy, typename F>
 static void
-invoke_if(Policy&& p, F f)
+invoke_if(Policy&&, F f)
 {
-#if __PSTL_ICC_16_VC14_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN || __PSTL_ICC_17_VC141_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN
-    __pstl::__internal::invoke_if_not(__pstl::__internal::allow_unsequenced<Policy>(), f);
+#if defined(_PSTL_ICC_16_VC14_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN) || defined(_PSTL_ICC_17_VC141_TEST_SIMD_LAMBDA_DEBUG_32_BROKEN)
+    using decay_policy = typename std::decay<Policy>::type;
+    using allow_unsequenced =
+        std::integral_constant<bool, (std::is_same<decay_policy, std::execution::unsequenced_policy>::value ||
+                                      std::is_same<decay_policy, std::execution::parallel_unsequenced_policy>::value)>;
+    __pstl::__internal::__invoke_if_not(allow_unsequenced{}, f);
 #else
     f();
 #endif

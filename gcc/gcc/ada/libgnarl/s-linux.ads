@@ -6,7 +6,7 @@
 --                                                                          --
 --                                  S p e c                                 --
 --                                                                          --
---          Copyright (C) 2008-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 2008-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -44,22 +44,7 @@ package System.Linux is
    -- Time --
    ----------
 
-   subtype long        is Interfaces.C.long;
-   subtype suseconds_t is Interfaces.C.long;
-   subtype time_t      is Interfaces.C.long;
    subtype clockid_t   is Interfaces.C.int;
-
-   type timespec is record
-      tv_sec  : time_t;
-      tv_nsec : long;
-   end record;
-   pragma Convention (C, timespec);
-
-   type timeval is record
-      tv_sec  : time_t;
-      tv_usec : suseconds_t;
-   end record;
-   pragma Convention (C, timeval);
 
    -----------
    -- Errno --
@@ -82,7 +67,7 @@ package System.Linux is
    SIGILL     : constant := 4; --  illegal instruction (not reset)
    SIGTRAP    : constant := 5; --  trace trap (not reset)
    SIGIOT     : constant := 6; --  IOT instruction
-   SIGABRT    : constant := 6; --  used by abort, replace SIGIOT in the  future
+   SIGABRT    : constant := 6; --  used by abort, replace SIGIOT in the future
    SIGFPE     : constant := 8; --  floating point exception
    SIGKILL    : constant := 9; --  kill (cannot be caught or ignored)
    SIGBUS     : constant := 7; --  bus error

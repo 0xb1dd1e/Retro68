@@ -9,12 +9,12 @@
  *    (See accompanying file LICENSE)
  * Authors:   Sean Kelly
  * Standards: ISO/IEC 9899:1999 (E)
- * Source: $(DRUNTIMESRC src/core/stdc/_stdlib.d)
+ * Source: $(DRUNTIMESRC core/stdc/_stdlib.d)
  */
 
 module core.stdc.stdlib;
 
-private import core.stdc.config;
+import core.stdc.config;
 public import core.stdc.stddef; // for wchar_t
 
 version (OSX)
@@ -26,8 +26,13 @@ else version (TVOS)
 else version (WatchOS)
     version = Darwin;
 
+version (CRuntime_Glibc)
+    version = AlignedAllocSupported;
+else version (CRuntime_Newlib)
+    version = AlignedAllocSupported;
+else {}
+
 extern (C):
-@system:
 
 /* Placed outside `nothrow` and `@nogc` in order to not constrain what the callback does.
  */
@@ -65,8 +70,8 @@ struct div_t
 ///
 struct ldiv_t
 {
-    int quot,
-        rem;
+    c_long quot,
+           rem;
 }
 
 ///
@@ -94,7 +99,9 @@ else version (DragonFlyBSD) enum RAND_MAX = 0x7fffffff;
 else version (Solaris) enum RAND_MAX = 0x7fff;
 else version (CRuntime_Bionic) enum RAND_MAX = 0x7fffffff;
 else version (CRuntime_Musl) enum RAND_MAX = 0x7fffffff;
+else version (CRuntime_Newlib) enum RAND_MAX = 0x7fffffff;
 else version (CRuntime_UClibc) enum RAND_MAX = 0x7fffffff;
+else version (WASI) enum RAND_MAX = 0x7fffffff;
 else static assert( false, "Unsupported platform" );
 
 ///
@@ -121,24 +128,35 @@ ulong   strtoull(scope inout(char)* nptr, scope inout(char)** endptr, int base);
 
 version (CRuntime_Microsoft)
 {
-    // strtold exists starting from VS2013, so we give it D linkage to avoid link errors
-    ///
-    extern (D) real strtold(scope inout(char)* nptr, inout(char)** endptr)
-    {   // Fake it 'till we make it
-        return strtod(nptr, endptr);
+    version (MinGW)
+    {
+        ///
+        real __mingw_strtold(scope inout(char)* nptr, scope inout(char)** endptr);
+        ///
+        alias strtold = __mingw_strtold;
     }
-}
-else version (MinGW)
-{
-    ///
-    real __mingw_strtold(scope inout(char)* nptr, scope inout(char)** endptr);
-    ///
-    alias __mingw_strtold strtold;
+    else
+    {
+        // strtold exists starting from VS2013, so we give it D linkage to avoid link errors
+        ///
+        extern (D) real strtold(scope inout(char)* nptr, inout(char)** endptr)
+        {   // Fake it 'till we make it
+            return strtod(nptr, endptr);
+        }
+    }
 }
 else
 {
-    /// Added to Bionic since Lollipop.
-    real strtold(scope inout(char)* nptr, scope inout(char)** endptr);
+    static if (PPCUseIEEE128)
+    {
+        real __strtoieee128(scope inout(char)* nptr, scope inout(char)** endptr);
+        alias strtold = __strtoieee128;
+    }
+    else
+    {
+        /// Added to Bionic since Lollipop.
+        real strtold(scope inout(char)* nptr, scope inout(char)** endptr);
+    }
 }
 
 // No unsafe pointer manipulation.
@@ -163,14 +181,20 @@ void*   realloc(void* ptr, size_t size);
 ///
 void    free(void* ptr);
 
+/// since C11
+version (AlignedAllocSupported)
+{
+    void* aligned_alloc(size_t alignment, size_t size);
+}
+
 ///
-void    abort() @safe;
+noreturn abort() @safe;
 ///
-void    exit(int status);
+noreturn exit(int status);
 ///
 int     atexit(void function() func);
 ///
-void    _Exit(int status);
+noreturn _Exit(int status);
 
 ///
 char*   getenv(scope const char* name);

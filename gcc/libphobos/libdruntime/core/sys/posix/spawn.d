@@ -4,7 +4,7 @@
  * Copyright: Copyright (C) 2018 by The D Language Foundation, All Rights Reserved
  * Authors:   Petar Kirov
  * License:   $(LINK2 https://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source:    $(LINK2 https://github.com/dlang/druntime/blob/master/src/core/sys/posix/spawn.d, _spawn.d)
+ * Source:    $(DRUNTIMESRC core/sys/posix/_spawn.d)
  * Standards: The Open Group Base Specifications Issue 6, IEEE Std 1003.1, 2004 Edition
  */
 module core.sys.posix.spawn;
@@ -99,8 +99,8 @@ version (linux)
             POSIX_SPAWN_SETSCHEDPARAM = 0x10,
             POSIX_SPAWN_SETSCHEDULER = 0x20
         }
-        import core.sys.posix.config : __USE_GNU;
-        static if (__USE_GNU)
+        import core.sys.posix.config : _GNU_SOURCE;
+        static if (_GNU_SOURCE)
         {
             enum
             {
@@ -139,8 +139,8 @@ version (linux)
             POSIX_SPAWN_SETSCHEDPARAM = 16,
             POSIX_SPAWN_SETSCHEDULER = 32
         }
-        import core.sys.posix.config : __USE_GNU;
-        static if (__USE_GNU)
+        import core.sys.posix.config : _GNU_SOURCE;
+        static if (_GNU_SOURCE)
         {
             enum
             {
@@ -195,8 +195,8 @@ version (linux)
             POSIX_SPAWN_SETSCHEDPARAM = 0x10,
             POSIX_SPAWN_SETSCHEDULER = 0x20
         }
-        import core.sys.posix.config : __USE_GNU;
-        static if (__USE_GNU)
+        import core.sys.posix.config : _GNU_SOURCE;
+        static if (_GNU_SOURCE)
         {
             enum
             {

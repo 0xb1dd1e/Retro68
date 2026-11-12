@@ -1,7 +1,8 @@
 // -*- C++ -*-
-// { dg-options "-std=gnu++17 -ltbb" }
+// { dg-options "-ltbb" }
 // { dg-do run { target c++17 } }
-// { dg-require-effective-target tbb-backend }
+// { dg-timeout-factor 3 }
+// { dg-require-effective-target tbb_backend }
 
 //===-- swap_ranges.pass.cpp ----------------------------------------------===//
 //
@@ -60,7 +61,7 @@ template <typename T>
 struct check_swap
 {
     bool
-    operator()(T& a)
+    operator()(T&)
     {
         return true;
     }
@@ -128,7 +129,7 @@ test()
     }
 }
 
-int32_t
+int
 main()
 {
     test<wrapper<uint16_t>>();

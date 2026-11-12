@@ -1,5 +1,5 @@
 /* frags.c - manage frags -
-   Copyright (C) 1987-2018 Free Software Foundation, Inc.
+   Copyright (C) 1987-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -25,9 +25,9 @@
 extern fragS zero_address_frag;
 extern fragS predefined_address_frag;
 
-static int totalfrags;
+static unsigned int totalfrags;
 
-int
+unsigned int
 get_frag_count (void)
 {
   return totalfrags;
@@ -69,29 +69,33 @@ frag_alloc_check (const struct obstack *ob)
 }
 
 /* Allocate a frag on the specified obstack.
-   Call this routine from everywhere else, so that all the weird alignment
-   hackery can be done in just one place.  */
+   Call this routine every time a new frag is made, so that the
+   alignment hackery can be done in just one place.  */
 
 fragS *
-frag_alloc (struct obstack *ob)
+frag_alloc (struct obstack *ob, size_t extra)
 {
   fragS *ptr;
-  int oalign;
 
-  (void) obstack_alloc (ob, 0);
-  oalign = obstack_alignment_mask (ob);
-  obstack_alignment_mask (ob) = 0;
-  ptr = (fragS *) obstack_alloc (ob, SIZEOF_STRUCT_FRAG);
-  obstack_alignment_mask (ob) = oalign;
+  /* This will align the obstack so the next struct we allocate on it
+     will begin at a correct boundary.  */
+  (void) obstack_finish (ob);
+  /* Do not use obstack_alloc here.  If you do, you'll need to turn
+     off alignment as otherwise obstack_alloc will align the end of
+     the frag (via obstack_finish adjusting obstack next_free
+     pointer), making it seem like the frag already has contents in
+     fr_literal.  */
+  obstack_blank (ob, extra + SIZEOF_STRUCT_FRAG);
+  ptr = obstack_base (ob);
   memset (ptr, 0, SIZEOF_STRUCT_FRAG);
   totalfrags++;
   return ptr;
 }
 
 /* Try to augment current frag by nchars chars.
-   If there is no room, close of the current frag with a ".fill 0"
-   and begin a new frag. Unless the new frag has nchars chars available
-   do not return. Do not set up any fields of *now_frag.  */
+   If there is no room, close off the current frag with a ".fill 0"
+   and begin a new frag.  Then loop until the new frag has at least
+   nchars chars available.  Does not set up any fields in frag_now.  */
 
 void
 frag_grow (size_t nchars)
@@ -165,19 +169,19 @@ frag_new (size_t old_frags_var_max_size
   gas_assert (frchain_now->frch_last == frag_now);
 
   /* Fix up old frag's fr_fix.  */
-  frag_now->fr_fix = frag_now_fix_octets () - old_frags_var_max_size;
+  frag_now->fr_fix = frag_now_fix_octets ();
+  gas_assert (frag_now->fr_fix >= old_frags_var_max_size
+	      || now_seg == absolute_section);
+  frag_now->fr_fix -= old_frags_var_max_size;
   /* Make sure its type is valid.  */
   gas_assert (frag_now->fr_type != 0);
 
-  /* This will align the obstack so the next struct we allocate on it
-     will begin at a correct boundary.  */
-  obstack_finish (&frchain_now->frch_obstack);
   frchP = frchain_now;
   know (frchP);
   former_last_fragP = frchP->frch_last;
   gas_assert (former_last_fragP != 0);
   gas_assert (former_last_fragP == frag_now);
-  frag_now = frag_alloc (&frchP->frch_obstack);
+  frag_now = frag_alloc (&frchP->frch_obstack, 0);
 
   frag_now->fr_file = as_where (&frag_now->fr_line);
 
@@ -189,10 +193,7 @@ frag_new (size_t old_frags_var_max_size
   frchP->frch_last = frag_now;
 
 #ifndef NO_LISTING
-  {
-    extern struct list_info_struct *listing_tail;
-    frag_now->line = listing_tail;
-  }
+  frag_now->line = listing_tail;
 #endif
 
   gas_assert (frchain_now->frch_last == frag_now);
@@ -238,7 +239,7 @@ frag_var_init (relax_stateT type, size_t max_chars, size_t var,
   frag_now->fr_cgen.opinfo = 0;
 #endif
 #ifdef TC_FRAG_INIT
-  TC_FRAG_INIT (frag_now);
+  TC_FRAG_INIT (frag_now, max_chars);
 #endif
   frag_now->fr_file = as_where (&frag_now->fr_line);
 
@@ -325,8 +326,7 @@ frag_align (int alignment, int fill_character, int max)
     {
       char *p;
 
-      p = frag_var (rs_align, 1, 1, (relax_substateT) max,
-		    (symbolS *) 0, (offsetT) alignment, (char *) 0);
+      p = frag_var (rs_align, 1, 1, max, NULL, alignment, NULL);
       *p = fill_character;
     }
 }
@@ -344,8 +344,7 @@ frag_align_pattern (int alignment, const char *fill_pattern,
 {
   char *p;
 
-  p = frag_var (rs_align, n_fill, n_fill, (relax_substateT) max,
-		(symbolS *) 0, (offsetT) alignment, (char *) 0);
+  p = frag_var (rs_align, n_fill, n_fill, max, NULL, alignment, NULL);
   memcpy (p, fill_pattern, n_fill);
 }
 
@@ -355,18 +354,11 @@ frag_align_pattern (int alignment, const char *fill_pattern,
 #define NOP_OPCODE 0x00
 #endif
 
-/* Use this to restrict the amount of memory allocated for representing
-   the alignment code.  Needs to be large enough to hold any fixed sized
+/* Use this to specify the amount of memory allocated for representing
+   the alignment code.  Needs to be large enough to hold any fixed size
    prologue plus the replicating portion.  */
 #ifndef MAX_MEM_FOR_RS_ALIGN_CODE
-  /* Assume that if HANDLE_ALIGN is not defined then no special action
-     is required to code fill, which means that we get just repeat the
-     one NOP_OPCODE byte.  */
-# ifndef HANDLE_ALIGN
-#  define MAX_MEM_FOR_RS_ALIGN_CODE  1
-# else
-#  define MAX_MEM_FOR_RS_ALIGN_CODE  ((1 << alignment) - 1)
-# endif
+# define MAX_MEM_FOR_RS_ALIGN_CODE(p2align, max) 1
 #endif
 
 void
@@ -374,9 +366,8 @@ frag_align_code (int alignment, int max)
 {
   char *p;
 
-  p = frag_var (rs_align_code, MAX_MEM_FOR_RS_ALIGN_CODE, 1,
-		(relax_substateT) max, (symbolS *) 0,
-		(offsetT) alignment, (char *) 0);
+  p = frag_var (rs_align_code, MAX_MEM_FOR_RS_ALIGN_CODE (alignment, max),
+		1, max, NULL, alignment, NULL);
   *p = NOP_OPCODE;
 }
 
@@ -393,7 +384,12 @@ frag_now_fix_octets (void)
 addressT
 frag_now_fix (void)
 {
-  return frag_now_fix_octets () / OCTETS_PER_BYTE;
+  /* Symbols whose section has SEC_ELF_OCTETS set,
+     resolve to octets instead of target bytes.  */
+  if (now_seg->flags & SEC_OCTETS)
+    return frag_now_fix_octets ();
+  else
+    return frag_now_fix_octets () / OCTETS_PER_BYTE;
 }
 
 void
@@ -412,7 +408,7 @@ frag_append_1_char (int datum)
    their start addresses.  Set OFFSET to the difference in address
    not already accounted for in the frag FR_ADDRESS.  */
 
-bfd_boolean
+bool
 frag_offset_fixed_p (const fragS *frag1, const fragS *frag2, offsetT *offset)
 {
   const fragS *frag;
@@ -424,7 +420,7 @@ frag_offset_fixed_p (const fragS *frag1, const fragS *frag2, offsetT *offset)
   if (frag1 == frag2)
     {
       *offset = off;
-      return TRUE;
+      return true;
     }
 
   /* Maybe frag2 is after frag1.  */
@@ -438,7 +434,7 @@ frag_offset_fixed_p (const fragS *frag1, const fragS *frag2, offsetT *offset)
       if (frag == frag2)
 	{
 	  *offset = off;
-	  return TRUE;
+	  return true;
 	}
     }
 
@@ -454,9 +450,106 @@ frag_offset_fixed_p (const fragS *frag1, const fragS *frag2, offsetT *offset)
       if (frag == frag1)
 	{
 	  *offset = off;
-	  return TRUE;
+	  return true;
 	}
     }
 
-  return FALSE;
+  return false;
+}
+
+/* Return TRUE if FRAG2 follows FRAG1 with a fixed relationship
+   between the two assuming alignment frags do nothing.  Set OFFSET to
+   the difference in address not already accounted for in the frag
+   FR_ADDRESS.  */
+
+bool
+frag_offset_ignore_align_p (const fragS *frag1, const fragS *frag2,
+			    offsetT *offset)
+{
+  const fragS *frag;
+  offsetT off;
+
+  /* Start with offset initialised to difference between the two frags.
+     Prior to assigning frag addresses this will be zero.  */
+  off = frag1->fr_address - frag2->fr_address;
+  if (frag1 == frag2)
+    {
+      *offset = off;
+      return true;
+    }
+
+  frag = frag1;
+  while (frag->fr_type == rs_fill
+	 || frag->fr_type == rs_align
+	 || frag->fr_type == rs_align_code
+	 || frag->fr_type == rs_align_test)
+    {
+      if (frag->fr_type == rs_fill)
+	off += frag->fr_fix + frag->fr_offset * frag->fr_var;
+      frag = frag->fr_next;
+      if (frag == NULL)
+	break;
+      if (frag == frag2)
+	{
+	  *offset = off;
+	  return true;
+	}
+    }
+
+  return false;
+}
+
+/* Return TRUE if we can determine whether FRAG2 OFF2 appears after
+   (strict >, not >=) FRAG1 OFF1, assuming it is not before.  Set
+   *OFFSET so that resolve_expression will resolve an O_gt operation
+   between them to false (0) if they are guaranteed to be at the same
+   location, or to true (-1) if they are guaranteed to be at different
+   locations.  Return FALSE conservatively, e.g. if neither result can
+   be guaranteed (yet).
+
+   They are known to be in the same segment, and not the same frag
+   (this is a fallback for frag_offset_fixed_p, that always takes care
+   of this case), and it is expected (from the uses this is designed
+   to simplify, namely location view increments) that frag2 is
+   reachable from frag1 following the fr_next links, rather than the
+   other way round.  */
+
+bool
+frag_gtoffset_p (valueT off2, const fragS *frag2,
+		 valueT off1, const fragS *frag1, offsetT *offset)
+{
+  /* Insanity check.  */
+  if (frag2 == frag1 || off1 > frag1->fr_fix)
+    return false;
+
+  /* If the first symbol offset is at the end of the first frag and
+     the second symbol offset at the beginning of the second frag then
+     it is possible they are at the same address.  Go looking for a
+     non-zero fr_fix in any frag between these frags.  If found then
+     we can say the O_gt result will be true.  If no such frag is
+     found we assume that frag1 or any of the following frags might
+     have a variable tail and thus the answer is unknown.  This isn't
+     strictly true; some frags don't have a variable tail, but it
+     doesn't seem worth optimizing for those cases.  */
+  const fragS *frag = frag1;
+  offsetT delta = off2 - off1;
+  for (;;)
+    {
+      delta += frag->fr_fix;
+      frag = frag->fr_next;
+      if (frag == frag2)
+	{
+	  if (delta == 0)
+	    return false;
+	  break;
+	}
+      /* If we run off the end of the frag chain then we have a case
+	 where frag2 is not after frag1, ie. an O_gt expression not
+	 created for .loc view.  */
+      if (frag == NULL)
+	return false;
+    }
+
+  *offset = (off2 - off1 - delta) * OCTETS_PER_BYTE;
+  return true;
 }

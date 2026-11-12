@@ -1,4 +1,5 @@
 /* { dg-require-effective-target vect_int } */
+/* { dg-additional-options "-fno-tree-loop-distribute-patterns" } */
 
 #include <stdarg.h>
 #include "../../tree-vect.h"
@@ -25,6 +26,7 @@ int main1 (int *pib)
 
 
   /* check results:  */
+#pragma GCC novector
   for (i = OFF; i < N; i++)
     {
      if (ia[i] != pib[i - OFF])

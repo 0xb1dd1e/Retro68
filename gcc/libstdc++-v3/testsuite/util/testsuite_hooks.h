@@ -1,7 +1,7 @@
 // -*- C++ -*-
 // Utility subroutines for the C++ library testsuite.
 //
-// Copyright (C) 2000-2019 Free Software Foundation, Inc.
+// Copyright (C) 2000-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -44,7 +44,7 @@
 #define _GLIBCXX_TESTSUITE_HOOKS_H
 
 #include <bits/c++config.h>
-#include <bits/functexcept.h>
+#include <bits/stdexcept_throw.h>
 #include <ctime>
 #include <stdio.h>
 
@@ -58,16 +58,13 @@
 # define _VERIFY_PRINT(S, F, L, P, C) __builtin_printf(S, F, L, P, C)
 #endif
 
-#define VERIFY(fn)                                                      \
-  do                                                                    \
-  {                                                                     \
-    if (! (fn))								\
-      {									\
-	_VERIFY_PRINT("%s:%d: %s: Assertion '%s' failed.\n",		\
-		      __FILE__, __LINE__, __PRETTY_FUNCTION__, #fn);	\
-	__builtin_abort();						\
-      }									\
-  } while (false)
+#define VERIFY(...)							\
+   ((void)((__VA_ARGS__)						\
+	     ? (void)(true ? true : bool(__VA_ARGS__))			\
+	     : (_VERIFY_PRINT("%s:%d: %s: Assertion '%s' failed.\n",	\
+			      __FILE__, __LINE__, __PRETTY_FUNCTION__,	\
+			      #__VA_ARGS__),				\
+		__builtin_abort())))
 
 #ifdef _GLIBCXX_HAVE_UNISTD_H
 # include <unistd.h>
@@ -326,13 +323,15 @@ namespace __gnu_test
       typedef typename _Container::const_iterator const_iterator;
 
       // Implicit conversion iterator to const_iterator.
-      static const_iterator
+      static void
       iterator_to_const_iterator()
       {
 	_Container v;
-	const_iterator it = v.begin();
-	const_iterator end = v.end();
-	return it == end ? v.end() : it;
+	const_iterator i __attribute__((unused)) = const_iterator(v.begin());
+	const_iterator j __attribute__((unused)) = true ? i : v.begin();
+#if __cplusplus >= 201103L
+	const_iterator k __attribute__((unused)) { v.begin() };
+#endif
       }
     };
 

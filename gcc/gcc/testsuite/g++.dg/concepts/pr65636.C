@@ -4,8 +4,7 @@
 using TD = int;
 
 template<typename T>
-concept bool C() {
-  return requires () { typename TD; };
-}
+concept C =
+  requires () { typename TD; };
 
-static_assert(C<int>(), "");
+static_assert(C<int>, "");

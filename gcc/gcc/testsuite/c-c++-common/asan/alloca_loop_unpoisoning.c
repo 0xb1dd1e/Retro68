@@ -1,5 +1,5 @@
 /* { dg-do run } */
-/* { dg-require-effective-target alloca } */
+/* { dg-options "--param=asan-use-after-return=0" } */
 
 /* This testcase checks that allocas and VLAs inside loop are correctly unpoisoned.  */
 
@@ -17,7 +17,7 @@ __attribute__((noinline)) void foo(int len) {
   top = &x;
   volatile char array[len];
   assert(!((uintptr_t) array & 31L));
-  __builtin_alloca(len);
+  void *p = __builtin_alloca(len);
   for (int i = 0; i < thirty_two; ++i) {
     char array[i];
     bot = array;

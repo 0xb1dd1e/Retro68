@@ -1,6 +1,6 @@
 // Iostreams base classes -*- C++ -*-
 
-// Copyright (C) 2014-2019 Free Software Foundation, Inc.
+// Copyright (C) 2014-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -42,47 +42,9 @@
 # error This file should not be compiled for this configuration.
 #endif
 
-namespace
-{
-  struct io_error_category : std::error_category
-  {
-    virtual const char*
-    name() const noexcept
-    { return "iostream"; }
-
-    _GLIBCXX_DEFAULT_ABI_TAG
-    virtual std::string message(int __ec) const
-    {
-      std::string __msg;
-      switch (std::io_errc(__ec))
-      {
-      case std::io_errc::stream:
-          __msg = "iostream error";
-          break;
-      default:
-          __msg = "Unknown error";
-          break;
-      }
-      return __msg;
-    }
-  };
-
-  const io_error_category&
-  __io_category_instance() noexcept
-  {
-    static const io_error_category __ec{};
-    return __ec;
-  }
-
-} // namespace
-
 namespace std _GLIBCXX_VISIBILITY(default)
 {
 _GLIBCXX_BEGIN_NAMESPACE_VERSION
-
-  const error_category&
-  iostream_category() noexcept
-  { return __io_category_instance(); }
 
   ios_base::failure::failure(const string& __str)
   : system_error(io_errc::stream, __str) { }
@@ -114,7 +76,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     __ios_failure(const char* s) : failure(s)
     { __construct_ios_failure(buf, runtime_error::what()); }
 
-    __ios_failure(const char* s, int e) : failure(s, to_error_code(e))
+    __ios_failure(const char* s, const error_code& e) : failure(s, e)
     { __construct_ios_failure(buf, runtime_error::what()); }
 
     ~__ios_failure()
@@ -125,16 +87,14 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     // There are assertions in src/c++98/ios_failure.cc to ensure the size
     // and alignment assumptions are valid.
     alignas(runtime_error) unsigned char buf[sizeof(runtime_error)];
-
-    static error_code
-    to_error_code(int e)
-    { return e ? error_code(e, system_category()) : io_errc::stream; }
   };
 
   // Custom type info for __ios_failure.
   class __iosfail_type_info : __cxxabiv1::__si_class_type_info
   {
     ~__iosfail_type_info();
+
+    using __si_class_type_info::__do_upcast;
 
     bool
     __do_upcast (const __class_type_info *dst_type,
@@ -171,7 +131,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   void
   __throw_ios_failure(const char* str __attribute__((unused)),
 		      int err __attribute__((unused)))
-  { _GLIBCXX_THROW_OR_ABORT(__ios_failure(_(str), err)); }
+  {
+    _GLIBCXX_THROW_OR_ABORT(__ios_failure(_(str),
+	  err ? error_code(err, generic_category()) : io_errc::stream));
+  }
 
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace

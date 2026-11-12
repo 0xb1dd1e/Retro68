@@ -1,7 +1,8 @@
 //===-- sanitizer_symbolizer.h ----------------------------------*- C++ -*-===//
 //
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -19,6 +20,7 @@
 
 #include "sanitizer_common.h"
 #include "sanitizer_mutex.h"
+#include "sanitizer_vector.h"
 
 namespace __sanitizer {
 
@@ -30,6 +32,8 @@ struct AddressInfo {
   char *module;
   uptr module_offset;
   ModuleArch module_arch;
+  u8 uuid[kModuleUUIDSize];
+  uptr uuid_size;
 
   static const uptr kUnknown = ~(uptr)0;
   char *function;
@@ -43,6 +47,8 @@ struct AddressInfo {
   // Deletes all strings and resets all fields.
   void Clear();
   void FillModuleInfo(const char *mod_name, uptr mod_offset, ModuleArch arch);
+  void FillModuleInfo(const LoadedModule &mod);
+  uptr module_base() const { return address - module_offset; }
 };
 
 // Linked list of symbolized frames (each frame is described by AddressInfo).
@@ -56,6 +62,26 @@ struct SymbolizedStack {
 
  private:
   SymbolizedStack();
+};
+
+class SymbolizedStackHolder {
+  SymbolizedStack *Stack;
+
+  void clear() {
+    if (Stack)
+      Stack->ClearAll();
+  }
+
+ public:
+  explicit SymbolizedStackHolder(SymbolizedStack *Stack = nullptr)
+      : Stack(Stack) {}
+  ~SymbolizedStackHolder() { clear(); }
+  void reset(SymbolizedStack *S = nullptr) {
+    if (Stack != S)
+      clear();
+    Stack = S;
+  }
+  const SymbolizedStack *get() const { return Stack; }
 };
 
 // For now, DataInfo is used to describe global variable.
@@ -76,6 +102,32 @@ struct DataInfo {
   void Clear();
 };
 
+struct LocalInfo {
+  char *function_name = nullptr;
+  char *name = nullptr;
+  char *decl_file = nullptr;
+  unsigned decl_line = 0;
+
+  bool has_frame_offset = false;
+  bool has_size = false;
+  bool has_tag_offset = false;
+
+  sptr frame_offset;
+  uptr size;
+  uptr tag_offset;
+
+  void Clear();
+};
+
+struct FrameInfo {
+  char *module;
+  uptr module_offset;
+  ModuleArch module_arch;
+
+  InternalMmapVector<LocalInfo> locals;
+  void Clear();
+};
+
 class SymbolizerTool;
 
 class Symbolizer final {
@@ -88,6 +140,7 @@ class Symbolizer final {
   // all inlined functions, if necessary).
   SymbolizedStack *SymbolizePC(uptr address);
   bool SymbolizeData(uptr address, DataInfo *info);
+  bool SymbolizeFrame(uptr address, FrameInfo *info);
 
   // The module names Symbolizer returns are stable and unique for every given
   // module.  It is safe to store and compare them as pointers.
@@ -103,7 +156,7 @@ class Symbolizer final {
 
   // Release internal caches (if any).
   void Flush();
-  // Attempts to demangle the provided C++ mangled name.
+  // Attempts to demangle the provided C++ mangled name. Never returns nullptr.
   const char *Demangle(const char *name);
 
   // Allow user to install hooks that would be called before/after Symbolizer
@@ -121,6 +174,8 @@ class Symbolizer final {
 
   void InvalidateModuleList();
 
+  const ListOfModules &GetRefreshedListOfModules();
+
  private:
   // GetModuleNameAndOffsetForPC has to return a string to the caller.
   // Since the corresponding module might get unloaded later, we should create
@@ -129,18 +184,18 @@ class Symbolizer final {
   // its method should be protected by |mu_|.
   class ModuleNameOwner {
    public:
-    explicit ModuleNameOwner(BlockingMutex *synchronized_by)
-        : last_match_(nullptr), mu_(synchronized_by) {
+    explicit ModuleNameOwner(Mutex *synchronized_by)
+        : mu_(synchronized_by), last_match_(nullptr) {
       storage_.reserve(kInitialCapacity);
     }
     const char *GetOwnedCopy(const char *str);
 
    private:
     static const uptr kInitialCapacity = 1000;
-    InternalMmapVector<const char*> storage_;
-    const char *last_match_;
 
-    BlockingMutex *mu_;
+    Mutex *mu_;
+    const char *last_match_ SANITIZER_GUARDED_BY(mu_);
+    InternalMmapVector<const char *> storage_ SANITIZER_GUARDED_BY(*mu_);
   } module_names_;
 
   /// Platform-specific function for creating a Symbolizer object.
@@ -154,7 +209,7 @@ class Symbolizer final {
   // If stale, need to reload the modules before looking up addresses.
   bool modules_fresh_;
 
-  // Platform-specific default demangler, must not return nullptr.
+  // Platform-specific default demangler, returns nullptr on failure.
   const char *PlatformDemangle(const char *name);
 
   static Symbolizer *symbolizer_;
@@ -163,9 +218,9 @@ class Symbolizer final {
   // Mutex locked from public methods of |Symbolizer|, so that the internals
   // (including individual symbolizer tools and platform-specific methods) are
   // always synchronized.
-  BlockingMutex mu_;
+  Mutex mu_;
 
-  IntrusiveList<SymbolizerTool> tools_;
+  IntrusiveList<SymbolizerTool> tools_ SANITIZER_GUARDED_BY(mu_);
 
   explicit Symbolizer(IntrusiveList<SymbolizerTool> tools);
 
@@ -179,6 +234,7 @@ class Symbolizer final {
     ~SymbolizerScope();
    private:
     const Symbolizer *sym_;
+    int errno_;  // Backup errno in case symbolizer change the value.
   };
 };
 

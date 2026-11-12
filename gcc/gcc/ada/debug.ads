@@ -6,23 +6,17 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2019, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2026, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
 -- ware  Foundation;  either version 3,  or (at your option) any later ver- --
 -- sion.  GNAT is distributed in the hope that it will be useful, but WITH- --
 -- OUT ANY WARRANTY;  without even the  implied warranty of MERCHANTABILITY --
--- or FITNESS FOR A PARTICULAR PURPOSE.                                     --
---                                                                          --
--- As a special exception under Section 7 of GPL version 3, you are granted --
--- additional permissions described in the GCC Runtime Library Exception,   --
--- version 3.1, as published by the Free Software Foundation.               --
---                                                                          --
--- You should have received a copy of the GNU General Public License and    --
--- a copy of the GCC Runtime Library Exception along with this program;     --
--- see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see    --
--- <http://www.gnu.org/licenses/>.                                          --
+-- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
+-- for  more details.  You should have  received  a copy of the GNU General --
+-- Public License  distributed with GNAT; see file COPYING3.  If not, go to --
+-- http://www.gnu.org/licenses for a complete copy of the license.          --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -36,20 +30,22 @@
 package Debug is
    pragma Preelaborate;
 
-   -------------------------
-   -- Dynamic Debug Flags --
-   -------------------------
+   -----------------
+   -- Debug Flags --
+   -----------------
 
-   --  Flags that can be used to activate various specialized debugging output
-   --  information. The flags are preset to False, which corresponds to the
-   --  given output being suppressed. The individual flags can be turned on
-   --  using the undocumented switch dxxx where xxx is a string of letters for
-   --  flags to be turned on. Documentation on the current usage of these flags
-   --  is contained in the body of Debug rather than the spec, so that we don't
-   --  have to recompile the world when a new debug flag is added.
+   --  Flags that can be used to activate various debugging actions. They are
+   --  False by default, which means any output is suppressed. The individual
+   --  flags can be turned on using the undocumented switches -dxxx, -d.xxx, or
+   --  -d_xxx where xxx is a string of letters or digits for flags to be turned
+   --  on. For the compiler itself, "gnat" is prepended, as in -gnatdxxx,
+   --  -gnatd.xxx, or -gnatd_xxx. Documentation of each flag is given in the
+   --  package body.
 
-   Debug_Flag_A : Boolean := False;
-   Debug_Flag_B : Boolean := False;
+   --  WARNING: There is a matching C declaration of a few flags in fe.h
+
+   Debug_Flag_A : Boolean := False; -- -da or -gnatda
+   Debug_Flag_B : Boolean := False; -- ... etc.
    Debug_Flag_C : Boolean := False;
    Debug_Flag_D : Boolean := False;
    Debug_Flag_E : Boolean := False;
@@ -75,7 +71,7 @@ package Debug is
    Debug_Flag_Y : Boolean := False;
    Debug_Flag_Z : Boolean := False;
 
-   Debug_Flag_AA : Boolean := False;
+   Debug_Flag_AA : Boolean := False; -- -dA or -gnatdA
    Debug_Flag_BB : Boolean := False;
    Debug_Flag_CC : Boolean := False;
    Debug_Flag_DD : Boolean := False;
@@ -102,7 +98,7 @@ package Debug is
    Debug_Flag_YY : Boolean := False;
    Debug_Flag_ZZ : Boolean := False;
 
-   Debug_Flag_1 : Boolean := False;
+   Debug_Flag_1 : Boolean := False; -- -d1 or -gnatd1
    Debug_Flag_2 : Boolean := False;
    Debug_Flag_3 : Boolean := False;
    Debug_Flag_4 : Boolean := False;
@@ -112,7 +108,7 @@ package Debug is
    Debug_Flag_8 : Boolean := False;
    Debug_Flag_9 : Boolean := False;
 
-   Debug_Flag_Dot_A : Boolean := False;
+   Debug_Flag_Dot_A : Boolean := False; -- -d.a or -gnatd.a
    Debug_Flag_Dot_B : Boolean := False;
    Debug_Flag_Dot_C : Boolean := False;
    Debug_Flag_Dot_D : Boolean := False;
@@ -139,7 +135,7 @@ package Debug is
    Debug_Flag_Dot_Y : Boolean := False;
    Debug_Flag_Dot_Z : Boolean := False;
 
-   Debug_Flag_Dot_AA : Boolean := False;
+   Debug_Flag_Dot_AA : Boolean := False; -- -d.A or -gnatd.A
    Debug_Flag_Dot_BB : Boolean := False;
    Debug_Flag_Dot_CC : Boolean := False;
    Debug_Flag_Dot_DD : Boolean := False;
@@ -166,7 +162,7 @@ package Debug is
    Debug_Flag_Dot_YY : Boolean := False;
    Debug_Flag_Dot_ZZ : Boolean := False;
 
-   Debug_Flag_Dot_1 : Boolean := False;
+   Debug_Flag_Dot_1 : Boolean := False; -- -d.1 or -gnatd.1
    Debug_Flag_Dot_2 : Boolean := False;
    Debug_Flag_Dot_3 : Boolean := False;
    Debug_Flag_Dot_4 : Boolean := False;
@@ -176,7 +172,7 @@ package Debug is
    Debug_Flag_Dot_8 : Boolean := False;
    Debug_Flag_Dot_9 : Boolean := False;
 
-   Debug_Flag_Underscore_A : Boolean := False;
+   Debug_Flag_Underscore_A : Boolean := False; -- -d_a or -gnatd_a
    Debug_Flag_Underscore_B : Boolean := False;
    Debug_Flag_Underscore_C : Boolean := False;
    Debug_Flag_Underscore_D : Boolean := False;
@@ -203,7 +199,7 @@ package Debug is
    Debug_Flag_Underscore_Y : Boolean := False;
    Debug_Flag_Underscore_Z : Boolean := False;
 
-   Debug_Flag_Underscore_AA : Boolean := False;
+   Debug_Flag_Underscore_AA : Boolean := False; -- -d_A or -gnatd_A
    Debug_Flag_Underscore_BB : Boolean := False;
    Debug_Flag_Underscore_CC : Boolean := False;
    Debug_Flag_Underscore_DD : Boolean := False;
@@ -230,7 +226,7 @@ package Debug is
    Debug_Flag_Underscore_YY : Boolean := False;
    Debug_Flag_Underscore_ZZ : Boolean := False;
 
-   Debug_Flag_Underscore_1 : Boolean := False;
+   Debug_Flag_Underscore_1 : Boolean := False; -- -d_1 or -gnatd_1
    Debug_Flag_Underscore_2 : Boolean := False;
    Debug_Flag_Underscore_3 : Boolean := False;
    Debug_Flag_Underscore_4 : Boolean := False;
@@ -242,8 +238,7 @@ package Debug is
 
    procedure Set_Debug_Flag (C : Character; Val : Boolean := True);
    --  Where C is 0-9, A-Z, or a-z, sets the corresponding debug flag to
-   --  the given value. In the checks off version of debug, the call to
-   --  Set_Debug_Flag is always a null operation.
+   --  the given value.
 
    procedure Set_Dotted_Debug_Flag (C : Character; Val : Boolean := True);
    --  Where C is 0-9, A-Z, or a-z, sets the corresponding dotted debug

@@ -7,9 +7,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef __PSTL_glue_memory_defs_H
-#define __PSTL_glue_memory_defs_H
+#ifndef _PSTL_GLUE_MEMORY_DEFS_H
+#define _PSTL_GLUE_MEMORY_DEFS_H
 
+#include <bits/stl_iterator_base_types.h>
 #include "execution_defs.h"
 
 namespace std
@@ -37,11 +38,11 @@ uninitialized_move_n(_ExecutionPolicy&& __exec, _InputIterator __first, _Size __
 
 // [uninitialized.fill]
 
-template <class _ExecutionPolicy, class _ForwardIterator, class _Tp>
+template <class _ExecutionPolicy, class _ForwardIterator, class _Tp _GLIBCXX26_ALGO_DEF_VAL_T(_ForwardIterator)>
 __pstl::__internal::__enable_if_execution_policy<_ExecutionPolicy, void>
 uninitialized_fill(_ExecutionPolicy&& __exec, _ForwardIterator __first, _ForwardIterator __last, const _Tp& __value);
 
-template <class _ExecutionPolicy, class _ForwardIterator, class _Size, class _Tp>
+template <class _ExecutionPolicy, class _ForwardIterator, class _Size, class _Tp _GLIBCXX26_ALGO_DEF_VAL_T(_ForwardIterator)>
 __pstl::__internal::__enable_if_execution_policy<_ExecutionPolicy, _ForwardIterator>
 uninitialized_fill_n(_ExecutionPolicy&& __exec, _ForwardIterator __first, _Size __n, const _Tp& __value);
 
@@ -76,4 +77,4 @@ __pstl::__internal::__enable_if_execution_policy<_ExecutionPolicy, _ForwardItera
 uninitialized_value_construct_n(_ExecutionPolicy&& __exec, _ForwardIterator __first, _Size __n);
 
 } //  namespace std
-#endif /* __PSTL_glue_memory_defs_H */
+#endif /* _PSTL_GLUE_MEMORY_DEFS_H */

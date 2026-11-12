@@ -1,4 +1,5 @@
 // { dg-do run { target c++14 } }
+// { dg-skip-if "requires hosted libstdc++ for cassert" { ! hostedlib } }
 
 #include <cassert>
 
@@ -19,7 +20,7 @@ private:
 
 constexpr A f() {
     A a{};
-    for (int i = 1; i <= n; i++) {
+    for (int i = 0; i < n; i++) {
         a[i] = i;
     }
     return a;

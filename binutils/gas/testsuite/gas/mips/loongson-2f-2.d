@@ -1,13 +1,12 @@
 #as: -mfix-loongson2f-nop
 #objdump: -M reg-names=numeric -dr
-#name: ST Microelectronics Loongson-2F workarounds of nop issue 
+#name: ST Microelectronics Loongson-2F workarounds of nop issue
 
 .*:     file format .*
 
-
 Disassembly of section .text:
 
-00000000 <loongson2f_nop_insn>:
+0+000000 <loongson2f_nop_insn>:
    0:	00200825 	move	\$1,\$1
    4:	00200825 	move	\$1,\$1
    8:	00200825 	move	\$1,\$1
