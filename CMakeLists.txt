@@ -83,7 +83,9 @@ endif()
 
 add_subdirectory(LaunchAPPL)
 
-if(NOT CMAKE_SYSTEM_NAME MATCHES RetroBeBox)
+if(CMAKE_SYSTEM_NAME MATCHES RetroBeBox)
+    add_subdirectory(BeBoxTests)
+else()
     add_subdirectory(AutomatedTests)
 endif()
 else()

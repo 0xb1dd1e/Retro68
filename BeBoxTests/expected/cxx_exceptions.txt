@@ -1,0 +1,14 @@
+== exceptions
+  ctor in thrower
+  dtor in thrower (unwound)
+caught int 42
+  ctor in thrower
+  dtor in thrower (unwound)
+caught std::exception: runtime_error from thrower
+  ctor in thrower
+  dtor in thrower (unwound)
+caught string: a std::string
+== std::string / std::vector
+Hello, BeBox 1 (len 14)
+vector size 10, sum 285
+== done

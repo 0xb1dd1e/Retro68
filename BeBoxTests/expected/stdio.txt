@@ -1,0 +1,5 @@
+printf via newlib stdio: argc=1
+fprintf to stderr works
+fputs to stdout
+malloc/strcpy ok
+read back: line written by newlib stdio on BeOS
