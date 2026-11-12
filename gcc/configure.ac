@@ -1061,9 +1061,9 @@ case "${target}" in
   *-*-aix*)
     noconfigdirs="$noconfigdirs target-newlib target-libgloss"
     ;;
-  *-*-beos*)
-    noconfigdirs="$noconfigdirs target-newlib target-libgloss"
-    ;;
+#  *-*-beos*)
+#    noconfigdirs="$noconfigdirs target-newlib target-libgloss"
+#    ;;
   *-*-chorusos)
     noconfigdirs="$noconfigdirs target-newlib target-libgloss"
     ;;

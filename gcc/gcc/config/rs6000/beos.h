@@ -45,9 +45,31 @@
 
 /* TODO: add libroot to some of these, maybe replace -lc */
 #define LIB_SPEC "-lc"
-#define LIBGCC_SPEC "-lgcc"
-#define LINK_GCC_C_SEQUENCE_SPEC "--start-group -lgcc -lc --end-group"
+#define LIBGCC_SPEC "-lgcc -lretrocrt -lroot -lgcc"
+#define LINK_GCC_C_SEQUENCE_SPEC "--start-group -lgcc -lc -lretrocrt -lroot --end-group"
 
 /* TODO: we'll need a startfile... */
 #undef STARTFILE_SPEC
 #define STARTFILE_SPEC ""
+
+/* GCC >= 14 no longer has XCOFF/stabs debug output, so debug the same way
+   as the classic Mac OS PowerPC target (macos.h): DWARF 2 in XCOFF sections.
+   TODO: decide what the best debugging story for BeOS will be.  */
+#define DWARF2_DEBUGGING_INFO 1
+#define PREFERRED_DEBUGGING_TYPE DWARF2_DEBUG
+/* gas only knows the XCOFF .dwsect codes for DWARF <= 4; GCC's DWARF 5
+   default would emit .debug_rnglists / .debug_loclists / .debug_line_str by
+   name, which the assembler rejects.  */
+#define DWARF_VERSION_DEFAULT 4
+#define DEBUG_INFO_SECTION	"0x10000"
+#define DEBUG_LINE_SECTION	"0x20000"
+#define DEBUG_PUBNAMES_SECTION	"0x30000"
+#define DEBUG_PUBTYPES_SECTION	"0x40000"
+#define DEBUG_ARANGES_SECTION	"0x50000"
+#define DEBUG_ABBREV_SECTION	"0x60000"
+#define DEBUG_STR_SECTION	"0x70000"
+#define DEBUG_RANGES_SECTION	"0x80000"
+#define DEBUG_LOC_SECTION	"0x90000"
+#define DEBUG_FRAME_SECTION	"0xA0000"
+#define DEBUG_MACINFO_SECTION	"0xB0000"
+#define DEBUG_MACRO_SECTION	"0xB0000"
