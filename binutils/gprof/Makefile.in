@@ -1184,6 +1184,11 @@ uninstall-man: uninstall-man1
 .PRECIOUS: Makefile
 
 
+# glibc's const-correct strrchr() makes GCC >= 15 reject these files under
+# -Werror (-Wdiscarded-qualifiers).  Demote just that diagnostic, just for
+# these objects (GNU make target-specific variable).
+source.$(OBJEXT): AM_CFLAGS += -Wno-error=discarded-qualifiers
+
 diststuff: $(BUILT_SOURCES) info $(man_MANS)
 
 # This empty rule is a hack against gmake patched by Apple.

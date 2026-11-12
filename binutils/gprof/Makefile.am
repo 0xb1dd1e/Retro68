@@ -33,6 +33,11 @@ WARN_CFLAGS = @WARN_CFLAGS@
 NO_WERROR = @NO_WERROR@
 AM_CFLAGS = $(WARN_CFLAGS)
 
+# glibc's const-correct strrchr() makes GCC >= 15 reject these files under
+# -Werror (-Wdiscarded-qualifiers).  Demote just that diagnostic, just for
+# these objects (GNU make target-specific variable).
+source.$(OBJEXT): AM_CFLAGS += -Wno-error=discarded-qualifiers
+
 AM_CPPFLAGS = -DDEBUG -I../bfd -I$(srcdir)/../include \
 	-I$(srcdir)/../bfd @INCINTL@ @LARGEFILE_CPPFLAGS@ -I. \
 	-DLOCALEDIR="\"$(datadir)/locale\""

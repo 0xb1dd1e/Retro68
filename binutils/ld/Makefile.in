@@ -851,6 +851,7 @@ ALL_EMULATION_SOURCES = \
 	epdp11.c \
 	epjelf.c \
 	epjlelf.c \
+	eppcbeos.c \
 	eppcmacos.c \
 	epruelf.c \
 	escore3_elf.c \
@@ -1539,6 +1540,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/epdp11.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/epjelf.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/epjlelf.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/eppcbeos.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/eppcmacos.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/epruelf.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/escore3_elf.Po@am__quote@
@@ -2272,6 +2274,11 @@ uninstall-man: uninstall-man1
 
 .PRECIOUS: Makefile
 
+
+# glibc's const-correct strrchr() makes GCC >= 15 reject this file under
+# -Werror (-Wdiscarded-qualifiers).  Demote just that diagnostic, just for
+# this object (GNU make target-specific variable).
+ldlang.$(OBJEXT): AM_CFLAGS += -Wno-error=discarded-qualifiers
 
 # Disable -Werror, if it has been enabled, since old versions of bison/
 # yacc will produce working code which contain compile time warnings.

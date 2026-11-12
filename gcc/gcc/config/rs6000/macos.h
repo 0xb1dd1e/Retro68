@@ -157,8 +157,6 @@
       builtin_assert ("system=macos");     \
       builtin_assert ("cpu=powerpc");     \
       builtin_assert ("machine=powerpc"); \
-            builtin_assert ("cpu=m68k");          \
-      builtin_assert ("machine=m68k");          \
       builtin_define("pascal=__attribute__((__pascal__))");	\
       builtin_define("__IEEE_BIG_ENDIAN"); \
     }                                     \

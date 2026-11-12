@@ -555,3 +555,16 @@ You can also use the cmake variable `RETRO68_LAUNCH_METHOD` to override the Laun
 for specific platforms:
 
     cmake . -DRETRO68_LAUNCH_METHOD=minivmac
+
+#### Testing the BeOS / BeBox target
+
+The experimental `powerpc-be-beos` target (build with `build-toolchain.bash --bebox`)
+has its own test suite in `BeBoxTests`. It runs the test programs on a BeOS R5
+machine (a real BeBox or an emulator) over FTP and telnet instead of `LaunchAPPL`,
+and is skipped when no such machine can be reached:
+
+    cd build-target-bebox
+    BEBOX_HOST=192.168.77.2 BEBOX_USER=... BEBOX_PASSWORD=... ctest
+
+See `BeBoxTests/README.md` for the setup, an emulator example and how the Mac and
+BeOS suites relate.

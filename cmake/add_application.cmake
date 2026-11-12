@@ -5,6 +5,12 @@ cmake_policy(SET CMP0012 NEW)
 
 function(add_application name)
 
+    if(CMAKE_SYSTEM_NAME MATCHES RetroBeBox)
+        message(FATAL_ERROR
+            "add_application() is not supported for BeBox yet: it builds classic Mac OS "
+            "applications (resource fork, cfrg). Link a PEF with MakePEF directly.")
+    endif()
+
     set(options DEBUGBREAK CONSOLE)
     set(oneValueArgs TYPE CREATOR)
     set(multiValueArgs FILES MAKEAPPL_ARGS)

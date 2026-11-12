@@ -56,6 +56,11 @@ WARN_CFLAGS_FOR_BUILD = @WARN_CFLAGS_FOR_BUILD@
 NO_WERROR = @NO_WERROR@
 AM_CFLAGS = $(WARN_CFLAGS) $(ZLIBINC) $(ZSTD_CFLAGS)
 AM_CFLAGS_FOR_BUILD = $(WARN_CFLAGS_FOR_BUILD) $(ZLIBINC) $(ZSTD_CFLAGS)
+
+# glibc's const-correct strrchr() makes GCC >= 15 reject these files under
+# -Werror (-Wdiscarded-qualifiers).  Demote just that diagnostic, just for
+# these objects (GNU make target-specific variable).
+nm.$(OBJEXT) addr2line.$(OBJEXT) prdbg.$(OBJEXT): AM_CFLAGS += -Wno-error=discarded-qualifiers
 LIBICONV = @LIBICONV@
 
 # these two are almost the same program

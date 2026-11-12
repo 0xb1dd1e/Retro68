@@ -1,0 +1,5 @@
+Global ctor, v=41
+main: argc=1, g1.v=41
+virtual call: area=9
+new[]: 0 1 4 9
+Global dtor, v=41

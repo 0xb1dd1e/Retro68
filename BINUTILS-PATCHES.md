@@ -388,6 +388,207 @@ reference implementation is `discard_eh_frame_inputs` in this tree.
 
 ---
 
+## 14. Demote `-Wdiscarded-qualifiers` for five objects (GCC >= 15 / newer glibc)
+
+### What it does
+Binutils builds with `-Werror`. With glibc's const-correct `strrchr()` and a
+recent GCC, five objects fail with "assignment discards 'const' qualifier":
+`binutils/addr2line.c`, `binutils/nm.c`, `binutils/prdbg.c`, `gprof/source.c`
+and `ld/ldlang.c`. A GNU make target-specific variable in each directory's
+`Makefile.am` appends `-Wno-error=discarded-qualifiers` to `AM_CFLAGS` for
+just those objects, e.g.:
+
+```make
+nm.$(OBJEXT) addr2line.$(OBJEXT) prdbg.$(OBJEXT): AM_CFLAGS += -Wno-error=discarded-qualifiers
+```
+
+Everything else keeps `-Werror`, so no `--disable-werror` is needed.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `binutils/Makefile.am`, `binutils/Makefile.in` | Flag for `nm`, `addr2line`, `prdbg` |
+| `gprof/Makefile.am`, `gprof/Makefile.in` | Flag for `source` |
+| `ld/Makefile.am`, `ld/Makefile.in` | Flag for `ldlang` |
+
+### Re-applying to a newer binutils
+Try building without these first; later binutils releases may fix the
+casts. If not, re-add the lines and regenerate each `Makefile.in` with the
+automake version the tree was generated with (1.15.1 for 2.46).
+
+---
+
+# BeBox (`powerpc-*-beos`) target
+
+Sections 15-19 describe the additions for the BeBox / BeOS (R5, PowerPC 603e)
+target, `powerpc-be-beos`. It is deliberately a *separate* target from the
+classic Mac OS PowerPC one: the object-format and linker machinery is a near
+clone of `powerpc-apple-macos` (XCOFF, PEF output), but BeBox is a different
+platform from a PowerMac, so it gets its own target triple and its own BFD
+vector, `xcoff-bebox`, instead of reusing `xcoff-powermac`. Sections 15-19
+touch several of the same files as sections 1-8 (notably `coff-rs6000.c` and
+`config.bfd`); apply them after the classic Mac patches.
+
+---
+
+## 15. BFD: `bebox_xcoff_vec` target vector
+
+Scope: the BeBox target supports programs that use libroot as their C library for now; see `GCC-PATCHES.md`, section 18, for what is and is not supported.
+
+### What it does
+Adds an `xcoff-bebox` BFD target. It is a copy of `rs6000_xcoff_vec` and its
+`xcoff_backend_data_rec` with only three differences:
+
+- the target name is `xcoff-bebox`;
+- the default architecture/machine is `bfd_arch_powerpc` / `bfd_mach_ppc`
+  (instead of `bfd_arch_rs6000` / `bfd_mach_rs6k`);
+- `_xcoff_rtinit_size` is 0.
+
+It shares the RS/6000 and PowerPC magic number, so it is listed in
+`_bfd_target_vector` (and selected through `config.bfd`) like `powerpc_xcoff_vec`.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `bfd/coff-rs6000.c` | New `bfd_bebox_xcoff_backend_data` and `bebox_xcoff_vec`, appended at the end of the file. |
+| `bfd/targets.c` | `extern const bfd_target bebox_xcoff_vec;` and an entry in `_bfd_target_vector`. |
+| `bfd/configure.ac`, `bfd/configure` | `bebox_xcoff_vec) tb="$tb coff-rs6000.lo $xcoff"` in the target-vector switch. |
+
+### Re-applying to a newer binutils
+Do **not** copy the old block: the `bfd_target` and `xcoff_backend_data_rec`
+layouts change between releases (2.39 to 2.46 added and removed fields, and
+the old copy no longer compiled). Re-derive it from the current
+`bfd_xcoff_backend_data` and `rs6000_xcoff_vec`: copy both, rename
+`bfd_xcoff_backend_data` to `bfd_bebox_xcoff_backend_data` and
+`rs6000_xcoff_vec` to `bebox_xcoff_vec`, change the name string, set the
+arch/mach to `bfd_arch_powerpc` / `bfd_mach_ppc`, and set `_xcoff_rtinit_size`
+to 0. Then regenerate `bfd/configure`.
+
+---
+
+## 16. BFD: select `powerpc-*-beos*` and exempt it from the obsolete list
+
+### What it does
+`config.bfd` gets a `powerpc-*-beos*` stanza with
+`targ_defvec=bebox_xcoff_vec` and `targ_selvecs="rs6000_xcoff_vec pef_vec
+powerpc_boot_vec"`. Since binutils 2.46 also lists `*-*-beos*` among the
+removed ("obsolete") targets, which makes `configure` refuse `powerpc-be-beos`
+with "Configuration ... is now obsolete", an exemption is added, modelled on
+the existing `mips*-*-irix5*` one.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `bfd/config.bfd` | `powerpc-*-beos*` entry in the "Catch obsolete configurations" switch (before the obsolete list); `powerpc-*-beos*` target stanza; `beos` removed from the generic `powerpc-*-aix*` stanza. |
+
+### Re-applying to a newer binutils
+Check whether `*-*-beos*` is still in the obsolete list; keep the exemption
+first in that `case` so it wins. The target stanza goes next to
+`powerpc-*-macos*`.
+
+---
+
+## 17. GAS: `TE_BEOS` environment
+
+### What it does
+Adds a `beos` target environment: `te-beos.h` (a copy of `te-macos.h` that
+defines `TE_BEOS` instead of `TE_POWERMAC`), and makes `ppc_target_format()`
+return `xcoff-bebox` for `TE_BEOS` so assembled objects use the new vector.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `gas/config/te-beos.h` | New file. |
+| `gas/config/tc-ppc.c` | `#elif TE_BEOS` branch returning `"xcoff-bebox"` in `ppc_target_format()`. |
+| `gas/configure.tgt` | `ppc-*-beos*) fmt=coff em=beos`. |
+| `gas/Makefile.am`, `gas/Makefile.in`, `gas/po/POTFILES.in` | Register `te-beos.h`. |
+
+### Re-applying to a newer binutils
+Copy `te-macos.h` to `te-beos.h` and rename the define; add the one-line
+`ppc_target_format()` branch and the `configure.tgt` entry; add `te-beos.h`
+next to `te-macos.h` in the three file lists.
+
+---
+
+## 18. LD: `ppcbeos` emulation
+
+### What it does
+Adds a `ppcbeos` linker emulation selected for `powerpc-*-beos*`, with
+`OUTPUT_FORMAT "xcoff-bebox"`. The script template `ppcbeos.sc` is currently
+identical to `ppcmacos.sc` (section 3).
+
+### Files changed
+| File | Change |
+|------|--------|
+| `ld/emulparams/ppcbeos.sh` | New file: `TEMPLATE_NAME=aix`, `SCRIPT_NAME=ppcbeos`, `OUTPUT_FORMAT`/`_32BIT`/`_64BIT` = `xcoff-bebox`, `ARCH=powerpc`. |
+| `ld/scripttempl/ppcbeos.sc` | New file (copy of `ppcmacos.sc`). |
+| `ld/configure.tgt` | `powerpc-*-beos*) targ_emul=ppcbeos`. |
+| `ld/Makefile.am`, `ld/Makefile.in`, `ld/po/BLD-POTFILES.in` | Register `eppcbeos.c` / `ppcbeos`. |
+
+### Re-applying to a newer binutils
+Copy `ppcmacos.sh` and `ppcmacos.sc`, rename, and change the output format
+name. Add `eppcbeos.c` next to `eppcmacos.c` in `ld/Makefile.am`, update
+`configure.tgt`, and regenerate `ld/Makefile.in`.
+
+---
+
+## 19. Build enablement for BeOS
+
+### What it does
+- The top-level `configure.ac` no longer skips `target-newlib` and
+  `target-libgloss` for `*-*-beos*`, so newlib is built for the BeBox
+  (see the GCC patches).
+- `binutils/configure.ac` enables `AIX_WEAK_SUPPORT` for `powerpc-*-beos`,
+  as it does for `powerpc-*-macos`, so objdump handles XCOFF weak symbols.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `configure.ac`, `configure` | Comment out the `noconfigdirs` line for `*-*-beos*`. |
+| `binutils/configure.ac`, `binutils/configure` | Add `\| powerpc-*-beos` to the `AIX_WEAK_SUPPORT` pattern. |
+
+### Re-applying to a newer binutils
+Make the same two edits and regenerate both `configure` scripts with the
+tree's autoconf (2.69 for 2.46).
+
+---
+
+## 20. XCOFF weak symbols for BeOS (`AIX_WEAK_SUPPORT`)
+
+### What it does
+BFD's generic COFF code gives weak symbols storage class 127 (`C_WEAKEXT`).
+XCOFF uses 111 (`C_AIX_WEAKEXT`), and `include/coff/internal.h` only maps
+one to the other when `AIX_WEAK_SUPPORT` is defined. The classic Mac PowerPC
+target defines it; the BeBox target initially did not, so every tool that
+wrote or re-wrote a weak symbol failed with `unsupported swap_aux_out for
+storage class 0x7f`. C++ produces weak symbols constantly (inline functions,
+vtables, typeinfo, template instances), so C programs worked and C++ objects
+could not be inspected with `nm` or linked.
+
+The define is set in the places that need it, as for `powerpc-*-macos`:
+
+- BFD (`targ_cflags=-DAIX_WEAK_SUPPORT` in `config.bfd`), which `ld`, `nm`,
+  `objdump` and every other tool link;
+- GAS (`ppc-*-beos*` added to the `AC_DEFINE(AIX_WEAK_SUPPORT, ...)` case in
+  `gas/configure.ac`);
+- `binutils` (`powerpc-*-beos` in `binutils/configure.ac`, section 19).
+
+Anything assembled before this fix (for example a first build of `libgcc`,
+newlib or `libstdc++`) may contain class-127 symbols and must be rebuilt.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `bfd/config.bfd` | `targ_cflags=-DAIX_WEAK_SUPPORT` in the `powerpc-*-beos*` stanza. |
+| `gas/configure.ac`, `gas/configure` | `ppc-*-beos*` added to the `AIX_WEAK_SUPPORT` case; `configure` regenerated with autoconf 2.69. |
+
+### Re-applying to a newer binutils
+Add the define for the BeOS target wherever it is set for macos, and verify
+with a C++ object that has an inline function: `nm` on it must not print
+"unsupported swap_aux_out".
+
+---
+
 ## Summary of patches to re-apply when upgrading binutils
 
 | Priority | Area | Files | Complexity |
@@ -405,3 +606,10 @@ reference implementation is `discard_eh_frame_inputs` in this tree.
 | Quality | Long filename in XCOFF aux records | `bfd/coff-rs6000.c` | Low |
 | Quality | objdump C_FILE pretty-print | `bfd/coffcode.h` | Low |
 | Quality | Remove dead `fdopen` workaround | `zlib/zutil.h` | Trivial |
+| Essential (BeBox) | `xcoff-bebox` BFD target vector | `bfd/coff-rs6000.c`, `bfd/targets.c`, `bfd/configure.ac` | Medium (re-derive from rs6000) |
+| Essential (BeBox) | Select `powerpc-*-beos*`, exempt from obsolete list | `bfd/config.bfd` | Trivial |
+| Essential (BeBox) | GAS `TE_BEOS` environment | `gas/config/te-beos.h`, `tc-ppc.c`, `configure.tgt` | Low |
+| Essential (BeBox) | `ppcbeos` linker emulation | `ld/emulparams/ppcbeos.sh`, `ld/scripttempl/ppcbeos.sc`, `ld/configure.tgt` | Low (new files) |
+| Important (BeBox) | Enable newlib and weak symbols for BeOS | `configure.ac`, `binutils/configure.ac` | Trivial |
+| Essential (BeBox) | XCOFF weak symbols (`AIX_WEAK_SUPPORT`) for C++ | `bfd/config.bfd`, `gas/configure.ac` | Trivial |
+| Quality | Demote `-Wdiscarded-qualifiers` (GCC >= 15) | `binutils/Makefile.am`, `gprof/Makefile.am`, `ld/Makefile.am` (+ `.in`) | Trivial |

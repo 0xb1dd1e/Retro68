@@ -1,0 +1,1 @@
+main done, no newline, atexit A, atexit B
