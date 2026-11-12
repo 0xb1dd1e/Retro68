@@ -430,6 +430,194 @@ These changes update generated or infrastructure files and must be
 
 ---
 
+# BeBox (`powerpc-*-beos`) target
+
+Sections 18-19 describe the GCC side of the BeBox / BeOS (R5, PowerPC 603e)
+target, `powerpc-be-beos`. It reuses the classic Mac PowerPC machinery
+(`powerpc-apple-macos`, section 2: AIX/XCOFF ABI, TOC, PEF output) but is a
+separate target. **Status (2026-11-11): builds and installs with GCC 16.1 (compiler, `libgcc`, newlib `libc`/`libm`, `libstdc++`), and C and C++ sources compile to `xcoff-bebox` objects with DWARF. Programs built with the default link (`powerpc-be-beos-gcc hello.c`) run on an emulator and on a real BeBox: C, newlib stdio, and C++ (constructors, exceptions, `std::string`, `std::vector`). See section 22 for what had to be done, and the known limits.**
+The binutils side is in `BINUTILS-PATCHES.md`, sections 15-19.
+
+**Scope and roadmap.** The target supports C and C++ programs that use
+libroot as their C library, through newlib and libstdc++ (checked on an
+emulator and on a real BeBox with the tests in `BeBoxTests/`). It does not yet
+support programs that use `libbe` (any GUI), GCC subclasses of Be classes,
+calls into other Metrowerks-built C++ libraries, shared libraries and add-ons,
+or BeOS application packaging. `libbe` support is planned as separate work; from
+measurements of the R5 libraries it needs Metrowerks name mangling for calls
+into libbe, a `libbe` import library, the hidden destructor flag of Be
+destructors, and a translation of Be class vtables. It needs no special CR2-CR4
+handling and no change to by-value aggregate passing (stock GCC matches libbe).
+
+---
+
+## 18. New target: `powerpc-*-beos`
+
+### What it does
+Adds a GCC target triple `powerpc-*-beos*` for BeBox BeOS applications.
+
+- `rs6000/pef.h` holds the AIX-ABI definitions that `macos.h` also contains (it is a copy, used only by the BeBox target; the Mac target does **not** include it):
+  `DEFAULT_ABI ABI_AIX`, the TOC (`TARGET_TOC`, `FIXED_R2`), 128-bit stack
+  boundary, `USER_LABEL_PREFIX ""`, field/aggregate alignment rules,
+  `WINT_TYPE`, `PROCESSOR_DEFAULT PROCESSOR_PPC603`, and so on.
+- `rs6000/beos.h` is the target header: `__ppc__`, `__PPC__`, `__POWERPC__`,
+  `__NATURAL_ALIGNMENT__`, `__IEEE_BIG_ENDIAN` and the `system=macos`
+  assertion; the link spec (`-btextro -bhalt:4 -bnodelcsect
+  --no-check-sections`, `-bM:SRE` for shared objects), `LIB_SPEC` `-lc`, link
+  specs that add the startup library and libroot
+  (`LIBGCC_SPEC "-lgcc -lretrocrt -lroot -lgcc"`,
+  `LINK_GCC_C_SEQUENCE_SPEC "--start-group -lgcc -lc -lretrocrt -lroot --end-group"`),
+  an empty `STARTFILE_SPEC` (the entry point `__start` comes from
+  `libretrocrt.a`, see `libretro/beosstart.c`), and DWARF 2 debug info in
+  XCOFF sections (see below). `-lroot` is needed in every mode: the startup
+  code calls `find_thread`, `_call_init_routines_` and
+  `_thread_do_exit_notification` from libroot. The libraries are grouped so
+  members of `libretrocrt.a` (the newlib/libroot glue) can satisfy references
+  from later libraries such as `libstdc++`.
+- **Debug info.** GCC 14 and later have no XCOFF/stabs debug format, so
+  `PREFERRED_DEBUGGING_TYPE` is `DWARF2_DEBUG` with the same numeric XCOFF
+  `DEBUG_*_SECTION` codes as `macos.h` (`0x10000` info, `0x20000` line, ... `0xB0000`
+  macro). gas can only express those numeric `.dwsect` codes for DWARF 4 and
+  earlier, but GCC 16 defaults to DWARF 5 and emits `.debug_rnglists` by name
+  at `-O2`, which the assembler rejects, so `beos.h` sets
+  `DWARF_VERSION_DEFAULT 4`. The classic Mac PowerPC target does not hit this:
+  it already forces DWARF 4 (checked 2026-11-11: `-O2` and `-O2 -g` objects
+  assemble with the GCC 16 Mac PowerPC compiler).
+- The target shares `t-macos` and `aix64.opt` with the classic Mac target.
+
+### Files changed / added
+| File | Change |
+|------|--------|
+| `gcc/gcc/config.gcc` | New `powerpc-*-beos*` stanza (`rs6000/xcoff.h rs6000/pef.h rs6000/beos.h`, `t-macos`, `aix64.opt`, `use_collect2=yes`, AIX thread file). The `powerpc-apple-macos*` stanza is unchanged: it must not include `rs6000/pef.h`, which redefines macros that `macos.h` defines with other values (for example `OS_MISSING_ALTIVEC`) and defines `TARGET_TOC`, which the Mac target never had. |
+| `gcc/gcc/config/rs6000/pef.h` | New file. |
+| `gcc/gcc/config/rs6000/beos.h` | New file (including the DWARF settings above). |
+| `gcc/gcc/config/rs6000/macos.h` | Drops the two stray `cpu=m68k` / `machine=m68k` assertions from the PowerPC target. **Affects the classic Mac PowerPC target as well.** |
+| `gcc/libgcc/config.host` | `powerpc-*-beos` entry (`t-fdpbit rs6000/t-ibm-ldouble`), mirroring `powerpc-*-macos`. |
+
+### Re-applying to a newer GCC
+Add the `powerpc-*-beos*` stanza next to `powerpc-apple-macos*` in
+`config.gcc`; copy `pef.h` and `beos.h`; add the `libgcc/config.host` entry.
+Do not add `pef.h` to the `powerpc-apple-macos*` stanza (see above). Check the BeBox build log for "redefined" warnings from `pef.h`/`beos.h`. If a newer
+GCC changes the default DWARF version or the XCOFF debug hooks, redo the debug
+settings in `beos.h` (compile with `-O2 -g` and assemble to check).
+
+---
+
+## 19. Build enablement: newlib for BeOS
+
+### What it does
+Builds newlib for the BeBox like the classic Mac PowerPC target does
+(`-DREENTRANT_SYSCALLS_PROVIDED -DMALLOC_PROVIDED -ffunction-sections`,
+`syscall_dir=syscalls`), and stops the top-level `configure` from skipping
+`target-newlib` and `target-libgloss` for `*-*-beos*`.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `gcc/newlib/configure.host` | `powerpc-*-beos)` case, mirroring `powerpc-*-macos`. |
+| `gcc/configure.ac`, `gcc/configure` | Comment out the `*-*-beos*` `noconfigdirs` case. |
+
+### Re-applying to a newer GCC
+Add the `configure.host` case next to the macos one; comment out the
+`noconfigdirs` case and regenerate `configure` with the tree's autoconf.
+
+---
+
+## 20. libstdc++ for BeOS: use the dual ABI
+
+### What it does
+`build-toolchain.bash --bebox` builds GCC with `target_configargs` including
+`--enable-libstdcxx-dual-abi=yes`, like the 68k and classic PowerPC steps.
+With `=no` libstdc++ selects the old (gcc4-compatible) ABI, and GCC 16's
+`<chrono>` C++20 time-zone code, which is still compiled in that mode, needs
+`std::string` from headers that are only included under the new ABI. The
+build then fails in `src/c++17/fs_dir.cc` and `src/c++20/{clock,format,tzdb}.cc`
+with errors such as "'string' does not name a type".
+
+### Files changed
+| File | Change |
+|------|--------|
+| `build-toolchain.bash` | BeBox GCC step: `--enable-libstdcxx-dual-abi=yes` (was `=no`). |
+
+### Linking libstdc++ against libroot
+libstdc++ is built against newlib's conventions. A program that uses BeOS's
+libroot as its C library needs four symbols that libroot lacks: `__errno`
+(newlib's errno accessor), `__xpg_strerror_r`, `getentropy` and `arc4random`.
+`libretro/beoscompat.c` provides them from libroot's `_errnop`, `strerror`,
+`random` and `system_time`, as its own member of `libretrocrt.a` so it is
+only linked when needed. Limits: the entropy is not cryptographically
+secure, and errno numbering differs between newlib and BeOS (not translated).
+Link libraries with `--start-group ... --end-group` (the default specs do), or
+archive order will hide these members from later references.
+
+### Notes
+- libstdc++ carries both string ABIs and, built with `-g`, is large (31 MB for
+  `libstdc++.a` here); strip it or build without `-g` if size matters.
+- The optional C++23 `import std` module source (`std.cc`) fails to compile
+  but does not fail the build.
+
+---
+
+## 21. newlib's system calls on BeOS libroot (`libretro/beossyscalls.c`)
+
+### What it does
+newlib's `libc.a` is portable except for a small set of stubs every port must
+supply (`_write_r`, `_read_r`, `_open_r`, `_close_r`, `_lseek_r`, `_unlink_r`,
+`_isatty_r`, `_fstat_r`, `_getpid_r`, `_kill_r`, `_getentropy_r`, `_exit`, and
+the reentrant malloc wrappers `_malloc_r`, `_free_r`, `_calloc_r`,
+`_realloc_r`). `_getentropy_r` is what newlib's `getentropy()` (libstdc++'s
+`std::random_device`) calls; the entropy is weak (`random()` mixed with the
+system clock) and not for cryptography. `beoscompat.c`'s `getentropy` is only
+used when newlib's `libc.a` is not linked.
+`beossyscalls.c` implements them on BeOS R5's libroot, as another member of
+`libretrocrt.a`, so that the default ("modern") link, newlib's C library over
+libroot, works: `printf`, `fprintf(stderr, ...)`, `fopen`/`fgets`/`remove`,
+`malloc`, and the whole C++ runtime. The default link specs in `beos.h` are
+`-lgcc -lc -lretrocrt -lroot` (grouped).
+
+### Design points and pitfalls
+- **Run-time lookup, not link-time.** libroot exports `write`, `read`, `close`,
+  `lseek`, `isatty`, `getpid`, `kill`, `open`, ..., and so does newlib's `libc.a`
+  (as thin wrappers over the `_r` stubs). A stub calling `write()` by name can be
+  linked to newlib's `write`, which calls `_write_r`: endless recursion. The
+  stubs therefore find libroot's functions with
+  `get_image_symbol(id, name, B_SYMBOL_TYPE_ANY /* 5 */, &ptr)`; for text
+  symbols that returns the address of the transition vector, which is a callable
+  function pointer in this ABI.
+- **The kernel is an image too.** It is image ID 1 and exports its own `write`,
+  `read`, `close`, ... for kernel add-ons. Probing IDs from 1 finds the kernel's
+  function first; calling it from user code faults ("protection violation
+  (access to kernel page)", address in low memory). Only results at or above
+  `0x80000000` (user space) are accepted. This was found by running in the
+  emulator.
+- **errno.** libroot sets BeOS error codes (offsets from `LONG_MIN`:
+  `B_IO_ERROR` is `0x80000001`, and so on). They are translated to newlib's
+  numbers in the reent structure. The values come from compiling `Errors.h`
+  with the cross compiler.
+- **open() flags.** `O_EXCL`, `O_NONBLOCK` and `O_APPEND` have different values
+  in newlib and BeOS and are translated.
+
+### Known limits
+- `_fstat_r` fills only `st_mode` (character device if `isatty`, else regular
+  file) and `st_blksize`: enough for stdio. newlib's `struct stat` differs from
+  BeOS's and is not translated, so `fstat()`/`stat()` give no size or times.
+- Not provided yet: `_stat_r`, `_link_r`, `_gettimeofday_r`, `_times_r`, ...
+  They appear as undefined symbols when something uses them.
+- The libroot image ID is searched up to 512.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `libretro/beossyscalls.c` | New file. |
+| `libretro/CMakeLists.txt` | Adds it to the `retrocrt` library for `RetroBeBox`. |
+
+### Re-applying to a newer GCC/newlib
+The set of `_r` stubs newlib needs is whatever the link reports as undefined
+(`ld: undefined reference to '._write_r'`). Check any new ones against libroot's
+real behaviour on the emulator first.
+
+---
+
 ## Summary of patches to re-apply when upgrading GCC
 
 | Priority | Area | Complexity |
@@ -443,8 +631,68 @@ These changes update generated or infrastructure files and must be
 | Important | MacsBug symbol output (`m68k.cc`, `m68k.h`, `final.cc`, `m68k.md`) | Medium |
 | Important | PUSH_ROUNDING fixes (`expr.cc`, `reload1.cc`, `rtlanal.cc`, `combine.cc`) | Low |
 | Important | `-ffunction-sections` for libgcc | Low |
+| Essential (BeBox) | New target `powerpc-*-beos` (`config.gcc`, `pef.h`, `beos.h`, `libgcc/config.host`); runs on an emulator and a real BeBox | Medium |
+| Important (BeBox) | newlib for BeOS (`newlib/configure.host`, `configure.ac`) | Trivial |
+| Important (BeBox) | DWARF 4 default and DWARF section codes in `beos.h` | Trivial |
+| Important (BeBox) | libstdc++ dual ABI in `build-toolchain.bash` | Trivial |
+| Important (BeBox) | newlib system calls on libroot (`libretro/beossyscalls.c`) | Medium |
 | Quality | 4-char constant warning (`libcpp/charset.cc`) | Trivial |
 | Quality | PC-relative `bsr.w` mode | Low |
 | Quality | CSA pass cloneable + extra pass | Low |
 | Build only | AArch64 Darwin host hooks | Low |
 | Build only | Build system regeneration | Re-generate, not re-apply |
+
+## 22. Bringing up the BeBox target: what we had to do
+
+The pieces above are the net result. These are the problems that had to be
+solved to get there, each with its symptom, so the reasoning survives a
+squash or a rebase onto a newer GCC or binutils:
+
+- **Weak symbols.** BFD wrote weak symbols with generic COFF storage class
+  127 and the XCOFF writer rejected them ("unsupported swap_aux_out for
+  storage class 0x7f"). C++ vague linkage needs weak symbols, so
+  `AIX_WEAK_SUPPORT` is enabled for `powerpc-*-beos` (BINUTILS-PATCHES.md
+  section 20).
+- **DWARF 5.** gas only knows the numeric XCOFF `.dwsect` codes for DWARF 4
+  and earlier, so `-O2 -g` failed with GCC 16's default. `beos.h` defaults to
+  DWARF 4 (section 18).
+- **newlib and libroot export the same names.** A stub that calls `write()`
+  by name can land in newlib's `write`, which calls `_write_r` again, endlessly.
+  libroot's functions are therefore found with
+  `get_image_symbol(id, name, B_SYMBOL_TYPE_ANY, &ptr)` (section 21).
+- **The kernel is an image too.** Image ID 1 exports its own `write` and
+  `read`; only addresses at or above 0x80000000 are accepted as libroot's.
+- **libstdc++ needs libc help.** `__errno`, `__xpg_strerror_r`, `getentropy`
+  and `arc4random` are supplied by `libretro/beoscompat.c`, and libstdc++ is
+  built with `--enable-libstdcxx-dual-abi=yes` (section 20).
+- **Default link.** `-lretrocrt -lroot` are in the link specs, so a plain
+  `powerpc-be-beos-gcc hello.c` links without extra flags.
+- **Import library.** `MakeImport --no-cfrg` writes an archive with an
+  `imp__...` hex-encoded member name, so the PEF imports `libroot.so` and not
+  a name mangled by the Mac conventions. `-lroot` needs `libroot.a`; it is made by
+  `build-toolchain.bash --bebox` from a list of names,
+  `ImportLibraries/BeOS/libroot.exports` (`MakeImport --from-list`), which holds
+  the C functions and variables declared in the public BeOS R5 headers that
+  libroot.so exports (no BeOS file is needed to build it).
+- **Classic Mac side effect.** `pef.h` must not be included for
+  `powerpc-apple-macos*`: it redefined `OS_MISSING_ALTIVEC` and leaked
+  `TARGET_TOC`. Removing it leaves the Mac PowerPC compiler's code generation
+  unchanged (identical `-O2` assembly, verified 2026-11-11).
+- **Exit.** Linking against libroot makes `exit()` resolve to libroot's, which
+  ignores newlib's `atexit` list, so C++ global destructors and `atexit`
+  handlers never ran. `__start` (`libretro/beosstart.c`) now calls
+  `__call_exitprocs` and `fflush(NULL)` before libroot's `exit`.
+- **Build noise that is not a failure.** The `std.cc` errors (C++23
+  `import std`) while building libstdc++ are optional and can be ignored.
+- **Host compilers.** binutils fails under `-Werror` with GCC 15 or newer
+  (section 14).
+
+Known limits (see the scope paragraph in section 18): no init/term hooks for
+shared libraries and add-ons, no `libbe` or GUI programs, no BeOS application
+packaging, weak entropy, `_fstat_r` fills
+only `st_mode` and `st_blksize`, errno numbering is not fully translated, some
+`_r` stubs are missing.
+
+Tests: `BeBoxTests/` (see its `README.md`) builds six programs with the BeBox
+toolchain and runs them on a BeOS machine over FTP and telnet as `ctest` cases
+`BeBox.*`.
